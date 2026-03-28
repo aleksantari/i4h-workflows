@@ -116,6 +116,65 @@ Define Task ──> Collect Demos ──> Convert to LeRobot ──> Fine-Tune G
 
 ---
 
+## Gripper Control Through the Pipeline
+
+This is a critical detail that is not obvious from the code structure: **teleop uses
+binary gripper signals, but the training data contains individual finger joints.**
+
+### The Conversion Chain
+
+```
+Teleop input        WBC controller        HDF5 recording      LeRobot/GR00T
+(binary 0/1)  ──>  (7-joint presets) ──>  (43D joints)   ──>  (28D joints)
+                         │                                         │
+                    get_hand_joint_pos()                    select 14 arm +
+                    in g1_wbc_upperbody_                    14 hand joints
+                    controller.py:223-238
+```
+
+### What Actually Happens
+
+All three teleop input methods (Meta Quest controllers, AVP hand tracking, keyboard)
+output a **binary gripper value** — either 0.0 (open) or 1.0 (closed). No intermediate
+values, no per-finger control.
+
+The **WBC (Whole Body Controller)** then converts this binary signal into **7 fixed
+joint presets per hand** via `get_hand_joint_pos()`:
+
+```
+g1_wbc_upperbody_controller.py:223-238
+
+Open  (hand_state == 0):  all 7 joints = 0.0 rad (flat hand)
+Close (hand_state == 1):  thumb_1 = +0.7,  thumb_2 = +0.7
+                          index_0 = -0.6,  index_1 = -1.2
+                          middle_0 = -0.6, middle_1 = -1.2
+```
+
+The **recorded `processed_actions` (43D)** contain these joint presets — not the binary
+signal. So the HDF5 files have continuous joint values, but they only ever appear in
+exactly two configurations.
+
+### Implications for IL and RL
+
+| Stage | Gripper Representation | Consequence |
+|-------|----------------------|-------------|
+| **Teleop** | Binary (0 or 1) | Human can only open/close the whole hand |
+| **HDF5 recording** | 7 joint presets per hand (from WBC) | Data looks continuous but has only 2 configs |
+| **LeRobot / GR00T IL** | 14 continuous joint values (28D total) | IL learns to reproduce the 2 presets |
+| **RL (direct joint control)** | 14 independent joints (43D action) | Policy can output **any** finger values |
+
+**Key insight for RL:** The RL environment uses `JointPositionActionCfg` with direct
+control over all 43 DOF. The policy is not constrained to the two WBC presets. With
+appropriate reward shaping, RL can learn finger behaviors (partial grasps, sequential
+finger closure, repositioning) that never appeared in the IL demonstrations.
+
+**Source files:**
+- WBC gripper conversion: `third_party/IsaacLab-Arena/.../g1_wbc_upperbody_controller.py:223-238`
+- RL 43D action space: `scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py:162-172`
+- Dex3 observations: `scripts/simulation/tasks/assemble_trocar/mdp/observations.py:137-167`
+
+---
+
 ## Phase 1: Define Your Task
 
 You need to create a new task package under `scripts/simulation/tasks/`. Here is the
@@ -210,23 +269,48 @@ class YourTaskSceneCfg(InteractiveSceneCfg):
 The existing robot and camera presets in `config/robot_config.py` and `config/camera_config.py`
 are reusable. You mainly need to define your **objects** and **scene layout**.
 
-#### Actions
+#### Actions — Two Modes
 
-Assemble trocar uses direct joint position control for all 43 joints:
+The task has **two action modes** that share the same scene but differ in how the robot
+is controlled. Understanding this split is essential.
+
+**RL mode** (`g1_assemble_trocar_env_cfg.py`): Direct joint position control over all
+43 DOF. The policy outputs raw joint angle targets — no inverse kinematics, no WBC.
 
 ```python
 @configclass
 class ActionsCfg:
     joint_pos = mdp.JointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*"],
+        joint_names=joint_names,  # all 43 joints explicitly listed
         scale=1.0,
         preserve_order=True,
     )
 ```
 
-The teleop variant overrides this with a WBC+PINK action that locks the legs and only
-controls the upper body — see `g1_assemble_trocar_teleop_env_cfg.py`.
+**Teleop mode** (`g1_assemble_trocar_teleop_env_cfg.py`): WBC+PINK inverse kinematics
+that accepts a 23D high-level command and outputs 43D joint targets internally.
+
+```
+23D teleop input:
+  [gripper_L(1), gripper_R(1),                    # binary open/close
+   left_wrist_xyz(3), left_wrist_quat(4),          # task-space wrist pose
+   right_wrist_xyz(3), right_wrist_quat(4),        # task-space wrist pose
+   nav_x(1), nav_y(1), nav_yaw(1),                 # navigation (zeroed)
+   base_height(1),                                  # hip height (0.75m fixed)
+   torso_roll(1), torso_pitch(1), torso_yaw(1)]     # torso orientation (zeroed)
+```
+
+The two components that process this:
+- **PINK** (Pinocchio Inverse Kinematics) — solves wrist poses → 14 arm joint angles.
+  Only handles the arms; does not touch fingers.
+- **WBC** (Whole Body Controller) — converts binary gripper → 7 finger joint presets
+  (see [Gripper Control Through the Pipeline](#gripper-control-through-the-pipeline)),
+  handles lower body balance, and orchestrates everything into a unified 43D joint command.
+
+The teleop variant also **fixes the lower body** so only the arms move — implemented via
+`G1AssembleTrocarFixedLegsWBCPinkAction` which zeros out navigation, height, and torso
+commands before passing to the WBC.
 
 #### Observations
 
@@ -400,14 +484,34 @@ env.close()
 
 ### 2.1 XR Teleoperation (Recommended for Manipulation)
 
-For dexterous manipulation, VR controllers with Meta Quest are the recommended input
-device. The trocar task's collection script is `record_demos_assemble_trocar.py`.
+Two teleop devices are supported. Both produce the same 20D output format (binary
+gripper + wrist poses + lower body), so the downstream pipeline is identical regardless
+of which device you use.
+
+| Device | Flag | Input Method | Gripper Control |
+|--------|------|-------------|-----------------|
+| Meta Quest controllers | `--teleop_device motion_controllers` | Controller pose + trigger | Trigger analog > threshold |
+| Apple Vision Pro hand tracking | `--teleop_device handtracking` | Hand joint poses | Thumb-index pinch distance |
+
+See `docs/avp_teleoperation.md` for AVP setup details (CloudXR streaming, wrist
+rotation transforms, pinch thresholds).
 
 ```bash
+# Meta Quest controllers
 ./docker/run_docker.sh -g1.5 \
   python scripts/simulation/record_demos_assemble_trocar.py \
   --task Isaac-YourTask-G129-Dex3-Teleop \
   --teleop_device motion_controllers \
+  --enable_pinocchio \
+  --enable_cameras \
+  --num_demos 50 \
+  --xr
+
+# Apple Vision Pro hand tracking
+./docker/run_docker.sh -g1.5 \
+  python scripts/simulation/record_demos_assemble_trocar.py \
+  --task Isaac-YourTask-G129-Dex3-Teleop \
+  --teleop_device handtracking \
   --enable_pinocchio \
   --enable_cameras \
   --num_demos 50 \
@@ -418,8 +522,16 @@ device. The trocar task's collection script is `record_demos_assemble_trocar.py`
 - `obs/robot_joint_state` — 87-D body joint state (pos + vel + torque)
 - `obs/robot_dex3_joint_state` — 14-D hand joint positions
 - `obs/front_camera`, `obs/left_wrist_camera`, `obs/right_wrist_camera` — RGB images
-- `processed_actions` — 43-D joint position targets after WBC processing
+- `processed_actions` — 43-D joint position targets after WBC+PINK processing
 - Episode metadata: success flag, timestamps, initial state
+
+**Important:** The recorded `processed_actions` are the **WBC+PINK output** (43D joint
+targets), not the raw teleop input (23D). This means:
+- The binary gripper signal has already been converted to 7 finger joint presets
+  (see [Gripper Control Through the Pipeline](#gripper-control-through-the-pipeline))
+- Wrist poses have been solved into arm joint angles by PINK
+- The recording captures the full kinematics solution, not the human's commands
+- This is why IL trains on individual finger joints even though teleop is binary
 
 **Controls during collection:**
 - XR controllers drive the arms/hands via WBC+PINK inverse kinematics
@@ -621,6 +733,14 @@ GR00T is a Vision-Language-Action (VLA) model. During SFT:
 The `--tune_visual` flag unfreezes the visual encoder (important for sim-to-sim transfer
 since the pretrained encoder was trained on real-world data).
 
+**Note on hand joints in IL data:** GR00T trains on 28D actions that include 14
+individual finger joint values (7 per hand). However, because teleop uses binary
+gripper control and the WBC maps this to fixed joint presets, the training data only
+contains **two distinct hand configurations** — fully open and fully closed. The IL
+model learns to predict continuous joint values, but in practice it reproduces the
+same two presets it was trained on. Individual finger dexterity is not learned at the
+IL stage — that is a capability RL can unlock (see Phase 6).
+
 ---
 
 ## Phase 5: Evaluate the IL Policy
@@ -686,6 +806,19 @@ module instead of `simulation.tasks.assemble_trocar`. The core evaluation loop
 RL post-training takes your IL-trained checkpoint and refines it with online PPO in
 simulation. This is especially valuable for multi-stage tasks where IL alone gets the
 general behavior right but fails on precision transitions.
+
+**Key difference from IL:** The RL environment uses `JointPositionActionCfg` with
+**direct control over all 43 DOF** — there is no WBC, no PINK, no binary gripper
+presets. The policy outputs raw joint angle targets for every joint including
+individual finger joints. This means:
+
+- The RL policy can output **arbitrary finger joint values**, not just the two
+  preset configurations (open/closed) that appeared in IL training data
+- With appropriate reward shaping (e.g., rewards for partial grasps, finger
+  repositioning, sequential finger closure), RL can learn dexterous finger
+  behaviors that were impossible to demonstrate via binary teleop
+- This is a significant capability upgrade: IL establishes the general manipulation
+  strategy, RL refines it with finer motor control
 
 ### 6.1 Register Your Task in RLinf
 
@@ -902,10 +1035,13 @@ The patch is applied via a context manager in `apply_gr00t_rl_patch.py` that run
 
 | Space | Dim | Contents |
 |-------|-----|----------|
-| Full robot joints | 43 | 29 body (legs + waist + arms) + 14 Dex3 hand |
+| Teleop input | 23 | gripper(2) + wrist_poses(14) + nav(3) + height(1) + torso(3) |
+| WBC+PINK output / HDF5 recording | 43 | Full joint targets (after IK + gripper preset conversion) |
+| Full robot joints (RL action) | 43 | 29 body (legs + waist + arms) + 14 Dex3 hand |
 | Body observation | 87 | 29 pos + 29 vel + 29 torque |
 | Hand observation | 14 | 14 Dex3 joint positions |
 | **Canonical manipulation (LeRobot/GR00T)** | **28** | **7 left arm + 7 right arm + 7 left hand + 7 right hand** |
+| RLinf action (GR00T → sim) | 43 | 15 zeros (legs/waist padding) + 28 manipulation joints |
 | GR00T action horizon | 16 | 16 future action steps per forward pass |
 
 ### Joint Group Ordering (28-D canonical)
