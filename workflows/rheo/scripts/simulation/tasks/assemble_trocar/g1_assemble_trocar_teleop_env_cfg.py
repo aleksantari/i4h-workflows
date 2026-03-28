@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+from isaaclab.devices.device_base import DevicesCfg
 from isaaclab.devices.openxr.xr_cfg import XrAnchorRotationMode, XrCfg
 from isaaclab.managers import EventTermCfg
 from isaaclab.managers.action_manager import ActionTerm, ActionTermCfg
@@ -21,6 +22,7 @@ from isaaclab.utils import configclass
 from isaaclab_arena_g1.g1_env.mdp import g1_events as g1_events_mdp
 from isaaclab_arena_g1.g1_env.mdp.actions.g1_decoupled_wbc_pink_action import G1DecoupledWBCPinkAction
 from simulation.tasks.assemble_trocar.g1_assemble_trocar_env_cfg import G1AssembleTrocarEnvCfg
+from teleop_devices.handtracking import HandtrackingTeleopDevice
 from teleop_devices.motion_controllers import MotionControllersTeleopDevice
 
 from isaaclab_arena_g1.g1_env.mdp.actions.g1_decoupled_wbc_pink_action_cfg import (  # isort: skip
@@ -117,4 +119,10 @@ class G1AssembleTrocarTeleopEnvCfg(G1AssembleTrocarEnvCfg):
 
         # Teleop devices in gripper mode, matching Arena's WBC+PINK pipeline.
         mc = MotionControllersTeleopDevice(sim_device=self.sim.device)
-        self.teleop_devices = mc.get_teleop_device_cfg(xr_cfg=self.xr, use_trocar_retargeter=True)
+        ht = HandtrackingTeleopDevice(sim_device=self.sim.device)
+        self.teleop_devices = DevicesCfg(
+            devices={
+                **mc.get_teleop_device_cfg(xr_cfg=self.xr, use_trocar_retargeter=True).devices,
+                **ht.get_teleop_device_cfg(xr_cfg=self.xr, use_trocar_retargeter=True).devices,
+            }
+        )
