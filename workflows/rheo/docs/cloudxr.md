@@ -5,6 +5,118 @@ with the Unitree G1 humanoid robot.
 
 ---
 
+## Our Local Setup
+
+**IMPORTANT:** Always use the versions inside the `grasp` conda env. There may be
+other Isaac Lab / Isaac Sim installations on the system — ignore them.
+
+| Component | Version | Location |
+|-----------|---------|----------|
+| Isaac Sim | 5.1.0.0 | `grasp` conda env (pip package `isaacsim`) |
+| Isaac Lab | 2.3.2 | `grasp` conda env + source at `~/repos/IsaacLab_v23` |
+| GPU | RTX 5090 | Driver 580.119.02, CUDA 12.8 |
+| OS | Pop!_OS 22.04 | Kernel 6.17.4 |
+| AVP Client | Isaac XR Teleop Sample Client v2.3.0 | Sideloaded via Xcode |
+
+### Two CloudXR Runtime Modes
+
+Isaac Sim 5.1 ships with **CloudXR Runtime built-in** as the extension
+`omni.kit.xr.system.openxr`. This means there are two ways to run the XR pipeline:
+
+| Mode | AR Panel Setting | How It Works | When to Use |
+|------|-----------------|--------------|-------------|
+| **Built-in** | "CloudXR Runtime (5.0)" | Runtime runs inside the Isaac Sim process. No external container, no env vars, no IPC socket. | **Docker workflows** (rheo `run_docker.sh`), simplest setup |
+| **External Docker** | "System OpenXR Runtime" | Runtime runs in a separate Docker container. Requires OpenXR env vars + IPC socket mount. | **Local conda** workflows, Isaac Lab `container.py` |
+
+**Built-in runtime files** (shipped with isaacsim pip package):
+```
+isaacsim/extscache/omni.kit.xr.system.openxr-.../bin/
+├── libcloudxr.so              # CloudXR native library
+├── libopenxr_cloudxr.so       # OpenXR runtime plugin
+└── openxr_cloudxr.json        # OpenXR runtime manifest
+```
+
+The extension also includes `cloudxr_wrapper.py` which exposes
+`get_cloudxr_runtime_version()` for querying the bundled version.
+
+**Key insight:** The built-in mode is why rheo's `run_docker.sh` does NOT need to
+mount OpenXR paths or set `XDG_RUNTIME_DIR` / `XR_RUNTIME_JSON`. The runtime starts
+automatically inside the same process when `--xr` is passed.
+
+### Teleop Device Compatibility
+
+| Device | `--teleop_device` | Input Type | Works With |
+|--------|-------------------|------------|------------|
+| AVP hand tracking | `handtracking` | Hand joint positions via OpenXR | Isaac Lab generic tasks |
+| Quest controllers | `motion_controllers` | Controller pose + buttons/triggers | Rheo tasks (trocar, locomanip) |
+
+**Current limitation:** Rheo's trocar and locomanip tasks only register
+`motion_controllers` as a teleop device (designed for Quest controllers). To use AVP
+hand tracking with these tasks, a `handtracking` device config with appropriate
+retargeters would need to be added to the env configs.
+
+### Quick Start: Built-in Mode (Docker / rheo workflows)
+
+```bash
+# No external CloudXR container needed — built-in runtime handles everything.
+# Make sure the external cloudxr-runtime container is STOPPED to avoid port conflicts.
+docker stop cloudxr-runtime 2>/dev/null
+
+# Run rheo trocar task with XR (Quest controllers)
+./workflows/rheo/docker/run_docker.sh -g1.5 \
+  python scripts/simulation/record_demos_assemble_trocar.py \
+  --task Isaac-Assemble-Trocar-G129-Dex3-Teleop \
+  --teleop_device motion_controllers \
+  --enable_pinocchio \
+  --enable_cameras \
+  --num_demos 1 \
+  --xr
+
+# In Isaac Sim UI: AR Panel → OpenXR → "CloudXR Runtime (5.0)" → Start AR
+# On headset: connect to workstation IP → Play
+```
+
+### Quick Start: External Docker Mode (local conda)
+
+```bash
+# Terminal 1: Start external CloudXR Runtime container
+docker start cloudxr-runtime 2>/dev/null || \
+docker run -d --name cloudxr-runtime \
+    --user $(id -u):$(id -g) --gpus=all \
+    -e "ACCEPT_EULA=Y" -e "NV_GPU_INDEX=0" \
+    --mount type=bind,src=$HOME/repos/IsaacLab_v23/openxr,dst=/openxr \
+    -p 48010:48010/tcp \
+    -p 47998:47998/udp -p 47999:47999/udp -p 48000:48000/udp \
+    -p 48005:48005/udp -p 48008:48008/udp -p 48012:48012/udp \
+    nvcr.io/nvidia/cloudxr-runtime:5.0.1
+
+# Terminal 2: Launch Isaac Lab teleop (AVP hand tracking)
+use_conda grasp
+cd ~/repos/IsaacLab_v23
+export XDG_RUNTIME_DIR=$HOME/repos/IsaacLab_v23/openxr/run
+export XR_RUNTIME_JSON=$HOME/repos/IsaacLab_v23/openxr/share/openxr/1/openxr_cloudxr.json
+
+./isaaclab.sh -p scripts/environments/teleoperation/teleop_se3_agent.py \
+    --task Isaac-PickPlace-GR1T2-Abs-v0 \
+    --teleop_device handtracking \
+    --enable_pinocchio
+
+# In Isaac Sim UI: AR Panel → OpenXR → "System OpenXR Runtime" → Start AR
+# On AVP: open Isaac XR Teleop Sample Client → enter server IP → Connect → Play
+```
+
+### Previous Issues & Fixes
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| AR panel shows `OpenXR Active Runtime: None` | Env vars not set before Isaac Sim launch (external mode) | Export `XDG_RUNTIME_DIR` and `XR_RUNTIME_JSON` in the same shell BEFORE running `./isaaclab.sh` |
+| Tracking works but no video (`Avg Game FPS: 0.00`) | External CloudXR container didn't know which GPU to encode from | Add `-e "NV_GPU_INDEX=0"` to the docker run command |
+| IPC socket permission denied (external mode) | Container running as root | Add `--user $(id -u):$(id -g)` to docker run |
+| AVP video streams but hand tracking doesn't control robot | Rheo tasks use `motion_controllers` (Quest), not `handtracking` (AVP) | Need to add `handtracking` device config to rheo env configs |
+| Port 48010 already in use | External CloudXR container still running while using built-in mode | `docker stop cloudxr-runtime` before using built-in mode |
+
+---
+
 ## CloudXR SDK 6.x Overview
 
 CloudXR SDK 6.x has three components:
