@@ -89,34 +89,16 @@ offset_dict = {
 }
 
 # ---------------------------------------------------------------------------
-# Bin geometry constants (open-top box from 5 cuboid walls)
+# Target pad geometry (flat pad marking the placement target)
 # ---------------------------------------------------------------------------
-BIN_INNER_W = 0.15  # inner width  (x)
-BIN_INNER_D = 0.15  # inner depth  (y)
-BIN_WALL_H = 0.08  # wall height  (z)
-BIN_WALL_T = 0.005  # wall thickness
-# Bin centre in the scene (local coords, on the table surface)
-BIN_CX = -1.75
-BIN_CY = 1.70
+TARGET_W = 0.15  # target width  (x)
+TARGET_D = 0.15  # target depth  (y)
+TARGET_T = 0.005  # pad thickness (z)
+# Target centre in the scene (on the blue side-table)
+BIN_CX = -1.55
+BIN_CY = 1.61
 TABLE_Z = 0.855
-
-# Derived bin geometry (module-level so they don't pollute the @configclass)
-_HALF_W = BIN_INNER_W / 2 + BIN_WALL_T / 2
-_WALL_CZ = TABLE_Z + BIN_WALL_H / 2
-
-
-def _bin_wall(prim_suffix: str, size: tuple, pos: tuple) -> RigidObjectCfg:
-    """Helper to create a single kinematic bin wall."""
-    return RigidObjectCfg(
-        prim_path=f"/World/envs/env_.*/{prim_suffix}",
-        spawn=sim_utils.CuboidCfg(
-            size=size,
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.8)),
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
-    )
+TARGET_Z = 0.835  # blue table is lower than the metal table
 
 
 @configclass
@@ -155,31 +137,21 @@ class GraspPolicySceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(-1.55, 1.90, 0.885)),
     )
 
-    # Bin (open-top box from 5 kinematic cuboid walls)
-    bin_bottom: RigidObjectCfg = _bin_wall(
-        "bin_bottom",
-        size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_INNER_D + 2 * BIN_WALL_T, BIN_WALL_T),
-        pos=(BIN_CX, BIN_CY, TABLE_Z + BIN_WALL_T / 2),
-    )
-    bin_wall_left: RigidObjectCfg = _bin_wall(
-        "bin_wall_left",
-        size=(BIN_WALL_T, BIN_INNER_D, BIN_WALL_H),
-        pos=(BIN_CX - _HALF_W, BIN_CY, _WALL_CZ),
-    )
-    bin_wall_right: RigidObjectCfg = _bin_wall(
-        "bin_wall_right",
-        size=(BIN_WALL_T, BIN_INNER_D, BIN_WALL_H),
-        pos=(BIN_CX + _HALF_W, BIN_CY, _WALL_CZ),
-    )
-    bin_wall_front: RigidObjectCfg = _bin_wall(
-        "bin_wall_front",
-        size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_WALL_T, BIN_WALL_H),
-        pos=(BIN_CX, BIN_CY - _HALF_W, _WALL_CZ),
-    )
-    bin_wall_back: RigidObjectCfg = _bin_wall(
-        "bin_wall_back",
-        size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_WALL_T, BIN_WALL_H),
-        pos=(BIN_CX, BIN_CY + _HALF_W, _WALL_CZ),
+    # Target pad (flat marker for placement target — drops onto blue table surface)
+    target_pad = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/target_pad",
+        spawn=sim_utils.CuboidCfg(
+            size=(TARGET_W, TARGET_D, TARGET_T),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.3),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=False,
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.8, 0.2)),
+            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=0.8),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(BIN_CX, BIN_CY, TARGET_Z + TARGET_T / 2)),
     )
 
     # Lights
@@ -276,11 +248,11 @@ class RewardsCfg:
         params={
             "table_height": TABLE_Z,
             "lift_threshold": 0.05,
-            "bin_x_min": BIN_CX - BIN_INNER_W / 2,
-            "bin_x_max": BIN_CX + BIN_INNER_W / 2,
-            "bin_y_min": BIN_CY - BIN_INNER_D / 2,
-            "bin_y_max": BIN_CY + BIN_INNER_D / 2,
-            "bin_rim_z": TABLE_Z + BIN_WALL_H,
+            "bin_x_min": BIN_CX - TARGET_W / 2,
+            "bin_x_max": BIN_CX + TARGET_W / 2,
+            "bin_y_min": BIN_CY - TARGET_D / 2,
+            "bin_y_max": BIN_CY + TARGET_D / 2,
+            "bin_rim_z": TARGET_Z + TARGET_T,
             "use_sparse_reward": True,
         },
     )
