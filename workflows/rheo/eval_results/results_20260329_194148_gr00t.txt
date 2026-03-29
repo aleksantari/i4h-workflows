@@ -1,0 +1,12 @@
+Evaluation Results
+============================================================
+Task: Isaac-Grasp-Policy-G129-Dex3-Joint
+Policy Type: gr00t
+Model: None
+Episodes: 1
+Action Chunk Size: 1
+Success Rate: 0.0%
+Average Success Steps: 0.0
+
+Detailed Results:
+  Episode 1: FAILED | Stage: 0/3 | Steps: 500 | Reward: 0.000

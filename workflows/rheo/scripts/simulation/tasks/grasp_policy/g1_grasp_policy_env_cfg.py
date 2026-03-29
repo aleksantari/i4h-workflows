@@ -100,6 +100,10 @@ BIN_CX = -1.75
 BIN_CY = 1.70
 TABLE_Z = 0.855
 
+# Derived bin geometry (module-level so they don't pollute the @configclass)
+_HALF_W = BIN_INNER_W / 2 + BIN_WALL_T / 2
+_WALL_CZ = TABLE_Z + BIN_WALL_H / 2
+
 
 def _bin_wall(prim_suffix: str, size: tuple, pos: tuple) -> RigidObjectCfg:
     """Helper to create a single kinematic bin wall."""
@@ -152,9 +156,6 @@ class GraspPolicySceneCfg(InteractiveSceneCfg):
     )
 
     # Bin (open-top box from 5 kinematic cuboid walls)
-    half_w = BIN_INNER_W / 2 + BIN_WALL_T / 2
-    wall_cz = TABLE_Z + BIN_WALL_H / 2
-
     bin_bottom: RigidObjectCfg = _bin_wall(
         "bin_bottom",
         size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_INNER_D + 2 * BIN_WALL_T, BIN_WALL_T),
@@ -163,22 +164,22 @@ class GraspPolicySceneCfg(InteractiveSceneCfg):
     bin_wall_left: RigidObjectCfg = _bin_wall(
         "bin_wall_left",
         size=(BIN_WALL_T, BIN_INNER_D, BIN_WALL_H),
-        pos=(BIN_CX - half_w, BIN_CY, wall_cz),
+        pos=(BIN_CX - _HALF_W, BIN_CY, _WALL_CZ),
     )
     bin_wall_right: RigidObjectCfg = _bin_wall(
         "bin_wall_right",
         size=(BIN_WALL_T, BIN_INNER_D, BIN_WALL_H),
-        pos=(BIN_CX + half_w, BIN_CY, wall_cz),
+        pos=(BIN_CX + _HALF_W, BIN_CY, _WALL_CZ),
     )
     bin_wall_front: RigidObjectCfg = _bin_wall(
         "bin_wall_front",
         size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_WALL_T, BIN_WALL_H),
-        pos=(BIN_CX, BIN_CY - half_w, wall_cz),
+        pos=(BIN_CX, BIN_CY - _HALF_W, _WALL_CZ),
     )
     bin_wall_back: RigidObjectCfg = _bin_wall(
         "bin_wall_back",
         size=(BIN_INNER_W + 2 * BIN_WALL_T, BIN_WALL_T, BIN_WALL_H),
-        pos=(BIN_CX, BIN_CY + half_w, wall_cz),
+        pos=(BIN_CX, BIN_CY + _HALF_W, _WALL_CZ),
     )
 
     # Lights

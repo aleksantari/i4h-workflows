@@ -127,7 +127,7 @@ def main():
             def __init__(self, device: str):
                 self.device = device
 
-            def get_action(self, _env, _obs):
+            def get_action(self, _obs):
                 return {"actions": np.zeros((16, 43), dtype=np.float32)}
 
         policy = _DummyPolicy(args_cli.device)
