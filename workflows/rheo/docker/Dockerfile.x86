@@ -20,6 +20,7 @@ FROM ${BASE_IMAGE}
 
 # GR00T Policy Build Arguments
 ARG INSTALL_GROOT=false
+ARG INSTALL_LEROBOT=false
 
 ARG WORKDIR="/workspaces"
 ENV WORKDIR=${WORKDIR}
@@ -198,6 +199,20 @@ COPY ./third_party/IsaacLab-Arena ${WORKDIR}/third_party/IsaacLab-Arena
 
 # Install IsaacLab Arena
 RUN /isaac-sim/python.sh -m pip install -e ${WORKDIR}/third_party/IsaacLab-Arena/
+
+################################
+# Install LeRobot (ACT training)
+################################
+COPY ./tools/env_setup/install_lerobot.sh /tmp/install_lerobot.sh
+RUN chmod +x /tmp/install_lerobot.sh
+RUN if [ "$INSTALL_LEROBOT" = "true" ]; then \
+    PYTHON_EXECUTABLE="/isaac-sim/python.sh" \
+    /tmp/install_lerobot.sh ${WORKDIR}/third_party/lerobot ${WORKDIR}/third_party/openpi && \
+    echo "LeRobot installed successfully"; \
+  else \
+    echo "Skipping LeRobot installation"; \
+  fi && \
+  rm -f /tmp/install_lerobot.sh
 
 # RLinf
 COPY ./third_party/RLinf ${WORKDIR}/third_party/RLinf

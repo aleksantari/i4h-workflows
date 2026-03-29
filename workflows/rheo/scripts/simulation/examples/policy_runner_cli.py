@@ -36,7 +36,7 @@ def setup_policy_argument_parser(args_parser: argparse.ArgumentParser | None = N
     args_parser.add_argument(
         "--policy_type",
         type=str,
-        choices=["zero_action", "replay", "replay_lerobot", "gr00t_closedloop"],
+        choices=["zero_action", "replay", "replay_lerobot", "gr00t_closedloop", "act_closedloop"],
         required=True,
         help="Type of policy to use",
     )
@@ -63,6 +63,8 @@ def validate_policy_args(args: argparse.Namespace) -> None:
         raise ValueError("--config_yaml_path is required when using --policy_type replay_lerobot")
     if args.policy_type == "gr00t_closedloop" and args.policy_config_yaml_path is None:
         raise ValueError("--policy_config_yaml_path is required when using --policy_type gr00t_closedloop")
+    if args.policy_type == "act_closedloop" and args.policy_config_yaml_path is None:
+        raise ValueError("--policy_config_yaml_path is required when using --policy_type act_closedloop")
 
 
 def create_policy(args: argparse.Namespace) -> tuple[PolicyBase, int]:
@@ -90,6 +92,13 @@ def create_policy(args: argparse.Namespace) -> tuple[PolicyBase, int]:
         from simulation.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
 
         policy = CustomGr00tClosedloopPolicy(
+            args.policy_config_yaml_path, num_envs=args.num_envs, device=args.policy_device
+        )
+        num_steps = args.num_steps
+    elif args.policy_type == "act_closedloop":
+        from simulation.act_closedloop_policy import ACTClosedloopPolicy
+
+        policy = ACTClosedloopPolicy(
             args.policy_config_yaml_path, num_envs=args.num_envs, device=args.policy_device
         )
         num_steps = args.num_steps

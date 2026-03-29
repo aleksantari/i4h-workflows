@@ -37,6 +37,7 @@ def register() -> None:
     3. Registers GR00T obs/action converters for dex3
     4. Registers GR00T data config for new_embodiment
     5. Monkeypatches RLinf's get_model to support new_embodiment
+    6. Registers ACT obs/action converters and model factory
     """
     global _registered
     if _registered:
@@ -46,10 +47,12 @@ def register() -> None:
     logger.info("rlinf_ext: Registering i4h extensions...")
 
     _register_gr00t_converters()
+    _register_act_converters()
 
     _register_gr00t_data_config()
 
     _patch_gr00t_get_model()
+    _register_act_model()
 
     _register_isaaclab_envs()
 
@@ -65,6 +68,12 @@ def _register_isaaclab_envs() -> None:
 
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Assemble-Trocar-G129-Dex3-Joint", IsaaclabG129Dx3Env)
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Assemble-Trocar-G129-Dex3-Joint-Eval", IsaaclabG129Dx3Env)
+
+    # Grasp policy task
+    IsaaclabGraspPolicyEnv = _get_grasp_policy_env_class()
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Dex3-Joint", IsaaclabGraspPolicyEnv)
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Dex3-Joint-Eval", IsaaclabGraspPolicyEnv)
+
     logger.debug(f"rlinf_ext: Registered ISAACLAB_ENVS: {list(REGISTER_ISAACLAB_ENVS.keys())}")
 
 
@@ -328,3 +337,192 @@ def _patch_gr00t_get_model() -> None:
 
     rlinf_gr00t_mod.get_model = patched_get_model  # type: ignore[assignment]
     logger.debug("rlinf_ext: Patched get_model for new_embodiment support")
+
+
+# ---------------------------------------------------------------------------
+# Grasp policy environment wrapper
+# ---------------------------------------------------------------------------
+
+
+def _get_grasp_policy_env_class():
+    """Factory function to create IsaaclabGraspPolicyEnv class with proper inheritance."""
+
+    from rlinf.envs.isaaclab.isaaclab_env import IsaaclabBaseEnv
+
+    class IsaaclabGraspPolicyEnv(IsaaclabBaseEnv):
+        """Env wrapper for G1 (29DoF) + Dex3 grasp policy task."""
+
+        def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
+            super().__init__(cfg, num_envs, seed_offset, total_num_processes, worker_info)
+
+        def _make_env_function(self):
+            def make_env_isaaclab():
+                from isaaclab.app import AppLauncher
+
+                sim_app = AppLauncher(headless=True, enable_cameras=True).app
+                import gymnasium as gym
+                import simulation.tasks.grasp_policy  # noqa: F401 - triggers gym.register()
+                from isaaclab_tasks.utils import load_cfg_from_registry
+
+                isaac_env_cfg = load_cfg_from_registry(self.isaaclab_env_id, "env_cfg_entry_point")
+                isaac_env_cfg.scene.num_envs = self.cfg.init_params.num_envs
+
+                env = gym.make(self.isaaclab_env_id, cfg=isaac_env_cfg, render_mode="rgb_array").unwrapped
+                return env, sim_app
+
+            return make_env_isaaclab
+
+        def _wrap_obs(self, obs):
+            left_wrist = obs["camera_images"]["left_wrist_camera"]
+            right_wrist = obs["camera_images"]["right_wrist_camera"]
+            front = obs["camera_images"]["front_camera"]
+
+            dex3_states = obs["policy"]["robot_dex3_joint_state"]  # (B, 14)
+            g129_shoulder_states = obs["policy"]["robot_joint_state"][:, 15:29]  # (B, 14)
+            states = torch.concatenate([g129_shoulder_states, dex3_states], dim=-1)  # (B, 28)
+
+            task_descriptions = [self.task_description] * self.num_envs
+            extra_view_images = torch.stack([left_wrist, right_wrist], dim=1)  # (B, 2, H, W, C)
+
+            return {
+                "main_images": front,
+                "extra_view_images": extra_view_images,
+                "states": states,
+                "task_descriptions": task_descriptions,
+            }
+
+        def add_image(self, obs):
+            """Create a grid of images for video logging."""
+            imgs = obs["camera_images"]["front_camera"].cpu().numpy()
+            num_envs = imgs.shape[0]
+
+            grid_cols = int(np.ceil(np.sqrt(num_envs)))
+            grid_rows = int(np.ceil(num_envs / grid_cols))
+            img_h, img_w = imgs.shape[1:3]
+
+            grid_img = np.zeros((grid_rows * img_h, grid_cols * img_w, 3), dtype=np.uint8)
+
+            for idx in range(num_envs):
+                row, col = idx // grid_cols, idx % grid_cols
+                y0, x0 = row * img_h, col * img_w
+                grid_img[y0 : y0 + img_h, x0 : x0 + img_w] = imgs[idx]
+                cv2.putText(
+                    grid_img,
+                    f"Env {idx}",
+                    (x0 + 10, y0 + 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 255, 255),
+                    2,
+                )
+
+            return grid_img
+
+    return IsaaclabGraspPolicyEnv
+
+
+# ---------------------------------------------------------------------------
+# ACT obs/action converters
+# ---------------------------------------------------------------------------
+
+
+def _register_act_converters() -> None:
+    """Register ACT obs/action converters for dex3."""
+    from rlinf.models.embodiment.gr00t import simulation_io
+
+    simulation_io.OBS_CONVERSION.setdefault("act", _convert_dex3_obs_to_act_format)
+    simulation_io.ACTION_CONVERSION.setdefault("act", _convert_act_action_to_sim)
+    logger.debug("rlinf_ext: Registered ACT obs/action converters")
+
+
+def _convert_dex3_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any]:
+    """Convert RLinf env observations into the dict expected by ACT.
+
+    Input from _wrap_obs():
+      - main_images: (B, H, W, C) torch tensor
+      - extra_view_images: (B, 2, H, W, C) torch tensor [left_wrist, right_wrist]
+      - states: (B, 28) torch tensor
+      - task_descriptions: list[str] length B
+
+    Output (ACT format):
+      - observation.images.cam_left_wrist: (B, C, H, W) float tensor
+      - observation.images.cam_right_wrist: (B, C, H, W) float tensor
+      - observation.images.cam_room: (B, C, H, W) float tensor
+      - observation.state: (B, 28) float tensor
+    """
+    main = env_obs["main_images"]
+    extra = env_obs["extra_view_images"]
+    states = env_obs["states"]
+
+    if isinstance(main, torch.Tensor):
+        # (B, H, W, C) -> (B, C, H, W) float [0, 1]
+        room_view = main.float().permute(0, 3, 1, 2) / 255.0
+        left_wrist = extra[:, 0].float().permute(0, 3, 1, 2) / 255.0
+        right_wrist = extra[:, 1].float().permute(0, 3, 1, 2) / 255.0
+        state = states.float()
+    else:
+        raise TypeError(f"Expected torch.Tensor observations, got {type(main)=}")
+
+    return {
+        "observation.images.cam_left_wrist": left_wrist,
+        "observation.images.cam_right_wrist": right_wrist,
+        "observation.images.cam_room": room_view,
+        "observation.state": state,
+    }
+
+
+def _convert_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray, chunk_size: int = 1) -> Any:
+    """Convert ACT action output into an action tensor for the IsaacLab env.
+
+    ACT outputs (B, chunk_size, 28) directly (not grouped by body part like GR00T).
+    Pad 15 zeros at the front to align with the full 43-DOF robot joint action space.
+    """
+    if isinstance(action_chunk, dict):
+        # If dict, extract the action array
+        action = action_chunk.get("action", action_chunk.get("actions"))
+        if action is None:
+            parts = [v[:, :chunk_size, :] for v in action_chunk.values()]
+            action = np.concatenate(parts, axis=-1)
+        else:
+            action = action[:, :chunk_size, :]
+    else:
+        action = action_chunk[:, :chunk_size, :]
+
+    if isinstance(action, torch.Tensor):
+        action = action.cpu().numpy()
+
+    return np.pad(
+        action,
+        ((0, 0), (0, 0), (15, 0)),
+        mode="constant",
+        constant_values=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Register ACT model factory into RLinf
+# ---------------------------------------------------------------------------
+
+
+def _register_act_model() -> None:
+    """Register ACT's get_model factory so RLinf can load ACT models.
+
+    When cfg.model_type == "act", RLinf dispatches to our get_model function.
+    """
+    try:
+        from rlinf_ext.act_policy import get_model as act_get_model
+
+        # Register into RLinf's model registry if it has one,
+        # otherwise monkeypatch via the existing pattern
+        import rlinf.models.embodiment as embodiment_mod
+
+        if hasattr(embodiment_mod, "MODEL_REGISTRY"):
+            embodiment_mod.MODEL_REGISTRY.setdefault("act", act_get_model)
+        else:
+            # Store reference for use in patched get_model dispatcher
+            if not hasattr(embodiment_mod, "_act_get_model"):
+                embodiment_mod._act_get_model = act_get_model
+
+        logger.debug("rlinf_ext: Registered ACT model factory")
+    except ImportError:
+        logger.warning("rlinf_ext: Could not import act_policy. ACT RL training unavailable.")

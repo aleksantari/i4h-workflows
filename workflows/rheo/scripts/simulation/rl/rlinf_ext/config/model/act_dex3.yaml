@@ -1,0 +1,21 @@
+model_type: "act"
+
+# Model path - should be overridden at runtime
+model_path: "/path/to/act_checkpoint"
+
+# Model precision
+precision: "bf16"
+
+# Action and policy settings (G1 shoulders + Dex3 hands)
+action_dim: 28
+num_action_chunks: 1
+
+# Observation and embodiment settings
+obs_converter_type: "act"
+add_value_head: True
+
+# RL head configuration
+rl_head_config:
+  add_value_head: ${actor.model.add_value_head}
+  disable_dropout: True
+  noise_level: 0.3
