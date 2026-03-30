@@ -252,7 +252,7 @@ class RewardsCfg:
             "bin_x_max": BIN_CX + TARGET_W / 2,
             "bin_y_min": BIN_CY - TARGET_D / 2,
             "bin_y_max": BIN_CY + TARGET_D / 2,
-            "bin_rim_z": TARGET_Z + TARGET_T,
+            "bin_rim_z": TARGET_Z + TARGET_T + 0.05,
             "bin_floor_z": TARGET_Z - 0.05,
             "use_sparse_reward": True,
         },
