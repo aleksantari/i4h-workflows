@@ -69,6 +69,7 @@ from isaaclab.managers import DatasetExportMode
 from isaaclab_mimic.ui.instruction_display import InstructionDisplay
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 from simulation.tasks import assemble_trocar  # noqa: F401
+from simulation.tasks import grasp_policy  # noqa: F401
 
 
 class RateLimiter:

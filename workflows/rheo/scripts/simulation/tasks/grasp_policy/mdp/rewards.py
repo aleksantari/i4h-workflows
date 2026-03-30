@@ -48,6 +48,7 @@ def update_task_stage(
     bin_y_min: float = 1.55,
     bin_y_max: float = 1.85,
     bin_rim_z: float = 0.935,
+    bin_floor_z: float = 0.80,
     print_log: bool = False,
 ) -> torch.Tensor:
     """Check all stage transitions for the grasp-policy task.
@@ -55,10 +56,11 @@ def update_task_stage(
     Stages only advance forward, never backward.
 
     Args:
-        table_height: Height of the table surface (m).
+        table_height: Height of the table surface where the block starts (m).
         lift_threshold: How far above the table the block must be lifted (m).
-        bin_x_min/max, bin_y_min/max: Horizontal bounds of the bin interior.
-        bin_rim_z: Z height of the bin rim (top of walls).
+        bin_x_min/max, bin_y_min/max: Horizontal bounds of the target area.
+        bin_rim_z: Z height of the target surface (top of pad).
+        bin_floor_z: Minimum Z to count as placed (rejects fallen blocks).
         print_log: Print debug info.
     """
     stage = get_task_stage(env)
@@ -80,8 +82,8 @@ def update_task_stage(
     can_advance_1 = (stage == 1) & over_bin
     stage = torch.where(can_advance_1, torch.full_like(stage, 2), stage)
 
-    # Stage 2 -> 3: Block placed inside bin (below rim and within bounds)
-    in_bin = over_bin & (bz < bin_rim_z) & (bz > table_height)
+    # Stage 2 -> 3: Block placed on target (below rim height, above floor, within bounds)
+    in_bin = over_bin & (bz < bin_rim_z) & (bz > bin_floor_z)
     can_advance_2 = (stage == 2) & in_bin
     stage = torch.where(can_advance_2, torch.full_like(stage, 3), stage)
 
@@ -102,6 +104,7 @@ def grasp_reward(
     bin_y_min: float = 1.55,
     bin_y_max: float = 1.85,
     bin_rim_z: float = 0.935,
+    bin_floor_z: float = 0.80,
     use_sparse_reward: bool = True,
     print_log: bool = False,
 ) -> torch.Tensor:
@@ -115,6 +118,7 @@ def grasp_reward(
         bin_y_min=bin_y_min,
         bin_y_max=bin_y_max,
         bin_rim_z=bin_rim_z,
+        bin_floor_z=bin_floor_z,
         print_log=print_log,
     )
     stage = env._task_stage

@@ -222,7 +222,7 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    task_success = DoneTerm(
+    success = DoneTerm(
         func=mdp.task_success_termination,
         time_out=False,
         params={"success_stage": 3},
@@ -253,6 +253,7 @@ class RewardsCfg:
             "bin_y_min": BIN_CY - TARGET_D / 2,
             "bin_y_max": BIN_CY + TARGET_D / 2,
             "bin_rim_z": TARGET_Z + TARGET_T,
+            "bin_floor_z": TARGET_Z - 0.05,
             "use_sparse_reward": True,
         },
     )

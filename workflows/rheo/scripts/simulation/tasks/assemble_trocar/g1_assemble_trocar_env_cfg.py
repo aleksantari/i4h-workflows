@@ -229,7 +229,7 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
     # Task success termination (all stages completed)
-    task_success = DoneTerm(
+    success = DoneTerm(
         func=mdp.task_success_termination,
         time_out=False,  # This is a success termination, not a failure
         params={

@@ -17,13 +17,13 @@
 
 # Record demonstrations for the Grasp-Policy task using AVP hand tracking.
 #
-# This is a thin wrapper around record_demos_assemble_trocar.py with
+# This is a thin wrapper around record_demos.py with
 # grasp_policy-specific defaults.
 #
 # Usage (inside Docker):
 #   bash scripts/simulation/record_demos_grasp_policy.sh [OPTIONS]
 #
-# Options are forwarded to record_demos_assemble_trocar.py. Defaults:
+# Options are forwarded to record_demos.py. Defaults:
 #   --task              Isaac-Grasp-Policy-G129-Dex3-Teleop
 #   --teleop_device     handtracking
 #   --enable_pinocchio  (required for PINK IK with hand tracking)
@@ -46,7 +46,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-python "${SCRIPT_DIR}/record_demos_assemble_trocar.py" \
+python "${SCRIPT_DIR}/record_demos.py" \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device handtracking \
     --enable_pinocchio \
