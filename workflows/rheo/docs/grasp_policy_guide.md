@@ -106,7 +106,7 @@ docker stop cloudxr-runtime 2>/dev/null
 
 # Launch with AVP hand tracking + built-in CloudXR
 ./docker/run_docker.sh -g1.5 \
-    python scripts/simulation/record_demos_assemble_trocar.py \
+    python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device handtracking \
     --enable_pinocchio \
@@ -125,18 +125,32 @@ docker stop cloudxr-runtime 2>/dev/null
 
 ## 3. Recording Demonstrations
 
-A convenience wrapper script is provided for recording demos on the grasp_policy task.
+Record demos using
+[`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py),
+adapted from IsaacLab's upstream `scripts/tools/record_demos.py` with project-specific
+task registration and VR gesture support.
 
 > **Code:**
-> [`scripts/simulation/record_demos_grasp_policy.sh`](../scripts/simulation/record_demos_grasp_policy.sh)
-> wraps the generic
-> [`scripts/simulation/record_demos_assemble_trocar.py`](../scripts/simulation/record_demos_assemble_trocar.py)
-> with grasp_policy defaults.
+> [`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py) —
+> main recording script (IsaacLab-track tasks).
+> [`scripts/simulation/record_demos_grasp_policy.sh`](../scripts/simulation/record_demos_grasp_policy.sh) —
+> convenience wrapper with grasp_policy defaults.
 
 ### Quick Start
 
 ```bash
 # Record 10 demos with AVP hand tracking
+./docker/run_docker.sh -g1.5 \
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio \
+    --enable_cameras \
+    --dataset_file ./datasets/grasp_policy/demo.hdf5 \
+    --num_demos 10 \
+    --xr
+
+# Or use the convenience wrapper
 ./docker/run_docker.sh -g1.5 \
     bash scripts/simulation/record_demos_grasp_policy.sh --num_demos 10 --xr
 ```
@@ -155,44 +169,91 @@ The wrapper sets these defaults (all overridable via extra arguments):
 
 ### Recording Controls
 
-| Key | Action |
-|-----|--------|
-| **B** | Start recording a demo |
-| **S** | Save current demo (mark as success) |
-| **R** | Reset environment (discard current demo) |
+When using XR (AVP/Quest), the recording is controlled via **VR gestures** in the
+headset GUI (no keyboard needed):
+
+| Gesture / Button | Action |
+|------------------|--------|
+| **START** | Start recording a demo |
+| **STOP** | Stop and save current demo |
+| **RESET** | Reset environment (discard current demo) |
+
+**Auto-success detection:** The script evaluates the task's `success` termination
+condition every step. When the block is successfully placed on the target pad
+(stage 3), the demo is automatically saved after `--num_success_steps` consecutive
+successes (default: 1). This means you can simply perform the task and the recording
+will auto-complete without needing to press STOP.
+
+When all `--num_demos` are recorded, the script saves the HDF5 file and exits
+automatically.
 
 ### Custom Recording Examples
 
 ```bash
 # Record with motion controllers instead of hand tracking
 ./docker/run_docker.sh -g1.5 \
-    bash scripts/simulation/record_demos_grasp_policy.sh \
-    --teleop_device motion_controllers --num_demos 5 --xr
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --teleop_device motion_controllers \
+    --enable_pinocchio --enable_cameras \
+    --dataset_file /datasets/grasp_policy/session1.hdf5 \
+    --num_demos 5 --xr
 
-# Custom output path
+# Require 10 consecutive success steps before auto-saving
 ./docker/run_docker.sh -g1.5 \
-    bash scripts/simulation/record_demos_grasp_policy.sh \
-    --dataset_file /datasets/grasp_policy/session1.hdf5 --num_demos 20 --xr
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio --enable_cameras \
+    --dataset_file ./datasets/grasp_policy/demo.hdf5 \
+    --num_demos 20 --num_success_steps 10 --xr
 ```
+
+### Replaying Recorded Demos
+
+Replay saved demonstrations to visually verify quality or validate success rates
+using
+[`scripts/simulation/replay_demos_isaaclab.py`](../scripts/simulation/replay_demos_isaaclab.py).
+
+```bash
+# Replay all episodes
+./docker/run_docker.sh -g1.5 \
+    python scripts/simulation/replay_demos_isaaclab.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
+    --enable_cameras --enable_pinocchio
+
+# Replay with success validation (reports pass/fail per episode)
+./docker/run_docker.sh -g1.5 \
+    python scripts/simulation/replay_demos_isaaclab.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
+    --enable_cameras --enable_pinocchio \
+    --validate_success_rate
+
+# Replay only specific episodes
+./docker/run_docker.sh -g1.5 \
+    python scripts/simulation/replay_demos_isaaclab.py \
+    --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
+    --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
+    --enable_cameras --enable_pinocchio \
+    --select_episodes 0 2 4
+```
+
+During replay, press **B** to pause and **N** to resume.
+
+> **Note:** Use the `Teleop` task variant (not `Joint`) for replay since demos are
+> recorded with the 23D teleop action space.
 
 ### HDF5 Output Format
 
-Each recorded demo is stored as an HDF5 group:
-
-```
-/data/demo_N/
-    obs/
-        robot_joint_state          (T, 87)   Full body joint positions
-        robot_dex3_joint_state     (T, 14)   Dex3 hand joint positions
-        front_camera               (T, H, W, C)
-        left_wrist_camera          (T, H, W, C)
-        right_wrist_camera         (T, H, W, C)
-    processed_actions              (T, 43)   WBC+PINK joint targets
-```
+Each recorded demo is stored as an HDF5 episode managed by IsaacLab's
+`HDF5DatasetFileHandler`. The file includes scene states for deterministic replay
+via `env.reset_to()`.
 
 > **Recommendation:** Record 20-50 high-quality demonstrations for initial ACT training.
-> Quality matters more than quantity -- discard failed attempts with **R** and only save
-> successful grasps with **S**.
+> Quality matters more than quantity -- with auto-success detection, only successful
+> grasps are saved automatically.
 
 ---
 
