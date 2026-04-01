@@ -39,15 +39,16 @@ Teleoperate (AVP)  -->  Record HDF5  -->  Convert to LeRobot  -->  Train ACT (IL
 
 ### Docker Image
 
-Build the Docker image with LeRobot enabled:
+Build the grasp-policy Docker image (includes LeRobot, no GR00T):
 
 ```bash
 cd workflows/rheo
-docker/build_docker.sh -g1.5 --build-arg INSTALL_LEROBOT=true
+./docker/run_docker_grasp.sh -r
 ```
 
-> **Code:** LeRobot install is configured in
-> [`docker/Dockerfile.x86`](../docker/Dockerfile.x86) via the `INSTALL_LEROBOT`
+> **Code:** Docker config in
+> [`docker/Dockerfile.grasp`](../docker/Dockerfile.grasp) and
+> [`docker/run_docker_grasp.sh`](../docker/run_docker_grasp.sh)
 > build arg. It installs LeRobot at the pinned commit `c75455a` using
 > [`tools/env_setup/install_lerobot.sh`](../../tools/env_setup/install_lerobot.sh).
 
@@ -106,7 +107,7 @@ The lower body is locked in a standing posture.
 docker stop cloudxr-runtime 2>/dev/null
 
 # Launch with AVP hand tracking + built-in CloudXR
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device handtracking \
@@ -141,7 +142,7 @@ task registration and VR gesture support.
 
 ```bash
 # Record 10 demos with AVP hand tracking
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device handtracking \
@@ -152,7 +153,7 @@ task registration and VR gesture support.
     --xr
 
 # Or use the convenience wrapper
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     bash scripts/simulation/record_demos_grasp_policy.sh --num_demos 10 --xr
 ```
 
@@ -192,7 +193,7 @@ automatically.
 
 ```bash
 # Record with motion controllers instead of hand tracking
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device motion_controllers \
@@ -201,7 +202,7 @@ automatically.
     --num_demos 5 --xr
 
 # Require 10 consecutive success steps before auto-saving
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --teleop_device handtracking \
@@ -218,14 +219,14 @@ using
 
 ```bash
 # Replay all episodes
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
     --enable_cameras --enable_pinocchio
 
 # Replay with success validation (reports pass/fail per episode)
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
@@ -233,7 +234,7 @@ using
     --validate_success_rate
 
 # Replay only specific episodes
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-Dex3-Teleop \
     --dataset_file /workspaces/workflows/rheo/datasets/grasp_policy/demo.hdf5 \
@@ -294,7 +295,7 @@ from `robot_dex3_joint_state` (14 DOF).
 ### Run Conversion
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
     --config scripts/config/g1_grasp_policy_dataset.yaml \
     --hdf5_dir /datasets/grasp_policy \
@@ -350,7 +351,7 @@ pipeline.
 ### Quick Start
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     bash scripts/policy/train_act_grasp_policy.sh \
     --dataset_path /datasets/grasp_policy_lerobot
 ```
@@ -540,7 +541,7 @@ registers:
 ### Quick Start
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     bash scripts/simulation/rl/train_act_grasp_policy.sh train \
     --model_path /models/act_grasp_policy
 ```
@@ -625,7 +626,7 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 ### ACT IL Checkpoint
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy.py \
     --policy_type act \
     --model_path /models/act_grasp_policy \
@@ -636,7 +637,7 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 ### ACT RL Checkpoint
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy.py \
     --policy_type act \
     --model_path /path/to/rl_checkpoint \
@@ -647,14 +648,14 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 ### GR00T Checkpoint (for comparison)
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy.py \
     --policy_type gr00t \
     --model_path /models/gr00t_grasp_policy \
     --num_episodes 10
 
 # GR00T RL checkpoint (requires --rl_ckpt flag)
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy.py \
     --policy_type gr00t \
     --model_path /path/to/gr00t_rl_ckpt \
@@ -667,7 +668,7 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 Verify the eval pipeline works without a trained model:
 
 ```bash
-./docker/run_docker.sh -g1.5 \
+./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy.py --test
 ```
 

@@ -14,43 +14,37 @@
 # limitations under the License.
 
 # LeRobot ACT training configuration for grasp_policy task
-# Usage: python -m lerobot.scripts.train --config-path <this_file>
+# Usage: python -m lerobot.scripts.train --config_path <this_file>
 #
 # This config trains an ACT (Action Chunking Transformer) policy on
 # demonstration data collected from the grasp_policy task.
 
 seed: 1000
-dataset_repo_id: null  # Set via --dataset-repo-id or override
 
-training:
-  offline_steps: 100000
-  online_steps: 0
-  eval_freq: 10000
-  save_freq: 25000
-  log_freq: 250
-  save_checkpoint: true
-  batch_size: 64
-  lr: 1e-5
-  lr_backbone: 1e-5
-  weight_decay: 1e-4
-  grad_clip_norm: 10.0
-  online_steps_between_rollouts: 1
-  delta_timestamps:
-    observation.state: "[i / ${fps} for i in range(1)]"
-    action: "[i / ${fps} for i in range(${policy.chunk_size})]"
+# Dataset (repo_id set via CLI --dataset.repo_id)
+dataset:
+  repo_id: placeholder
 
+# Training params
+steps: 100000
+batch_size: 64
+eval_freq: 10000
+save_freq: 25000
+log_freq: 250
+save_checkpoint: true
+num_workers: 4
+
+# Eval
 eval:
   n_episodes: 10
   batch_size: 10
 
-fps: 30
-
 policy:
-  name: act
+  type: act
 
   # ACT architecture
-  chunk_size: 100  # Action prediction horizon (ACT typically uses 50-100)
-  n_obs_steps: 1   # Number of observation frames to condition on
+  chunk_size: 100
+  n_obs_steps: 1
 
   # Transformer dimensions
   dim_model: 512
@@ -60,35 +54,46 @@ policy:
   n_encoder_layers: 4
   n_decoder_layers: 1
 
-  # VAE settings (ACT uses a CVAE during training)
+  # VAE settings
   use_vae: true
   latent_dim: 32
   n_vae_encoder_layers: 4
   kl_weight: 10.0
 
-  # Input dimensions (28D state/action: left_arm(7) + right_arm(7) + left_hand(7) + right_hand(7))
-  input_shapes:
-    observation.state: [28]
-    observation.images.cam_left_wrist: [3, 480, 640]
-    observation.images.cam_right_wrist: [3, 480, 640]
-    observation.images.cam_room: [3, 480, 640]
-  output_shapes:
-    action: [28]
+  # Input features (28D state/action: left_arm(7) + right_arm(7) + left_hand(7) + right_hand(7))
+  input_features:
+    observation.state:
+      type: STATE
+      shape: [28]
+    observation.images.cam_left_wrist:
+      type: VISUAL
+      shape: [3, 480, 640]
+    observation.images.cam_right_wrist:
+      type: VISUAL
+      shape: [3, 480, 640]
+    observation.images.cam_room:
+      type: VISUAL
+      shape: [3, 480, 640]
+  output_features:
+    action:
+      type: ACTION
+      shape: [28]
 
-  # Normalization (computed from dataset stats on first run)
-  input_normalization_modes:
-    observation.state: mean_std
-    observation.images.cam_left_wrist: mean_std
-    observation.images.cam_right_wrist: mean_std
-    observation.images.cam_room: mean_std
-  output_normalization_modes:
-    action: mean_std
+  # Normalization (keyed by FeatureType, computed from dataset stats)
+  normalization_mapping:
+    VISUAL: MEAN_STD
+    STATE: MEAN_STD
+    ACTION: MEAN_STD
 
   # Vision backbone
   vision_backbone: resnet18
   pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
   replace_final_stride_with_dilation: false
 
-  # Crop randomization (data augmentation for images)
-  crop_shape: [456, 608]
-  crop_is_random: true
+  # Disable hub push (local training only)
+  push_to_hub: false
+
+  # Optimizer (ACT-specific, used by get_optimizer_preset)
+  optimizer_lr: 1e-5
+  optimizer_weight_decay: 1e-4
+  optimizer_lr_backbone: 1e-5
