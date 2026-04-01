@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Root directory for all data storage
-data_root: "/workspaces"
+data_root: "/workspaces/workflows/rheo/datasets/grasp_policy"
 
 # Instruction given to the policy in natural language
 language_instruction: "pick up block and place in bin"

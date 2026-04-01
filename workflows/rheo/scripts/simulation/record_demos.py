@@ -209,6 +209,14 @@ def create_environment_config(
             env_cfg = remove_camera_configs(env_cfg)
         env_cfg.sim.render.antialiasing_mode = "DLSS"
 
+    # Copy camera observations into policy group so they get recorded
+    if args_cli.enable_cameras and hasattr(env_cfg, "observations"):
+        obs_cfg = env_cfg.observations
+        if hasattr(obs_cfg, "camera_images") and obs_cfg.camera_images is not None:
+            for name in ("front_camera", "left_wrist_camera", "right_wrist_camera"):
+                if hasattr(obs_cfg.camera_images, name):
+                    setattr(obs_cfg.policy, name, getattr(obs_cfg.camera_images, name))
+
     # modify configuration such that the environment runs indefinitely until
     # the goal is reached or other termination conditions are met
     env_cfg.terminations.time_out = None
@@ -279,12 +287,6 @@ def setup_ui(label_text: str, env: gym.Env) -> InstructionDisplay:
 def process_success_condition(env: gym.Env, success_term: object | None, success_step_count: int) -> tuple[int, bool]:
     if success_term is None:
         return success_step_count, False
-
-    # Debug: print task stage periodically
-    if hasattr(env, "_task_stage") and hasattr(env, "episode_length_buf") and env.episode_length_buf[0].item() % 100 == 0:
-        stage = env._task_stage
-        block_pos = env.scene["block"].data.root_pos_w[0] - env.scene.env_origins[0]
-        print(f"[DEBUG] step={env.episode_length_buf[0].item()} stage={stage.tolist()} block=({block_pos[0]:.3f}, {block_pos[1]:.3f}, {block_pos[2]:.3f})")
 
     if bool(success_term.func(env, **success_term.params)[0]):
         success_step_count += 1

@@ -27,10 +27,11 @@ Teleoperate (AVP)  -->  Record HDF5  -->  Convert to LeRobot  -->  Train ACT (IL
 3. [Recording Demonstrations](#3-recording-demonstrations)
 4. [Data Conversion (HDF5 to LeRobot)](#4-data-conversion-hdf5-to-lerobot)
 5. [ACT Imitation Learning Training](#5-act-imitation-learning-training)
-6. [RL Post-Training (PPO via RLinf)](#6-rl-post-training-ppo-via-rlinf)
-7. [Evaluation](#7-evaluation)
-8. [Architecture Reference](#8-architecture-reference)
-9. [Troubleshooting](#9-troubleshooting)
+6. [What You Can and Cannot Change Between IL and RL](#6-what-you-can-and-cannot-change-between-il-and-rl)
+7. [RL Post-Training (PPO via RLinf)](#7-rl-post-training-ppo-via-rlinf)
+8. [Evaluation](#8-evaluation)
+9. [Architecture Reference](#9-architecture-reference)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -420,7 +421,85 @@ cp -r results/act_grasp_policy/train_*/checkpoint_100000 ~/models/act_grasp_poli
 
 ---
 
-## 6. RL Post-Training (PPO via RLinf)
+## 6. What You Can and Cannot Change Between IL and RL
+
+Understanding the boundary between IL and RL is critical: the IL checkpoint freezes
+certain interfaces, but RL has full freedom over its own training signal and critic.
+
+### Locked After IL Demo Collection
+
+These are baked into the recorded data and/or the IL checkpoint. Changing them
+requires re-collecting demos and retraining IL.
+
+| Thing | Why |
+|-------|-----|
+| **Policy observation dimensions** (28D joints + 3 cameras) | IL checkpoint expects exact input shape |
+| **Camera resolution, positions, and mount points** | Images would look different — policy fails |
+| **Joint ordering or which joints are observed** | 28D mapping is baked into the data |
+| **Robot embodiment (URDF/USD)** | Different kinematics = different joint meanings |
+| **Action space dimensions** (28D) | IL checkpoint outputs this exact shape |
+| **Scene objects/prims visible in cameras** | Policy learned visual features from your demos |
+| **Control frequency / dt** | Actions were recorded at a specific rate |
+
+### Free to Change for RL Post-Training
+
+These only affect the RL training loop — the IL checkpoint's input/output interface
+is untouched.
+
+| Thing | Why it's safe |
+|-------|---------------|
+| **Critic observation group** (add object poses, goals, distances) | Critic is a new `ValueHead` trained from scratch |
+| **Reward function** (terms, weights, stages) | Rewards only guide PPO updates |
+| **Number of reward stages / curriculum** | RL training signal only |
+| **Termination conditions** | Episode management, doesn't touch policy inputs |
+| **Episode length** | Just a training hyperparameter |
+| **Number of parallel envs** | Infrastructure scaling |
+| **PPO hyperparameters** (lr, clip, entropy coeff, etc.) | RL optimizer settings |
+| **Object placement randomization** | RL needs this for generalization; policy obs are unchanged |
+| **Domain randomization** (lighting, textures) | Safe if within the distribution the policy can handle |
+
+### Gray Area (Be Careful)
+
+| Thing | Risk |
+|-------|------|
+| **Adding new objects to scene** | Safe if not in camera view; risky if visible (distribution shift) |
+| **Changing table height / workspace layout** | If it changes what cameras see or arm reachability, could break policy |
+| **Action clipping / scaling** | If RL wrapper rescales actions differently than IL expected, outputs get misinterpreted |
+
+### Mental Model
+
+```
+                    ┌─────────────────────┐
+  policy obs ──────►│  IL Policy (frozen)  │──────► actions
+  (28D + 3 cams)    │  input/output locked │        (28D)
+                    └─────────────────────┘
+
+                    ┌─────────────────────┐
+  critic obs ──────►│  ValueHead (new)     │──────► value estimate
+  (anything)        │  trained from scratch│
+                    └─────────────────────┘
+
+  rewards, terminations, stages ── only guide the RL optimizer
+```
+
+**Key takeaway:** Everything above the IL Policy box (its inputs and outputs) is
+locked after demo collection. Everything below (critic, rewards, terminations) is
+yours to iterate on freely across RL runs without re-collecting data or retraining IL.
+
+> **Note:** Neither the `Isaac-Grasp-Policy-G129-Dex3-Joint` (RL) nor the
+> `Isaac-Grasp-Policy-G129-Dex3-Teleop` (IL) task currently includes a separate
+> critic observation group with privileged information (object poses, goal positions).
+> Both variants expose the same observations. Adding an asymmetric critic group to
+> the env cfg and wiring it through the RLinf obs converter is a future enhancement
+> that would not require any changes to the IL pipeline.
+
+---
+
+## 7. RL Post-Training (PPO via RLinf)
+
+> **Important:** Read [Section 6](#6-what-you-can-and-cannot-change-between-il-and-rl)
+> first to understand what you can safely modify at this stage without invalidating
+> your IL checkpoint or demo data.
 
 Fine-tune the IL-trained ACT checkpoint with PPO reinforcement learning in simulation.
 
@@ -527,7 +606,7 @@ tensorboard --logdir scripts/simulation/rl/results/act_grasp_policy/
 
 ---
 
-## 7. Evaluation
+## 8. Evaluation
 
 Evaluate trained ACT checkpoints (IL or RL) in simulation.
 
@@ -637,7 +716,7 @@ eval_videos/<timestamp>_act_<model>_*.mp4        # Videos (if --save_video)
 
 ---
 
-## 8. Architecture Reference
+## 9. Architecture Reference
 
 ### Pipeline Architecture
 
@@ -729,7 +808,7 @@ RLINF_EXT_MODULE=rlinf_ext  (env var)
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### CloudXR / AVP
 
