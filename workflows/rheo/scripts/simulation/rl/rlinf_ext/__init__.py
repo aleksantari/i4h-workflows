@@ -48,6 +48,7 @@ def register() -> None:
 
     _register_gr00t_converters()
     _register_act_converters()
+    _register_inspire_ftp_act_converters()
 
     _register_gr00t_data_config()
 
@@ -73,6 +74,11 @@ def _register_isaaclab_envs() -> None:
     IsaaclabGraspPolicyEnv = _get_grasp_policy_env_class()
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Dex3-Joint", IsaaclabGraspPolicyEnv)
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Dex3-Joint-Eval", IsaaclabGraspPolicyEnv)
+
+    # Inspire FTP grasp policy task
+    IsaaclabGraspPolicyInspireEnv = _get_grasp_policy_inspire_env_class()
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-InspireFTP-Joint", IsaaclabGraspPolicyInspireEnv)
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval", IsaaclabGraspPolicyInspireEnv)
 
     logger.debug(f"rlinf_ext: Registered ISAACLAB_ENVS: {list(REGISTER_ISAACLAB_ENVS.keys())}")
 
@@ -549,3 +555,151 @@ def _register_act_model() -> None:
         logger.debug("rlinf_ext: Registered ACT model factory")
     except ImportError:
         logger.warning("rlinf_ext: Could not import act_policy. ACT RL training unavailable.")
+
+
+# ---------------------------------------------------------------------------
+# Inspire FTP grasp policy environment wrapper
+# ---------------------------------------------------------------------------
+
+
+def _get_grasp_policy_inspire_env_class():
+    """Factory function to create IsaaclabGraspPolicyInspireEnv class."""
+
+    from rlinf.envs.isaaclab.isaaclab_env import IsaaclabBaseEnv
+
+    class IsaaclabGraspPolicyInspireEnv(IsaaclabBaseEnv):
+        """Env wrapper for G1 (29DoF) + Inspire FTP grasp policy task."""
+
+        def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
+            super().__init__(cfg, num_envs, seed_offset, total_num_processes, worker_info)
+
+        def _make_env_function(self):
+            def make_env_isaaclab():
+                from isaaclab.app import AppLauncher
+
+                sim_app = AppLauncher(headless=True, enable_cameras=True).app
+                import gymnasium as gym
+                import simulation.tasks.grasp_policy_inspire  # noqa: F401 - triggers gym.register()
+                from isaaclab_tasks.utils import load_cfg_from_registry
+
+                isaac_env_cfg = load_cfg_from_registry(self.isaaclab_env_id, "env_cfg_entry_point")
+                isaac_env_cfg.scene.num_envs = self.cfg.init_params.num_envs
+
+                env = gym.make(self.isaaclab_env_id, cfg=isaac_env_cfg, render_mode="rgb_array").unwrapped
+                return env, sim_app
+
+            return make_env_isaaclab
+
+        def _wrap_obs(self, obs):
+            front = obs["camera_images"]["front_camera"]
+
+            inspire_states = obs["policy"]["robot_inspire_joint_state"]  # (B, 12)
+            g129_shoulder_states = obs["policy"]["robot_joint_state"][:, 15:29]  # (B, 14)
+            states = torch.concatenate([g129_shoulder_states, inspire_states], dim=-1)  # (B, 26)
+
+            task_descriptions = [self.task_description] * self.num_envs
+
+            return {
+                "main_images": front,
+                "states": states,
+                "task_descriptions": task_descriptions,
+                "camera_images_raw": obs["camera_images"],
+            }
+
+        def add_image(self, obs):
+            """Create a grid of images for video logging."""
+            imgs = obs["camera_images"]["front_camera"].cpu().numpy()
+            num_envs = imgs.shape[0]
+
+            grid_cols = int(np.ceil(np.sqrt(num_envs)))
+            grid_rows = int(np.ceil(num_envs / grid_cols))
+            img_h, img_w = imgs.shape[1:3]
+
+            grid_img = np.zeros((grid_rows * img_h, grid_cols * img_w, 3), dtype=np.uint8)
+
+            for idx in range(num_envs):
+                row, col = idx // grid_cols, idx % grid_cols
+                y0, x0 = row * img_h, col * img_w
+                grid_img[y0 : y0 + img_h, x0 : x0 + img_w] = imgs[idx]
+                cv2.putText(
+                    grid_img,
+                    f"Env {idx}",
+                    (x0 + 10, y0 + 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (255, 255, 255),
+                    2,
+                )
+
+            return grid_img
+
+    return IsaaclabGraspPolicyInspireEnv
+
+
+# ---------------------------------------------------------------------------
+# Inspire FTP ACT obs/action converters
+# ---------------------------------------------------------------------------
+
+
+def _register_inspire_ftp_act_converters() -> None:
+    """Register Inspire FTP ACT obs/action converters."""
+    from rlinf.models.embodiment.gr00t import simulation_io
+
+    simulation_io.OBS_CONVERSION.setdefault("act_inspire_ftp", _convert_inspire_obs_to_act_format)
+    simulation_io.ACTION_CONVERSION.setdefault("act_inspire_ftp", _convert_inspire_act_action_to_sim)
+    logger.debug("rlinf_ext: Registered Inspire FTP ACT obs/action converters")
+
+
+def _convert_inspire_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any]:
+    """Convert RLinf env observations into the dict expected by ACT (Inspire FTP).
+
+    Input from _wrap_obs():
+      - camera_images_raw: dict[str, (B, H, W, C)] — raw camera tensors
+      - states: (B, 26) torch tensor (arms + actuated hands)
+
+    Output (ACT format):
+      - observation.images.cam_room: (B, C, H, W) float tensor
+      - observation.state: (B, 26) float tensor
+    """
+    from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+
+    exp_config = InspireFTPExperimentConfig.from_env_or_default()
+
+    act_obs: dict[str, Any] = {}
+    raw_cameras = env_obs.get("camera_images_raw")
+    if raw_cameras is not None:
+        for sim_key, act_key in exp_config.cameras.items():
+            img = raw_cameras[sim_key]  # (B, H, W, C)
+            act_obs[act_key] = img.float().permute(0, 3, 1, 2) / 255.0
+    else:
+        main = env_obs["main_images"]
+        act_obs["observation.images.cam_room"] = main.float().permute(0, 3, 1, 2) / 255.0
+
+    states = env_obs["states"]  # (B, 26) from _wrap_obs
+    act_obs["observation.state"] = states.float()
+
+    return act_obs
+
+
+def _convert_inspire_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray, chunk_size: int = 1) -> Any:
+    """Convert ACT action output into an action tensor for the Inspire FTP env.
+
+    Uses InspireFTPExperimentConfig to scatter 26D policy actions into 53D sim space.
+    """
+    from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+
+    if isinstance(action_chunk, dict):
+        action = action_chunk.get("action", action_chunk.get("actions"))
+        if action is None:
+            parts = [v[:, :chunk_size, :] for v in action_chunk.values()]
+            action = np.concatenate(parts, axis=-1)
+        else:
+            action = action[:, :chunk_size, :]
+    else:
+        action = action_chunk[:, :chunk_size, :]
+
+    if isinstance(action, torch.Tensor):
+        action = action.cpu().numpy()
+
+    exp_config = InspireFTPExperimentConfig.from_env_or_default()
+    return exp_config.scatter_to_sim_numpy(action)
