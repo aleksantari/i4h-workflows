@@ -19,6 +19,31 @@
 # This config trains an ACT (Action Chunking Transformer) policy on
 # demonstration data collected from the grasp_policy task.
 
+# ---------------------------------------------------------------------------
+# Experiment: which cameras and joint groups to use.
+# Default below reproduces the original 3-camera, 28-DOF behaviour.
+# To experiment, comment out cameras or joint groups and update
+# input_features / output_features shapes to match.
+#
+# Example — right side only (2 cameras, 14 DOF):
+#   cameras:
+#     front_camera: "observation.images.cam_room"
+#     right_wrist_camera: "observation.images.cam_right_wrist"
+#   joint_groups: [right_arm, right_hand]
+#   (also set observation.state shape to [14], action shape to [14],
+#    and remove observation.images.cam_left_wrist from input_features)
+# ---------------------------------------------------------------------------
+experiment:
+  cameras:
+    front_camera: "observation.images.cam_room"
+    left_wrist_camera: "observation.images.cam_left_wrist"
+    right_wrist_camera: "observation.images.cam_right_wrist"
+  joint_groups:
+    - left_arm    # 7 DOF, env positions 15-21
+    - right_arm   # 7 DOF, env positions 22-28
+    - left_hand   # 7 DOF, dex3 positions 0-6,  sim positions 29-35
+    - right_hand  # 7 DOF, dex3 positions 7-13, sim positions 36-42
+
 seed: 1000
 
 # Dataset (repo_id set via CLI --dataset.repo_id)

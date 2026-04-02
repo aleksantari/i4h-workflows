@@ -209,9 +209,13 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         """
         act_obs = {}
 
-        # Concatenate state parts into flat 28D vector
+        # Concatenate state parts into flat vector (config-driven joint groups)
+        from utils.act_experiment_config import ACTExperimentConfig
+
+        exp_config = ACTExperimentConfig.from_env_or_default()
+
         state_parts = []
-        for key in ["state.left_arm", "state.right_arm", "state.left_hand", "state.right_hand"]:
+        for key in exp_config.rlinf_state_keys():
             if key in observations:
                 val = observations[key]
                 if isinstance(val, np.ndarray):
@@ -222,12 +226,8 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         if state_parts:
             act_obs["observation.state"] = torch.cat(state_parts, dim=-1)
 
-        # Convert video observations to (B, C, H, W)
-        video_key_map = {
-            "video.left_wrist_view": "observation.images.cam_left_wrist",
-            "video.right_wrist_view": "observation.images.cam_right_wrist",
-            "video.room_view": "observation.images.cam_room",
-        }
+        # Convert video observations to (B, C, H, W) (config-driven cameras)
+        video_key_map = exp_config.rlinf_video_keys()
         for rlinf_key, act_key in video_key_map.items():
             if rlinf_key in observations:
                 img = observations[rlinf_key]

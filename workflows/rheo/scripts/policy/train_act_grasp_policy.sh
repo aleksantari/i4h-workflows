@@ -109,6 +109,8 @@ CMD_ARGS+=("${EXTRA_ARGS[@]}")
 
 # Set environment
 export PYTHONPATH="${WORKSPACE_ROOT}/workflows/rheo/scripts:${PYTHONPATH}"
+# Expose experiment config (cameras + joint groups) to downstream code
+export ACT_EXPERIMENT_CONFIG="${CONFIG_PATH}"
 
 # Generate episodes_stats.jsonl if missing (required by LeRobot v2.1 loader)
 STATS_FILE="${DATASET_PATH}/meta/episodes_stats.jsonl"

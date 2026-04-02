@@ -315,19 +315,32 @@ IsaacLab environment
     robot_joint_state: 87D (full body including fingers)
     robot_dex3_joint_state: 14D (Dex3 hand joints)
             |
-    Extract arm joints: body_state[:, 15:29] = 14D
-    (left_arm(7) + right_arm(7))
+    ACTExperimentConfig.extract_state(body_87d, dex3_14d)
+    Selects configured joint groups (default: all 4)
             |
-    Concatenate with hand joints: 14D + 14D = 28D
+    ACT input/output: policy_dim (default 28D, configurable)
     [left_arm(7) | right_arm(7) | left_hand(7) | right_hand(7)]
             |
-    ACT input/output: 28D
-            |
-    Pad with 15 leading zeros (indices 0-14: legs + waist)
+    ACTExperimentConfig.scatter_to_sim(policy_action)
+    Places joints at correct 43D positions
             |
     Simulator action: 43D
     [legs(10) | waist(5) | left_arm(7) | right_arm(7) | left_hand(7) | right_hand(7)]
 ```
+
+### Joint Group → Sim Position Mapping
+
+| Joint Group | Body State Indices | Dex3 Indices | 43D Sim Positions |
+|-------------|-------------------|--------------|-------------------|
+| `left_arm` | 15–21 | — | 15–21 |
+| `right_arm` | 22–28 | — | 22–28 |
+| `left_hand` | — | 0–6 | 29–35 |
+| `right_hand` | — | 7–13 | 36–42 |
+
+When using a subset (e.g., `[right_arm, right_hand]`), `extract_state()` selects
+only those groups from the raw observations (producing 14D), and
+`scatter_to_sim()` places the 14D output at positions [22–28, 36–42] in the 43D
+action tensor, with zeros elsewhere.
 
 ### Why ACT Does Not Need Joint Remapping
 
@@ -335,9 +348,10 @@ GR00T's internal joint ordering differs from the simulator's 43D ordering, so it
 requires config-driven remapping via `remap_policy_joints_to_sim_joints()` in
 [`joint_conversion.py`](../scripts/utils/joint_conversion.py).
 
-ACT's 28D output is trained on data that was extracted in the same fixed order
-(`body_state[15:29]` + `dex3_state`), so the mapping is a simple concatenation
-with a fixed 15-zero prefix. No remapping configuration is needed.
+ACT's output is trained on data that was extracted in the same fixed order
+(`body_state[15:29]` + `dex3_state`), so the mapping is handled by
+`ACTExperimentConfig.scatter_to_sim()` which places each group at its known
+sim positions. No external remapping configuration is needed.
 
 ---
 
@@ -430,6 +444,53 @@ RLinf selects model type via YAML config:
 ---
 
 ## 8. Configuration Reference
+
+### Experiment Config (Camera & Joint Selection)
+
+> **Code:** [`scripts/utils/act_experiment_config.py`](../scripts/utils/act_experiment_config.py)
+
+The `experiment:` section in `act_config.yaml` is the single source of truth for
+which cameras and joint groups the ACT pipeline uses. All downstream consumers
+(IL eval, RL obs/action converters, RL policy wrapper) read from this config via
+the `ACTExperimentConfig` dataclass.
+
+```yaml
+experiment:
+  cameras:
+    front_camera: "observation.images.cam_room"
+    # left_wrist_camera: "observation.images.cam_left_wrist"  # comment out to exclude
+    right_wrist_camera: "observation.images.cam_right_wrist"
+  joint_groups:
+    # - left_arm
+    - right_arm
+    # - left_hand
+    - right_hand
+```
+
+When changing the experiment config, also update the `input_features` and
+`output_features` shapes in the same YAML to match:
+
+| Experiment | `observation.state` shape | `action` shape | Camera entries |
+|------------|--------------------------|----------------|----------------|
+| Default (all) | `[28]` | `[28]` | 3 cameras |
+| Right-side only | `[14]` | `[14]` | 2 cameras (remove left wrist) |
+| Arms only | `[14]` | `[14]` | 3 cameras |
+
+**How the config propagates:**
+
+| Stage | Consumer | Mechanism |
+|-------|----------|-----------|
+| IL training | `train_act_grasp_policy.sh` | Exports `ACT_EXPERIMENT_CONFIG` env var |
+| IL eval | `ACTClosedloopPolicy` | Reads `experiment_config_path` from eval YAML |
+| RL training | `rlinf_ext` converters | `ACTExperimentConfig.from_env_or_default()` |
+| RL policy | `act_policy.py` | `ACTExperimentConfig.from_env_or_default()` |
+
+**Key methods on `ACTExperimentConfig`:**
+
+- `extract_state(body_87d, dex3_14d)` — selects configured joint groups from raw env observations
+- `scatter_to_sim(policy_action)` — places policy-dim actions at correct 43D sim positions
+- `rlinf_state_keys()` — returns RLinf state key names for configured groups
+- `rlinf_video_keys()` — returns RLinf video key to ACT feature key mapping
 
 ### act_config.yaml
 
@@ -567,7 +628,8 @@ Total maximum reward per episode: **3.0**
 | **Data conversion** | [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | HDF5 to LeRobot v2.1 (parquet + MP4) |
 | **Dataset config** | [`scripts/config/g1_grasp_policy_dataset.yaml`](../scripts/config/g1_grasp_policy_dataset.yaml) | HDF5-to-LeRobot camera mappings |
 | **Field mapping** | [`scripts/utils/assemble_trocar_lerobot_fields.py`](../scripts/utils/assemble_trocar_lerobot_fields.py) | 28D joint extraction logic |
-| **IL training config** | [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml) | ACT architecture + training hyperparams |
+| **Experiment config** | [`scripts/utils/act_experiment_config.py`](../scripts/utils/act_experiment_config.py) | Config-driven camera + joint group selection |
+| **IL training config** | [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml) | ACT architecture + training hyperparams + experiment config |
 | **IL training launcher** | [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh) | Bash wrapper around `lerobot.scripts.train` |
 | **IL eval entry point** | [`scripts/simulation/examples/eval_grasp_policy.py`](../scripts/simulation/examples/eval_grasp_policy.py) | Unified evaluator (`--policy_type gr00t\|act\|test`) |
 | **ACT inference wrapper** | [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACTClosedloopPolicy (28D->43D, action chunking) |

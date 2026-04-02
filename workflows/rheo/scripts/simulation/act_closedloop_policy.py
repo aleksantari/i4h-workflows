@@ -28,6 +28,7 @@ import numpy as np
 import torch
 import yaml
 from isaaclab_arena.policy.policy_base import PolicyBase
+from utils.act_experiment_config import ACTExperimentConfig
 
 
 class ACTClosedloopPolicy(PolicyBase):
@@ -36,14 +37,15 @@ class ACTClosedloopPolicy(PolicyBase):
     Implements the same action chunking pattern as CustomGr00tClosedloopPolicy
     but loads an ACT checkpoint from LeRobot's training pipeline.
 
+    Camera selection and joint groups are driven by the ``experiment:`` section
+    in the training config YAML (pointed to by ``experiment_config_path`` in
+    the policy config).  See :class:`ACTExperimentConfig` for details.
+
     Args:
         policy_config_yaml_path: Path to YAML config with model_path, action settings, etc.
         num_envs: Number of parallel environments.
         device: Device to run inference on.
     """
-
-    # Indices into the 87D robot_joint_state for shoulder/arm joints (same as rlinf_ext)
-    _ARM_JOINT_SLICE = slice(15, 29)  # 14 joints: left_arm(7) + right_arm(7)
 
     def __init__(self, policy_config_yaml_path: Path, num_envs: int = 1, device: str = "cuda"):
         with open(policy_config_yaml_path, "r") as f:
@@ -58,10 +60,17 @@ class ACTClosedloopPolicy(PolicyBase):
         # Image target size (H, W, C)
         self.target_image_size = tuple(self.config.get("target_image_size", [480, 640, 3]))
 
-        # Action dim: 28D policy output padded to 43D for sim (15 zeros for legs/waist)
-        self.policy_action_dim = self.config.get("policy_action_dim", 28)
-        self.sim_action_dim = self.config.get("sim_action_dim", 43)
-        self.leg_waist_pad = self.sim_action_dim - self.policy_action_dim  # 15
+        # Experiment config: cameras + joint groups (drives dims and mappings)
+        exp_cfg_path = self.config.get("experiment_config_path")
+        if exp_cfg_path:
+            # Resolve relative to the policy config YAML's directory
+            exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
+            self.exp_config = ACTExperimentConfig.from_yaml(exp_cfg_path)
+        else:
+            self.exp_config = ACTExperimentConfig()  # default: all cameras, all groups
+
+        self.policy_action_dim = self.exp_config.policy_dim
+        self.sim_action_dim = 43
 
         # Load ACT policy
         self.policy = self._load_policy()
@@ -95,23 +104,17 @@ class ACTClosedloopPolicy(PolicyBase):
           - observation.images.cam_right_wrist: (B, C, H, W)
           - observation.images.cam_room: (B, C, H, W)
         """
-        # Extract joint states (28D: arms + hands)
+        # Extract joint states using experiment config (selects configured groups)
         body_state = observation["policy"]["robot_joint_state"]  # (B, 87)
         dex3_state = observation["policy"]["robot_dex3_joint_state"]  # (B, 14)
-        arm_state = body_state[:, self._ARM_JOINT_SLICE]  # (B, 14): left_arm(7) + right_arm(7)
-        state_28d = torch.cat([arm_state, dex3_state], dim=-1)  # (B, 28)
+        state = self.exp_config.extract_state(body_state, dex3_state)  # (B, policy_dim)
 
         # Extract camera images and convert to (B, C, H, W) float32 [0, 1]
         camera_obs = observation["camera_images"]
-        cam_keys_map = {
-            "left_wrist_camera": "observation.images.cam_left_wrist",
-            "right_wrist_camera": "observation.images.cam_right_wrist",
-            "front_camera": "observation.images.cam_room",
-        }
 
-        act_obs = {"observation.state": state_28d.to(self.device)}
+        act_obs = {"observation.state": state.to(self.device)}
 
-        for sim_key, act_key in cam_keys_map.items():
+        for sim_key, act_key in self.exp_config.cameras.items():
             img = camera_obs[sim_key]  # (B, H, W, C) uint8 on GPU
             img = img.float() / 255.0  # normalize to [0, 1]
             img = img.permute(0, 3, 1, 2)  # (B, C, H, W)
@@ -164,15 +167,11 @@ class ACTClosedloopPolicy(PolicyBase):
                 action = torch.from_numpy(action)
             chunks.append(action)
 
-        # Stack: (num_envs, chunk_size, 28)
+        # Stack: (num_envs, chunk_size, policy_dim)
         policy_actions = torch.stack(chunks, dim=0).to(self.device)
 
-        # Pad 28D → 43D (prepend 15 zeros for legs/waist)
-        pad = torch.zeros(
-            self.num_envs, policy_actions.shape[1], self.leg_waist_pad,
-            dtype=policy_actions.dtype, device=self.device,
-        )
-        sim_actions = torch.cat([pad, policy_actions], dim=-1)  # (B, chunk, 43)
+        # Scatter policy_dim → 43D at correct sim joint positions
+        sim_actions = self.exp_config.scatter_to_sim(policy_actions)
 
         # Truncate or pad to action_chunk_length
         chunk_len = sim_actions.shape[1]

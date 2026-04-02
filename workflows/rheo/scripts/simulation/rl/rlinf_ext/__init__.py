@@ -148,6 +148,7 @@ def _get_g129_dex3_env_class():
                 "extra_view_images": extra_view_images,
                 "states": states,
                 "task_descriptions": task_descriptions,
+                "camera_images_raw": obs["camera_images"],
             }
 
         def add_image(self, obs):
@@ -389,6 +390,7 @@ def _get_grasp_policy_env_class():
                 "extra_view_images": extra_view_images,
                 "states": states,
                 "task_descriptions": task_descriptions,
+                "camera_images_raw": obs["camera_images"],
             }
 
         def add_image(self, obs):
@@ -438,47 +440,72 @@ def _register_act_converters() -> None:
 def _convert_dex3_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any]:
     """Convert RLinf env observations into the dict expected by ACT.
 
+    Uses :class:`ACTExperimentConfig` to select which cameras and joint-state
+    subset to pass to the ACT model.  Falls back to all cameras / full 28-D
+    state when no experiment config is set (backward compatible).
+
     Input from _wrap_obs():
-      - main_images: (B, H, W, C) torch tensor
-      - extra_view_images: (B, 2, H, W, C) torch tensor [left_wrist, right_wrist]
-      - states: (B, 28) torch tensor
-      - task_descriptions: list[str] length B
+      - camera_images_raw: dict[str, (B, H, W, C)] — raw camera tensors by sim key
+      - states: (B, 28) torch tensor (full arms + hands)
+      - (legacy) main_images / extra_view_images — used only when camera_images_raw absent
 
     Output (ACT format):
-      - observation.images.cam_left_wrist: (B, C, H, W) float tensor
-      - observation.images.cam_right_wrist: (B, C, H, W) float tensor
-      - observation.images.cam_room: (B, C, H, W) float tensor
-      - observation.state: (B, 28) float tensor
+      - observation.images.<cam>: (B, C, H, W) float tensor  (per selected camera)
+      - observation.state: (B, policy_dim) float tensor
     """
-    main = env_obs["main_images"]
-    extra = env_obs["extra_view_images"]
-    states = env_obs["states"]
+    from utils.act_experiment_config import ACTExperimentConfig
 
-    if isinstance(main, torch.Tensor):
-        # (B, H, W, C) -> (B, C, H, W) float [0, 1]
-        room_view = main.float().permute(0, 3, 1, 2) / 255.0
-        left_wrist = extra[:, 0].float().permute(0, 3, 1, 2) / 255.0
-        right_wrist = extra[:, 1].float().permute(0, 3, 1, 2) / 255.0
-        state = states.float()
+    exp_config = ACTExperimentConfig.from_env_or_default()
+
+    # --- Camera images -------------------------------------------------------
+    act_obs: dict[str, Any] = {}
+    raw_cameras = env_obs.get("camera_images_raw")
+    if raw_cameras is not None:
+        # Config-driven path: pick cameras by sim key name
+        for sim_key, act_key in exp_config.cameras.items():
+            img = raw_cameras[sim_key]  # (B, H, W, C)
+            if not isinstance(img, torch.Tensor):
+                raise TypeError(f"Expected torch.Tensor for {sim_key}, got {type(img)}")
+            act_obs[act_key] = img.float().permute(0, 3, 1, 2) / 255.0
     else:
-        raise TypeError(f"Expected torch.Tensor observations, got {type(main)=}")
+        # Legacy fallback: positional extraction from main_images / extra_view_images
+        main = env_obs["main_images"]
+        extra = env_obs["extra_view_images"]
+        if not isinstance(main, torch.Tensor):
+            raise TypeError(f"Expected torch.Tensor observations, got {type(main)=}")
+        act_obs["observation.images.cam_room"] = main.float().permute(0, 3, 1, 2) / 255.0
+        act_obs["observation.images.cam_left_wrist"] = extra[:, 0].float().permute(0, 3, 1, 2) / 255.0
+        act_obs["observation.images.cam_right_wrist"] = extra[:, 1].float().permute(0, 3, 1, 2) / 255.0
 
-    return {
-        "observation.images.cam_left_wrist": left_wrist,
-        "observation.images.cam_right_wrist": right_wrist,
-        "observation.images.cam_room": room_view,
-        "observation.state": state,
-    }
+    # --- Joint state ---------------------------------------------------------
+    states = env_obs["states"]  # (B, 28) full state from _wrap_obs
+    if exp_config.policy_dim == 28:
+        # Using all groups — pass through directly
+        act_obs["observation.state"] = states.float()
+    else:
+        # Subset: _wrap_obs produces [left_arm(7), right_arm(7), left_hand(7), right_hand(7)]
+        # Select the groups requested by experiment config.
+        group_slices = {
+            "left_arm": slice(0, 7),
+            "right_arm": slice(7, 14),
+            "left_hand": slice(14, 21),
+            "right_hand": slice(21, 28),
+        }
+        parts = [states[:, group_slices[g]] for g in exp_config.joint_groups]
+        act_obs["observation.state"] = torch.cat(parts, dim=-1).float()
+
+    return act_obs
 
 
 def _convert_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray, chunk_size: int = 1) -> Any:
     """Convert ACT action output into an action tensor for the IsaacLab env.
 
-    ACT outputs (B, chunk_size, 28) directly (not grouped by body part like GR00T).
-    Pad 15 zeros at the front to align with the full 43-DOF robot joint action space.
+    Uses :class:`ACTExperimentConfig` to scatter policy-dim actions into the
+    correct positions of the 43-DOF sim action space.
     """
+    from utils.act_experiment_config import ACTExperimentConfig
+
     if isinstance(action_chunk, dict):
-        # If dict, extract the action array
         action = action_chunk.get("action", action_chunk.get("actions"))
         if action is None:
             parts = [v[:, :chunk_size, :] for v in action_chunk.values()]
@@ -491,12 +518,8 @@ def _convert_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray, chunk_
     if isinstance(action, torch.Tensor):
         action = action.cpu().numpy()
 
-    return np.pad(
-        action,
-        ((0, 0), (0, 0), (15, 0)),
-        mode="constant",
-        constant_values=0,
-    )
+    exp_config = ACTExperimentConfig.from_env_or_default()
+    return exp_config.scatter_to_sim_numpy(action)
 
 
 # ---------------------------------------------------------------------------
