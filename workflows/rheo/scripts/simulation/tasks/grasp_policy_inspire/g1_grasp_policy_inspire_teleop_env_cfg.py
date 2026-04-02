@@ -86,14 +86,14 @@ class TeleopActionsCfg:
             fail_on_joint_limit_violation=False,
             variable_input_tasks=[
                 FrameTask(
-                    "g1_29dof_rev_1_0_left_wrist_yaw_link",
+                    "g1_29dof_rev_1_0_with_inspire_hand_FTP_left_wrist_yaw_link",
                     position_cost=8.0,
                     orientation_cost=2.0,
                     lm_damping=10,
                     gain=0.5,
                 ),
                 FrameTask(
-                    "g1_29dof_rev_1_0_right_wrist_yaw_link",
+                    "g1_29dof_rev_1_0_with_inspire_hand_FTP_right_wrist_yaw_link",
                     position_cost=8.0,
                     orientation_cost=2.0,
                     lm_damping=10,
@@ -103,8 +103,8 @@ class TeleopActionsCfg:
                     cost=0.5,
                     lm_damping=1,
                     controlled_frames=[
-                        "g1_29dof_rev_1_0_left_wrist_yaw_link",
-                        "g1_29dof_rev_1_0_right_wrist_yaw_link",
+                        "g1_29dof_rev_1_0_with_inspire_hand_FTP_left_wrist_yaw_link",
+                        "g1_29dof_rev_1_0_with_inspire_hand_FTP_right_wrist_yaw_link",
                     ],
                     controlled_joints=[
                         "left_shoulder_pitch_joint",

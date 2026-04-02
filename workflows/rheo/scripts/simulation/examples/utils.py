@@ -232,13 +232,21 @@ def process_observation(obs: Dict[str, Any], env, device: str = "cuda") -> Dict[
                 processed_obs[obs_key] = rgb.to(device)
 
     # Process robot joint state from observation
-    dex3_states = obs["policy"]["robot_dex3_joint_state"]  # (bs, 14)
     g129_shoulder_states = obs["policy"]["robot_joint_state"][:, 15:29]  # (bs, 14) - arms only
-
     processed_obs["state.left_arm"] = g129_shoulder_states[:, :7].to(device)
     processed_obs["state.right_arm"] = g129_shoulder_states[:, 7:14].to(device)
-    processed_obs["state.left_hand"] = dex3_states[:, :7].to(device)
-    processed_obs["state.right_hand"] = dex3_states[:, 7:14].to(device)
+
+    policy_obs = obs["policy"]
+    if "robot_dex3_joint_state" in policy_obs:
+        # Dex3 hands: 14D (7 left + 7 right)
+        dex3_states = policy_obs["robot_dex3_joint_state"]  # (bs, 14)
+        processed_obs["state.left_hand"] = dex3_states[:, :7].to(device)
+        processed_obs["state.right_hand"] = dex3_states[:, 7:14].to(device)
+    elif "robot_inspire_joint_state" in policy_obs:
+        # Inspire FTP hands: 12D (6 left + 6 right)
+        inspire_states = policy_obs["robot_inspire_joint_state"]  # (bs, 12)
+        processed_obs["state.left_hand"] = inspire_states[:, :6].to(device)
+        processed_obs["state.right_hand"] = inspire_states[:, 6:12].to(device)
 
     return processed_obs
 

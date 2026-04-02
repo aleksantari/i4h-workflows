@@ -70,18 +70,18 @@ _BODY_JOINT_NAMES_CANONICAL = [
 
 # 12 actuated hand joint names in canonical order (6 left + 6 right).
 _INSPIRE_ACTUATED_NAMES = [
-    "L_thumb_proximal_yaw_joint",
-    "L_thumb_proximal_pitch_joint",
-    "L_index_proximal_joint",
-    "L_middle_proximal_joint",
-    "L_ring_proximal_joint",
-    "L_pinky_proximal_joint",
-    "R_thumb_proximal_yaw_joint",
-    "R_thumb_proximal_pitch_joint",
-    "R_index_proximal_joint",
-    "R_middle_proximal_joint",
-    "R_ring_proximal_joint",
-    "R_pinky_proximal_joint",
+    "left_thumb_1_joint",
+    "left_thumb_2_joint",
+    "left_index_1_joint",
+    "left_middle_1_joint",
+    "left_ring_1_joint",
+    "left_little_1_joint",
+    "right_thumb_1_joint",
+    "right_thumb_2_joint",
+    "right_index_1_joint",
+    "right_middle_1_joint",
+    "right_ring_1_joint",
+    "right_little_1_joint",
 ]
 
 

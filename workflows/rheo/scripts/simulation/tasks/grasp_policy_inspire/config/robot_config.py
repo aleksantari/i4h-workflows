@@ -21,13 +21,19 @@ Actuator parameters for the hands follow the IsaacLab reference config.
 
 from typing import Dict, Optional, Tuple
 
+import os
+
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import IdealPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
-UNITREE_G1_29DOF_INSPIRE_FTP_USD = f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/G1/g1_29dof_inspire_hand.usd"
+# Local USD converted from our URDF (includes d435_link camera mount).
+# Generate with: python scripts/utils/convert_inspire_ftp_urdf_to_usd.py
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "assets")
+UNITREE_G1_29DOF_INSPIRE_FTP_USD = os.path.abspath(
+    os.path.join(_ASSETS_DIR, "robots", "g1-29dof-inspire-ftp-usd", "g1_29dof_inspire_ftp.usd")
+)
 
 # Default joint positions (body same as Dex3 task, hands at zero).
 DEFAULT_JOINT_POS: Dict[str, float] = {
@@ -64,8 +70,11 @@ DEFAULT_JOINT_POS: Dict[str, float] = {
     "right_wrist_pitch_joint": 0.0,
     "right_wrist_yaw_joint": 0.0,
     # Inspire FTP hands — all zero
-    "L_.*": 0.0,
-    "R_.*": 0.0,
+    ".*_index_.*": 0.0,
+    ".*_middle_.*": 0.0,
+    ".*_ring_.*": 0.0,
+    ".*_little_.*": 0.0,
+    ".*_thumb_.*": 0.0,
 }
 
 
@@ -202,7 +211,7 @@ G129_CFG_WITH_INSPIRE_FTP_BASE_FIX = ArticulationCfg(
                 ".*_middle_.*",
                 ".*_thumb_.*",
                 ".*_ring_.*",
-                ".*_pinky_.*",
+                ".*_little_.*",
             ],
             effort_limit=30.0,
             velocity_limit=10.0,

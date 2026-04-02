@@ -69,9 +69,18 @@ parser.add_argument(
     "--task_description", type=str, default="pick up block and place in bin", help="task description"
 )
 parser.add_argument("--test", action="store_true", help="run integration test with dummy policy")
+parser.add_argument(
+    "--enable_pinocchio",
+    action="store_true",
+    default=False,
+    help="Enable Pinocchio (required for PinkIK teleop tasks).",
+)
 
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+
+if args_cli.enable_pinocchio:
+    import pinocchio  # noqa: F401  — must be imported before AppLauncher
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app

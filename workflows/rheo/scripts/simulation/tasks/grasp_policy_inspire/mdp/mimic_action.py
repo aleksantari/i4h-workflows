@@ -40,19 +40,19 @@ from isaaclab.utils import configclass
 # Order matters: thumb_intermediate must be computed before thumb_distal.
 
 _MIMIC_RULES_PER_SIDE: list[tuple[str, str, float]] = [
-    # Finger intermediates mimic their proximal at 1.0843×
-    ("{side}_index_intermediate_joint", "{side}_index_proximal_joint", 1.0843),
-    ("{side}_middle_intermediate_joint", "{side}_middle_proximal_joint", 1.0843),
-    ("{side}_ring_intermediate_joint", "{side}_ring_proximal_joint", 1.0843),
-    ("{side}_pinky_intermediate_joint", "{side}_pinky_proximal_joint", 1.0843),
-    # Thumb chain: intermediate mimics proximal pitch, distal mimics intermediate
-    ("{side}_thumb_intermediate_joint", "{side}_thumb_proximal_pitch_joint", 0.8024),
-    ("{side}_thumb_distal_joint", "{side}_thumb_intermediate_joint", 0.9487),
+    # Finger _2 joints mimic their _1 (proximal) at 1.0843×
+    ("{side}_index_2_joint", "{side}_index_1_joint", 1.0843),
+    ("{side}_middle_2_joint", "{side}_middle_1_joint", 1.0843),
+    ("{side}_ring_2_joint", "{side}_ring_1_joint", 1.0843),
+    ("{side}_little_2_joint", "{side}_little_1_joint", 1.0843),
+    # Thumb chain: _3 mimics _2 (proximal pitch), _4 mimics _3 (intermediate)
+    ("{side}_thumb_3_joint", "{side}_thumb_2_joint", 0.8024),
+    ("{side}_thumb_4_joint", "{side}_thumb_3_joint", 0.9487),
 ]
 
 # Expand for both hands
 MIMIC_RULES: list[tuple[str, str, float]] = []
-for side in ("L", "R"):
+for side in ("left", "right"):
     for mimic_tmpl, parent_tmpl, mult in _MIMIC_RULES_PER_SIDE:
         MIMIC_RULES.append((mimic_tmpl.format(side=side), parent_tmpl.format(side=side), mult))
 
