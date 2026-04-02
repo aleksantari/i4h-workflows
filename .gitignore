@@ -147,6 +147,9 @@ venv.bak/
 # Datasets
 **/datasets/
 
+# Robot assets (URDF, meshes)
+workflows/rheo/assets/
+
 # Spyder project settings
 .spyderproject
 .spyproject
