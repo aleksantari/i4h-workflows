@@ -107,6 +107,7 @@ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 # Register project-specific gym environments
 from simulation.tasks import assemble_trocar  # noqa: F401
 from simulation.tasks import grasp_policy  # noqa: F401
+from simulation.tasks import grasp_policy_inspire  # noqa: F401
 
 is_paused = False
 

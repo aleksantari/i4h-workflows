@@ -15,7 +15,7 @@
 
 import gymnasium as gym
 
-from . import g1_grasp_policy_inspire_env_cfg
+from . import g1_grasp_policy_inspire_env_cfg, g1_grasp_policy_inspire_teleop_env_cfg
 
 # RL training environment (random block placement)
 gym.register(
@@ -30,5 +30,15 @@ gym.register(
     id="Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     kwargs={"env_cfg_entry_point": g1_grasp_policy_inspire_env_cfg.G1GraspPolicyInspireEvalEnvCfg},
+    disable_env_checker=True,
+)
+
+# Teleop environment (PinkIK 38D + AVP dex-retargeting)
+gym.register(
+    id="Isaac-Grasp-Policy-G129-InspireFTP-Teleop",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": g1_grasp_policy_inspire_teleop_env_cfg.G1GraspPolicyInspireTeleopEnvCfg,
+    },
     disable_env_checker=True,
 )
