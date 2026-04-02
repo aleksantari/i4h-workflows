@@ -57,6 +57,62 @@ from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg impor
 # to be correctly interpreted by the PinkIK action.
 HAND_JOINT_NAMES: list[str] = joint_names[29:]
 
+# The UnitreeG1DexRetargeting retargeter loads Nucleus retargeting URDFs
+# whose joints use the Nucleus naming convention (L_/R_ prefix, anatomical
+# suffixes like proximal/intermediate/distal, "pinky" instead of "little").
+# The retargeter's get_left/right_joint_names() returns these Nucleus names,
+# then tries to look them up in the hand_joint_names list we pass.
+# We must give the retargeter Nucleus-style names IN THE SAME POSITIONAL
+# ORDER as HAND_JOINT_NAMES so that the retargeted values end up in the
+# correct slots for PinkIK.
+#
+# Mapping: URDF name -> Nucleus name
+#   left_index_1_joint   -> L_index_proximal_joint
+#   left_index_2_joint   -> L_index_intermediate_joint
+#   left_little_1_joint  -> L_pinky_proximal_joint
+#   left_little_2_joint  -> L_pinky_intermediate_joint
+#   left_middle_1_joint  -> L_middle_proximal_joint
+#   left_middle_2_joint  -> L_middle_intermediate_joint
+#   left_ring_1_joint    -> L_ring_proximal_joint
+#   left_ring_2_joint    -> L_ring_intermediate_joint
+#   left_thumb_1_joint   -> L_thumb_proximal_yaw_joint
+#   left_thumb_2_joint   -> L_thumb_proximal_pitch_joint
+#   left_thumb_3_joint   -> L_thumb_intermediate_joint
+#   left_thumb_4_joint   -> L_thumb_distal_joint
+#   (same for right: left->R, right->R)
+
+_URDF_TO_NUCLEUS: dict[str, str] = {
+    # Left hand
+    "left_index_1_joint": "L_index_proximal_joint",
+    "left_index_2_joint": "L_index_intermediate_joint",
+    "left_little_1_joint": "L_pinky_proximal_joint",
+    "left_little_2_joint": "L_pinky_intermediate_joint",
+    "left_middle_1_joint": "L_middle_proximal_joint",
+    "left_middle_2_joint": "L_middle_intermediate_joint",
+    "left_ring_1_joint": "L_ring_proximal_joint",
+    "left_ring_2_joint": "L_ring_intermediate_joint",
+    "left_thumb_1_joint": "L_thumb_proximal_yaw_joint",
+    "left_thumb_2_joint": "L_thumb_proximal_pitch_joint",
+    "left_thumb_3_joint": "L_thumb_intermediate_joint",
+    "left_thumb_4_joint": "L_thumb_distal_joint",
+    # Right hand
+    "right_index_1_joint": "R_index_proximal_joint",
+    "right_index_2_joint": "R_index_intermediate_joint",
+    "right_little_1_joint": "R_pinky_proximal_joint",
+    "right_little_2_joint": "R_pinky_intermediate_joint",
+    "right_middle_1_joint": "R_middle_proximal_joint",
+    "right_middle_2_joint": "R_middle_intermediate_joint",
+    "right_ring_1_joint": "R_ring_proximal_joint",
+    "right_ring_2_joint": "R_ring_intermediate_joint",
+    "right_thumb_1_joint": "R_thumb_proximal_yaw_joint",
+    "right_thumb_2_joint": "R_thumb_proximal_pitch_joint",
+    "right_thumb_3_joint": "R_thumb_intermediate_joint",
+    "right_thumb_4_joint": "R_thumb_distal_joint",
+}
+
+# Nucleus-style names in the same positional order as HAND_JOINT_NAMES
+RETARGETER_HAND_JOINT_NAMES: list[str] = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
+
 
 @configclass
 class TeleopActionsCfg:
@@ -196,7 +252,7 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
                             enable_visualization=True,
                             num_open_xr_hand_joints=2 * 26,
                             sim_device=self.sim.device,
-                            hand_joint_names=self.actions.pink_ik_cfg.hand_joint_names,
+                            hand_joint_names=RETARGETER_HAND_JOINT_NAMES,
                         ),
                     ],
                     sim_device=self.sim.device,
