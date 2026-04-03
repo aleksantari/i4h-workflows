@@ -253,7 +253,7 @@ docker stop cloudxr-runtime 2>/dev/null
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
-    --dataset_file /datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --num_demos 10 \
     --xr
 ```
@@ -289,7 +289,7 @@ modifications needed.
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
-    --dataset_file /datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --num_demos 10 \
     --xr
 ```
@@ -329,21 +329,21 @@ The recorded HDF5 will contain:
 
 ### Replaying Recorded Demos
 
-**Status: UNTESTED**
+**Status: TESTED**
 
 ```bash
 # Replay all episodes
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
-    --dataset_file /datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --enable_cameras --enable_pinocchio
 
 # Replay with success validation
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
-    --dataset_file /datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --enable_cameras --enable_pinocchio \
     --validate_success_rate
 ```
