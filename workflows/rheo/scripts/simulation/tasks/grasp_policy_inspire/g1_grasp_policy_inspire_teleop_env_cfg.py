@@ -17,11 +17,11 @@
 
 Inherits the RL env config and overrides actions to use PinkIK (38D),
 extends episode length for human teleoperation, and registers the
-UnitreeG1Retargeter for AVP dex-retargeting of the 5-finger hand.
+InspireGripperRetargeter for AVP binary gripper control.
 
 Key differences from the Dex3 teleop variant:
 - PinkIK (38D) instead of WBC+PINK (23D)
-- Full per-finger dex-retargeting instead of binary gripper
+- Binary gripper (pinch-based open/close, uniform angle for all fingers)
 - No WBC state reset needed (PinkIK is stateless per-step)
 
 Action format (38D):
@@ -39,9 +39,7 @@ import isaaclab.controllers.utils as ControllerUtils
 from isaaclab.controllers.pink_ik import NullSpacePostureTask, PinkIKControllerCfg
 from isaaclab.devices.device_base import DevicesCfg
 from isaaclab.devices.openxr import OpenXRDeviceCfg
-from isaaclab.devices.openxr.retargeters.humanoid.unitree.inspire.g1_upper_body_retargeter import (
-    UnitreeG1RetargeterCfg,
-)
+from teleop_devices.inspire_gripper_retargeter import InspireGripperRetargeterCfg
 from isaaclab.devices.openxr.xr_cfg import XrAnchorRotationMode, XrCfg
 from isaaclab.envs.mdp.actions.pink_actions_cfg import PinkInverseKinematicsActionCfg
 from isaaclab.managers.action_manager import ActionTermCfg
@@ -56,62 +54,6 @@ from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg impor
 # This order MUST match robot.joint_names[-24:] for the retargeter output
 # to be correctly interpreted by the PinkIK action.
 HAND_JOINT_NAMES: list[str] = joint_names[29:]
-
-# The UnitreeG1DexRetargeting retargeter loads Nucleus retargeting URDFs
-# whose joints use the Nucleus naming convention (L_/R_ prefix, anatomical
-# suffixes like proximal/intermediate/distal, "pinky" instead of "little").
-# The retargeter's get_left/right_joint_names() returns these Nucleus names,
-# then tries to look them up in the hand_joint_names list we pass.
-# We must give the retargeter Nucleus-style names IN THE SAME POSITIONAL
-# ORDER as HAND_JOINT_NAMES so that the retargeted values end up in the
-# correct slots for PinkIK.
-#
-# Mapping: URDF name -> Nucleus name
-#   left_index_1_joint   -> L_index_proximal_joint
-#   left_index_2_joint   -> L_index_intermediate_joint
-#   left_little_1_joint  -> L_pinky_proximal_joint
-#   left_little_2_joint  -> L_pinky_intermediate_joint
-#   left_middle_1_joint  -> L_middle_proximal_joint
-#   left_middle_2_joint  -> L_middle_intermediate_joint
-#   left_ring_1_joint    -> L_ring_proximal_joint
-#   left_ring_2_joint    -> L_ring_intermediate_joint
-#   left_thumb_1_joint   -> L_thumb_proximal_yaw_joint
-#   left_thumb_2_joint   -> L_thumb_proximal_pitch_joint
-#   left_thumb_3_joint   -> L_thumb_intermediate_joint
-#   left_thumb_4_joint   -> L_thumb_distal_joint
-#   (same for right: left->R, right->R)
-
-_URDF_TO_NUCLEUS: dict[str, str] = {
-    # Left hand
-    "left_index_1_joint": "L_index_proximal_joint",
-    "left_index_2_joint": "L_index_intermediate_joint",
-    "left_little_1_joint": "L_pinky_proximal_joint",
-    "left_little_2_joint": "L_pinky_intermediate_joint",
-    "left_middle_1_joint": "L_middle_proximal_joint",
-    "left_middle_2_joint": "L_middle_intermediate_joint",
-    "left_ring_1_joint": "L_ring_proximal_joint",
-    "left_ring_2_joint": "L_ring_intermediate_joint",
-    "left_thumb_1_joint": "L_thumb_proximal_yaw_joint",
-    "left_thumb_2_joint": "L_thumb_proximal_pitch_joint",
-    "left_thumb_3_joint": "L_thumb_intermediate_joint",
-    "left_thumb_4_joint": "L_thumb_distal_joint",
-    # Right hand
-    "right_index_1_joint": "R_index_proximal_joint",
-    "right_index_2_joint": "R_index_intermediate_joint",
-    "right_little_1_joint": "R_pinky_proximal_joint",
-    "right_little_2_joint": "R_pinky_intermediate_joint",
-    "right_middle_1_joint": "R_middle_proximal_joint",
-    "right_middle_2_joint": "R_middle_intermediate_joint",
-    "right_ring_1_joint": "R_ring_proximal_joint",
-    "right_ring_2_joint": "R_ring_intermediate_joint",
-    "right_thumb_1_joint": "R_thumb_proximal_yaw_joint",
-    "right_thumb_2_joint": "R_thumb_proximal_pitch_joint",
-    "right_thumb_3_joint": "R_thumb_intermediate_joint",
-    "right_thumb_4_joint": "R_thumb_distal_joint",
-}
-
-# Nucleus-style names in the same positional order as HAND_JOINT_NAMES
-RETARGETER_HAND_JOINT_NAMES: list[str] = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
 
 
 @configclass
@@ -243,16 +185,19 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
         self.xr.fixed_anchor_height = True
         self.xr.anchor_rotation_mode = XrAnchorRotationMode.FOLLOW_PRIM_SMOOTHED
 
-        # Register AVP hand tracking with dex-retargeting
+        # Register AVP hand tracking with binary gripper retargeting.
+        # Uses HAND_JOINT_NAMES directly (URDF-style names matching joint_names[29:]).
+        # No need for RETARGETER_HAND_JOINT_NAMES — the Nucleus-to-URDF bridge was
+        # only required by UnitreeG1DexRetargeting, which we no longer use.
         self.teleop_devices = DevicesCfg(
             devices={
                 "handtracking": OpenXRDeviceCfg(
                     retargeters=[
-                        UnitreeG1RetargeterCfg(
+                        InspireGripperRetargeterCfg(
                             enable_visualization=True,
                             num_open_xr_hand_joints=2 * 26,
                             sim_device=self.sim.device,
-                            hand_joint_names=RETARGETER_HAND_JOINT_NAMES,
+                            hand_joint_names=HAND_JOINT_NAMES,
                         ),
                     ],
                     sim_device=self.sim.device,
