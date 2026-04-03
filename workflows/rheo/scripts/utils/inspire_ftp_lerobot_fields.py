@@ -78,6 +78,16 @@ STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA = np.zeros(26, dtype=np.float64)
 STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[3] = 0.3   # left_elbow_joint
 STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[10] = 0.3  # right_elbow_joint
 
+# Column indices into the 87-D body observation (29 pos | 29 vel | 29 torque)
+# for extracting arm positions.  The canonical body observation order puts
+# left arm at positions 15-21 and right arm at 22-28.
+STATE_26_BODY_COL_LEFT_ARM = list(range(15, 22))
+STATE_26_BODY_COL_RIGHT_ARM = list(range(22, 29))
+
+# Column indices into the 12-D inspire hand observation (already canonical).
+STATE_26_INSPIRE_COL_LEFT_HAND = list(range(0, 6))
+STATE_26_INSPIRE_COL_RIGHT_HAND = list(range(6, 12))
+
 # The full 53-joint env config order (= USD tree-traversal order).
 # Updated from inspect_inspire_ftp_joints.py output.
 # L/R are interleaved, and actuated/mimic hand joints are NOT contiguous.
@@ -138,3 +148,51 @@ RECORDED_ACTION_53_JOINT_NAMES = (
     "L_thumb_distal_joint",            # 51 [mimic]
     "R_thumb_distal_joint",            # 52 [mimic]
 )
+
+# Map canonical 26-D joint names to their index in the 53-D action space.
+_recorded_action_name_to_idx_53 = {
+    name: i for i, name in enumerate(RECORDED_ACTION_53_JOINT_NAMES)
+}
+ACTION_HDF5_TO_ENV_26 = [
+    _recorded_action_name_to_idx_53[name] for name in STATE_26_NAMES_ENV_ORDER
+]
+
+
+def _extract_26d(state_body: np.ndarray, state_inspire: np.ndarray) -> np.ndarray:
+    """Extract canonical 26-D vector from body (87D) and hand (12D) observations."""
+    parts = [
+        state_body[:, STATE_26_BODY_COL_LEFT_ARM],
+        state_body[:, STATE_26_BODY_COL_RIGHT_ARM],
+        state_inspire[:, STATE_26_INSPIRE_COL_LEFT_HAND],
+        state_inspire[:, STATE_26_INSPIRE_COL_RIGHT_HAND],
+    ]
+    return np.concatenate(parts, axis=1).astype(np.float64)
+
+
+def convert_g1_state_action_to_lerobot_26d(
+    state_body: np.ndarray,
+    state_inspire: np.ndarray,
+    action_full: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert Inspire FTP HDF5 obs/action arrays into canonical 26-D state/action.
+
+    If *action_full* is 53-D (joint-space recording), the 26 policy joints are
+    extracted directly via ``ACTION_HDF5_TO_ENV_26``.
+
+    If *action_full* is any other width (e.g. 38-D PinkIK from teleop) or
+    ``None``, actions are derived from next-step observations:
+    ``action[t] = state[t+1]``.  This is the standard approach for teleop
+    recordings where the recorded commands are in a different action space.
+    """
+    full_26d = _extract_26d(state_body, state_inspire)  # (T, 26)
+    state = full_26d[:-1]  # (T-1, 26)
+
+    if action_full is not None and action_full.shape[1] == 53:
+        action = action_full[:-1, ACTION_HDF5_TO_ENV_26].astype(np.float64)
+        action += STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA
+    else:
+        # Teleop recording: action = next-step observed joint positions.
+        # Elbow offset is already baked into the observed positions.
+        action = full_26d[1:]  # (T-1, 26)
+
+    return state, action

@@ -58,7 +58,16 @@ class ExtendedDatasetConfig(Gr00tDatasetConfig):
         metadata={
             "description": (
                 "If True (with use_rheo_converter), output 28-D state/action: "
-                "left_arm(7)+right_arm(7)+left_hand(7)+right_hand(7)."
+                "left_arm(7)+right_arm(7)+left_hand(7)+right_hand(7) [Dex3]."
+            )
+        },
+    )
+    rheo_26d_state_action: bool = field(
+        default=False,
+        metadata={
+            "description": (
+                "If True (with use_rheo_converter), output 26-D state/action: "
+                "left_arm(7)+right_arm(7)+left_hand(6)+right_hand(6) [Inspire FTP]."
             )
         },
     )
