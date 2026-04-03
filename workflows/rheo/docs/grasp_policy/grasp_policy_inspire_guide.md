@@ -28,7 +28,7 @@ Teleoperate (AVP dex-retargeting)  -->  Record HDF5  -->  Convert to LeRobot  --
 | Sim action dim | 43D | 53D (29 body + 24 hand) |
 | Cameras | 3 (front + 2 wrist) | 1 (front only) |
 | Teleop controller | WBC+PINK (23D) | PinkIK (38D) |
-| Hand control | Binary gripper (pinch open/close) | Per-finger dex-retargeting |
+| Hand control | Binary gripper (pinch open/close) | Binary gripper (pinch open/close) |
 | Mimic joints | None | 12 (with multiplier rules) |
 | Gym IDs | `Isaac-Grasp-Policy-G129-Dex3-*` | `Isaac-Grasp-Policy-G129-InspireFTP-*` |
 
@@ -217,10 +217,13 @@ from the Apple Vision Pro to the 24 Inspire FTP finger actuators.
 
 ## 3. Teleoperation with AVP
 
-**Status: TESTED** (launches, retargeter initializes; full AVP demo pending)
+**Status: TESTED**
 
 The teleop environment (`Isaac-Grasp-Policy-G129-InspireFTP-Teleop`) uses PinkIK with
-full per-finger dex-retargeting from the Apple Vision Pro.
+binary gripper retargeting from the Apple Vision Pro via `InspireGripperRetargeter`.
+All fingers open/close together based on thumb-index pinch distance (same hysteresis
+as Dex3: 0.03m close / 0.05m open). Wrist retargeting is inherited from the parent
+`UnitreeG1Retargeter`.
 
 > **Code:** Task registration in
 > [`scripts/simulation/tasks/grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py).
@@ -272,7 +275,7 @@ docker stop cloudxr-runtime 2>/dev/null
 
 ## 4. Recording Demonstrations
 
-**Status: TESTED** (script launches; full recording with AVP pending)
+**Status: TESTED**
 
 Record demos using
 [`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py).
@@ -355,63 +358,79 @@ The recorded HDF5 will contain:
 
 ## 5. Data Conversion (HDF5 to LeRobot)
 
-**Status: TODO** — converter needs Inspire FTP support
+**Status: TESTED**
 
 Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT training.
 
 > **Code:**
 > Conversion script:
-> [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) (Dex3-only, needs adaptation).
+> [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).
 > Inspire field mappings:
-> [`scripts/utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) (exists).
+> [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py).
+> Dataset config:
+> [`scripts/config/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/g1_grasp_policy_inspire_dataset.yaml).
 > Modality definition:
-> [`scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json`](../scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json) (exists).
+> [`scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json`](../../scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json).
 
-### What Needs To Be Created
-
-1. **Dataset config YAML** — `scripts/config/g1_grasp_policy_inspire_dataset.yaml`
-
-   Parallel to
-   [`scripts/config/g1_grasp_policy_dataset.yaml`](../scripts/config/g1_grasp_policy_dataset.yaml)
-   (Dex3 version). Key changes:
-
-   ```yaml
-   language_instruction: "pick up block and place in bin"
-   use_rheo_converter: true
-   rheo_action_key: "processed_actions"
-   rheo_26d_inspire_state_action: true    # Inspire FTP 26D extraction
-   rheo_camera_mappings_obs:
-     front_camera: "observation.images.cam_room"
-     # No wrist cameras for Inspire FTP
-   ```
-
-2. **Converter adaptation** — `convert_hdf5_to_lerobot.py` needs a branch to:
-   - Extract 26D state/action using `inspire_ftp_lerobot_fields.py` constants
-   - Read `robot_inspire_joint_state` (12D) instead of `robot_dex3_joint_state` (14D)
-   - Handle 38D PinkIK recorded actions (convert to 26D canonical policy space)
-
-### Expected Output Structure
-
-```
-inspire_ftp_lerobot/
-├── data/chunk-000/episode_000000.parquet    # 26D state/action per timestep
-├── videos/chunk-000/
-│   └── observation.images.cam_room/episode_000000.mp4   # Front camera only
-└── meta/
-    ├── info.json           # Feature schemas (26D joint names)
-    ├── tasks.jsonl         # Task descriptions
-    ├── episodes.jsonl      # Episode metadata
-    └── modality.json       # From modality_grasp_policy_inspire.json
-```
-
-### Expected Command (Once Implemented)
+### Running the Conversion
 
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml \
-    --hdf5_dir /datasets/inspire_ftp \
-    --output_dir /datasets/inspire_ftp_lerobot
+    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
+```
+
+The dataset config (`g1_grasp_policy_inspire_dataset.yaml`) points to
+`datasets/inspire_ftp/test.hdf5` by default. Key settings:
+
+```yaml
+use_rheo_converter: true
+rheo_action_key: "processed_actions"
+rheo_26d_state_action: true       # Triggers 26D Inspire extraction
+rheo_camera_mappings_obs:
+  front_camera: "observation.images.cam_room"   # Single camera (no wrist cams)
+```
+
+### How Actions Are Derived
+
+The HDF5 `processed_actions` are 38D (PinkIK: 14D arm IK + 24D hand passthrough),
+**not** 53D joint-space. The converter cannot directly extract 26D policy joints from
+38D, so it uses **observation-derived actions**:
+
+```
+action[t] = state[t+1]    (next-step observed joint positions)
+```
+
+This is standard practice for teleop IL recordings. The fallback is automatic —
+`convert_g1_state_action_to_lerobot_26d()` checks `action_full.shape[1] == 53` and
+falls back to observation-derived when it's not.
+
+### Verified Output
+
+Tested with 1 demo (434 timesteps). Output at `datasets/inspire_ftp/test/lerobot/`:
+
+```
+test/lerobot/
+├── data/chunk-000/episode_000000.parquet    # 433 rows × 26D state + 26D action
+├── videos/chunk-000/
+│   └── observation.images.cam_room/episode_000000.mp4
+└── meta/
+    ├── info.json           # 26D joint names, feature schemas
+    ├── tasks.jsonl         # "pick up block and place in bin"
+    ├── episodes.jsonl      # Episode metadata
+    └── modality.json       # 4 groups: left_arm(7), right_arm(7), left_hand(6), right_hand(6)
+```
+
+**State/action dimensions:** (433, 26) — 14 arm + 12 hand (6 actuated per hand).
+433 frames = 434 timesteps minus 1 for the observation-derived shift.
+
+**Joint names in `info.json`** (canonical 26D order):
+
+```
+ [0-6]   left arm:  left_shoulder_pitch/roll/yaw, left_elbow, left_wrist_roll/pitch/yaw
+ [7-13]  right arm: right_shoulder_pitch/roll/yaw, right_elbow, right_wrist_roll/pitch/yaw
+[14-19]  left hand: L_thumb_proximal_yaw/pitch, L_index/middle/ring/pinky_proximal
+[20-25]  right hand: R_thumb_proximal_yaw/pitch, R_index/middle/ring/pinky_proximal
 ```
 
 ---
