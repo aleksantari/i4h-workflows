@@ -48,3 +48,14 @@ TRAY_USD = ASSET_PATH + "Props/LightWheel/Assets/SurgicalTray006/SurgicalTray006
 TRAY_NO_LID_USD = ASSET_PATH + "Props/LightWheel/Assets/SurgicalTrayNoLid006/SurgicalTrayNoLid006.usd"
 TRAY_TROCAR_ASSEMBLY_USD = ASSET_PATH + "Props/LightWheel/Assets/SurgicalTray001/SurgicalTray001.usd"
 CART_USD = ASSET_PATH + "Props/LightWheel/Assets/Cart003/Cart003.usd"
+
+# Sinus toolkit — local .obj→.usd conversions (run convert_sinus_toolkit.py first)
+# Paths are relative to the rheo/ workflow root; resolved at import time via __file__.
+import os as _os
+
+_RHEO_DIR = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", "..", ".."))
+_SINUS_TOOLKIT_DIR = _os.path.join(_RHEO_DIR, "assets", "sinus_toolkit_v1")
+
+SINUS_TOOL_USD_PATHS: dict[str, str] = {
+    f"tool_{i}": _os.path.join(_SINUS_TOOLKIT_DIR, f"tool_{i}", f"tool_{i}.usd") for i in range(5)
+}

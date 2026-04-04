@@ -38,7 +38,7 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
-from simulation.assets.assets import TROCAR_ASSEMBLY_SCENE_USD
+from simulation.assets.assets import SINUS_TOOL_USD_PATHS, TROCAR_ASSEMBLY_SCENE_USD
 from simulation.tasks.grasp_policy_inspire import mdp
 
 from simulation.tasks.grasp_policy_inspire.config import CameraPresets, G1InspireRobotPresets  # isort: skip
@@ -152,7 +152,7 @@ TARGET_Z = 0.835
 
 @configclass
 class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
-    """Scene: G1 + Inspire FTP robot + block + bin."""
+    """Scene: G1 + Inspire FTP robot + random grasp object (block or sinus tool) + bin."""
 
     robot = G1InspireRobotPresets.g1_29dof_inspire_ftp_base_fix(
         init_pos=(-1.84919, 1.94, 0.81168), init_rot=(1.0, 0, 0, 0.0)
@@ -167,16 +167,24 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
         spawn=UsdFileCfg(usd_path=TROCAR_ASSEMBLY_SCENE_USD),
     )
 
-    # Block to grasp
+    # Grasp target — randomly selects one of 6 objects (block + 5 sinus tools) per env clone.
+    # The attribute is named "block" so that shared MDP code (rewards, terminations) which
+    # references env.scene["block"] works without modification.
+    # Requires replicate_physics=False on InteractiveSceneCfg.
     block = RigidObjectCfg(
         prim_path="/World/envs/env_.*/block",
-        spawn=sim_utils.CuboidCfg(
-            size=(0.05, 0.05, 0.05),
+        spawn=sim_utils.MultiAssetSpawnerCfg(
+            assets_cfg=[
+                sim_utils.CuboidCfg(
+                    size=(0.05, 0.05, 0.05),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
+                ),
+            ]
+            + [UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[f"tool_{i}"]) for i in range(5)],
+            random_choice=True,
             mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
-            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=0.8, dynamic_friction=0.6),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(-1.55, 1.90, 0.885)),
     )
@@ -325,7 +333,7 @@ class G1GraspPolicyInspireEnvCfg(ManagerBasedRLEnvCfg):
     scene: GraspPolicyInspireSceneCfg = GraspPolicyInspireSceneCfg(
         num_envs=1,
         env_spacing=6.0,
-        replicate_physics=True,
+        replicate_physics=False,
     )
     viewer: ViewerCfg = ViewerCfg(
         eye=(-0.5, 2.4, 1.6),

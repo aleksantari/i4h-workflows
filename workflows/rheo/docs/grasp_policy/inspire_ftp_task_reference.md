@@ -1,8 +1,9 @@
 # Inspire FTP Grasp Policy Task Reference
 
-Technical reference for the G1 + Inspire FTP block pick-and-place task.
-Covers both the **RL/eval** (41D joint control) and **teleop** (38D PinkIK) variants,
-plus the 26D data conversion pipeline.
+Technical reference for the G1 + Inspire FTP pick-and-place task.
+The scene randomly selects one of 6 objects (red block + 5 sinus toolkit surgical tools)
+per environment clone via `MultiAssetSpawnerCfg`. Covers both the **RL/eval** (41D joint
+control) and **teleop** (38D PinkIK) variants, plus the 26D data conversion pipeline.
 
 ---
 
@@ -29,9 +30,12 @@ plus the 26D data conversion pipeline.
 
 ## 1. Overview
 
-The task is a **block pick-and-place**: grasp a 5 cm red cube from the table, transport
-it to a green target pad (bin), and place it inside. The robot is a Unitree G1 (29 body DOF)
-with **Inspire FTP 5-finger hands** (24 hand joints: 12 actuated + 12 mimic, per pair of hands).
+The task is a **pick-and-place**: grasp an object from the table, transport it to a green
+target pad, and place it on the pad. The scene uses `MultiAssetSpawnerCfg` to randomly
+select one of 6 objects per env clone: a 5 cm red cube (block) or one of 5 sinus toolkit
+surgical tools (tool_0..tool_4, converted from .obj to .usd). The robot is a Unitree G1
+(29 body DOF) with **Inspire FTP 5-finger hands** (24 hand joints: 12 actuated + 12 mimic,
+per pair of hands).
 
 Three gym variants exist:
 
@@ -64,18 +68,40 @@ The Eval variant inherits the RL config but uses deterministic block placement.
 
 ## 3. Scene Setup
 
-**Files:** `g1_grasp_policy_inspire_env_cfg.py` (lines 130-178), `config/robot_config.py`
+**Files:** `g1_grasp_policy_inspire_env_cfg.py`, `config/robot_config.py`, `assets/assets.py`
 
 | Entity | Size / Type | Init Position | Notes |
 |--------|-------------|---------------|-------|
 | **Robot** | G1 29DOF + Inspire FTP | (-1.849, 1.94, 0.812) | Fixed base, gravity disabled |
-| **Block** | 5 cm cube, 0.1 kg | (-1.55, 1.90, 0.885) | Red, friction 0.8/0.6 |
+| **Grasp Object** | Random: block or sinus tool, 0.1 kg | (-1.55, 1.90, 0.885) | `MultiAssetSpawnerCfg` with `random_choice=True` |
 | **Target Pad** | 15x15x0.5 cm, 0.3 kg | (-1.55, 1.61, 0.8375) | Green, friction 1.0/0.8 |
 | **Front Camera** | RGB 640x480 | On robot head | focal_length=10.5 |
 | **Scene** | Surgical room USD | - | Trocar assembly scene (table) |
 | **Light** | Dome light | - | (0.75, 0.75, 0.75) intensity 1000 |
 
 **Table height (TABLE_Z):** 0.855 m
+
+**`replicate_physics=False`** is required because `MultiAssetSpawnerCfg` spawns different
+meshes per env clone (collision shapes and inertia differ).
+
+### Grasp Objects (6 total)
+
+| Index | Name | Type | Source |
+|-------|------|------|--------|
+| 0 | `block` | 5 cm red cube | Procedural (`CuboidCfg`) |
+| 1 | `tool_0` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_0/tool_0.usd` |
+| 2 | `tool_1` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_1/tool_1.usd` |
+| 3 | `tool_2` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_2/tool_2.usd` |
+| 4 | `tool_3` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_3/tool_3.usd` |
+| 5 | `tool_4` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_4/tool_4.usd` |
+
+The .obj meshes must be converted to .usd before first use:
+
+```bash
+./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py
+```
+
+The eval script supports `--object <name>` to force a specific object (default: `random`).
 
 No wrist cameras are available on the Inspire FTP hand (no camera mount links in the USD).
 
@@ -590,6 +616,13 @@ All paths relative to `scripts/`.
 | `utils/inspire_ftp_experiment_config.py` | 26D joint groups, scatter_to_sim (41D), state extraction |
 | `utils/convert_hdf5_to_lerobot.py` | HDF5 -> LeRobot dataset converter |
 | `config/g1_grasp_policy_inspire_dataset.yaml` | Dataset conversion config |
+
+### Scene Assets
+
+| File | Role |
+|------|------|
+| `simulation/assets/assets.py` | USD path constants (`SINUS_TOOL_USD_PATHS`) |
+| `simulation/assets/convert_sinus_toolkit.py` | Batch .obj→.usd converter (run inside Docker) |
 
 ### ACT Training and Evaluation
 

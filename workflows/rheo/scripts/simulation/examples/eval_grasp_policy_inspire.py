@@ -70,6 +70,13 @@ parser.add_argument(
 )
 parser.add_argument("--test", action="store_true", help="run integration test with dummy policy")
 parser.add_argument(
+    "--object",
+    type=str,
+    default="random",
+    choices=["random", "block", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
+)
+parser.add_argument(
     "--enable_pinocchio",
     action="store_true",
     default=False,
@@ -113,6 +120,31 @@ def main():
     num_envs = int(getattr(args_cli, "num_envs", 1) or 1)
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=num_envs)
     env_cfg.seed = args_cli.seed
+
+    # Override grasp object if a specific one is requested
+    if args_cli.object != "random":
+        import isaaclab.sim as sim_utils
+        from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
+        from simulation.assets.assets import SINUS_TOOL_USD_PATHS
+
+        obj_name = args_cli.object
+        if obj_name == "block":
+            single_spawner = sim_utils.CuboidCfg(
+                size=(0.05, 0.05, 0.05),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
+            )
+        else:
+            single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+
+        # Replace MultiAssetSpawnerCfg with a single-asset spawner
+        env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
+            assets_cfg=[single_spawner],
+            random_choice=False,
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        )
+        print(f"  Object override: {obj_name}")
 
     # Create environment
     print("\n[2/4] Creating environment...")

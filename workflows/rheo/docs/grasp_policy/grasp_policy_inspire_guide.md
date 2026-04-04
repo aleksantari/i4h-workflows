@@ -6,8 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 # Grasp Policy (Inspire FTP): End-to-End Training Guide
 
 Complete guide for training and evaluating an ACT (Action Chunking Transformer) policy
-on the **grasp_policy_inspire** task (pick up a block and place it in a bin) using the
-G1 robot with **Inspire FTP 5-finger hands**.
+on the **grasp_policy_inspire** task (pick up an object and place it on a target) using the
+G1 robot with **Inspire FTP 5-finger hands**. The scene randomly selects one of 6 objects
+(red block + 5 sinus toolkit surgical tools) per environment clone.
 
 **Pipeline overview:**
 
@@ -68,18 +69,27 @@ correctly with the Inspire FTP hands.
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py --test
+    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    --test --enable_cameras
 ```
+
+> **Important:** `--enable_cameras` is required for all eval/recording scripts.
+> Without it, camera scene entities are stripped but observation terms still reference
+> them, causing runtime errors.
 
 **What to verify:**
 
 - Environment creates without errors
 - Robot spawns with 5-finger Inspire FTP hands visible
+- A random grasp object (block or sinus tool) appears on the table
 - 41D zero actions are accepted (dummy policy)
 - Front camera renders in the viewport
 - Episode completes and reports 0% success rate (expected with dummy policy)
 - Action Manager shows `shape: 41` (direct joint control, 29 body + 12 actuated hand)
 - Observation Manager shows `robot_joint_state (87,)` and `robot_inspire_joint_state (12,)`
+
+**Object selection:** By default, a random object is chosen per env clone. Use
+`--object block` or `--object tool_0` through `--object tool_4` to force a specific one.
 
 > **Code:**
 > [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py) —
@@ -614,7 +624,8 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py --test
+    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    --test --enable_cameras
 ```
 
 ### ACT IL Checkpoint
@@ -627,7 +638,27 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
     --policy_type act \
     --model_path /models/act_inspire_ftp \
     --num_episodes 10 \
-    --save_video
+    --save_video \
+    --enable_cameras
+```
+
+### Object Selection
+
+By default, a random object (block or sinus tool) is spawned per env clone.
+Use `--object` to force a specific one:
+
+```bash
+# Evaluate on block only
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    --policy_type act --model_path /models/act_inspire_ftp \
+    --object block --enable_cameras
+
+# Evaluate on a specific tool
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    --policy_type act --model_path /models/act_inspire_ftp \
+    --object tool_0 --enable_cameras
 ```
 
 The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
@@ -644,8 +675,10 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | `--num_episodes` | 10 | Number of evaluation episodes |
 | `--max_steps` | 256 | Max steps per episode |
 | `--action_chunk_size` | 1 | Actions per chunk to execute |
+| `--object` | `random` | Grasp object: `random`, `block`, `tool_0`..`tool_4` |
 | `--save_video` | false | Save evaluation videos |
 | `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3) |
+| `--enable_cameras` | false | **Required.** Enable camera rendering for observations. |
 | `--enable_pinocchio` | false | Required for PinkIK (teleop task only) |
 
 > **Code:**
@@ -678,6 +711,14 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | [`examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py) | Evaluation (ACT/test modes) |
 | [`simulation/record_demos.py`](../scripts/simulation/record_demos.py) | Demo recording (shared, generic) |
 | [`simulation/replay_demos_isaaclab.py`](../scripts/simulation/replay_demos_isaaclab.py) | Demo replay (shared, generic) |
+
+### Scene Assets
+
+| File | Description |
+|------|-------------|
+| [`assets/sinus_toolkit_v1/`](../assets/sinus_toolkit_v1/) | 5 surgical tool .obj meshes (tool_0..tool_4) |
+| [`simulation/assets/convert_sinus_toolkit.py`](../scripts/simulation/assets/convert_sinus_toolkit.py) | Batch .obj→.usd converter (run inside Docker) |
+| [`simulation/assets/assets.py`](../scripts/simulation/assets/assets.py) | USD path constants (`SINUS_TOOL_USD_PATHS`) |
 
 ### Pipeline Utilities
 
@@ -730,7 +771,8 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | `PermissionError: ... episodes_stats.jsonl` | Dataset directory owned by root. Fix: `sudo chown -R $USER:$USER datasets/` |
 | `FrameNotFound: "g1_29dof_rev_1_0_left_wrist_yaw_link"` | PinkIK frame names use wrong prefix. URDF robot name produces prefix `g1_29dof_rev_1_0_with_inspire_hand_FTP_`. Update `FrameTask` link names in teleop env cfg. |
 | `ValueError: 'L_index_proximal_joint' is not in list` | Retargeter uses Nucleus-style joint names. Ensure `RETARGETER_HAND_JOINT_NAMES` (Nucleus naming) is passed to the retargeter, not `HAND_JOINT_NAMES` (URDF naming). |
-| `front_camera does not exist` | Pass `--enable_cameras` to `record_demos.py`. Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
+| `front_camera does not exist` | Pass `--enable_cameras` to all scripts (`eval_grasp_policy_inspire.py`, `record_demos.py`, `replay_demos_isaaclab.py`). Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
+| `tool_N/tool_N.usd not found` | Run the mesh converter first: `./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py`. The .obj files must be converted to .usd before the scene can load them. |
 | Only 1 camera image in dataset | Expected — Inspire FTP has front camera only (no wrist cameras). |
 | Mimic joints not moving | Verify `InspireFTPJointPositionAction` is used in env cfg (not plain `JointPositionAction`). Check mimic rules in `mimic_action.py`. |
 | USD warnings about `d435_link/visuals` unresolved | Cosmetic — sensor links in the URDF don't have visual meshes. Does not affect sim behavior. |
