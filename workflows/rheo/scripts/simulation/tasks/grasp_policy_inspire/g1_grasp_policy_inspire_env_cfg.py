@@ -19,7 +19,7 @@ Same block pick-and-place task as the Dex3 variant, but using the G1 robot
 with Inspire FTP 5-finger hands.
 
 Key differences from the Dex3 variant:
-- 53D action space (29 body + 24 hand) with mimic enforcement
+- 41D action space (29 body + 12 actuated hand) with mimic enforcement
 - 12D hand observation (6 actuated per hand)
 - Front camera only (no wrist cameras)
 - Policy dim: 26D (14 arm + 12 actuated hand)
@@ -115,6 +115,30 @@ offset_dict = {
 }
 
 # ---------------------------------------------------------------------------
+# 41-joint name list: 29 body + 12 actuated hand joints only.
+# Used by the RL/eval action space. Mimic joints are driven separately
+# by InspireFTPJointPositionAction.apply_actions() after targets are set.
+# The full 53-entry joint_names list is kept above for the teleop variant
+# (PinkIK needs all 24 hand joints including mimic).
+# ---------------------------------------------------------------------------
+_MIMIC_JOINT_NAMES = {
+    "left_index_2_joint",
+    "left_little_2_joint",
+    "left_middle_2_joint",
+    "left_ring_2_joint",
+    "right_index_2_joint",
+    "right_little_2_joint",
+    "right_middle_2_joint",
+    "right_ring_2_joint",
+    "left_thumb_3_joint",
+    "right_thumb_3_joint",
+    "left_thumb_4_joint",
+    "right_thumb_4_joint",
+}
+
+actuated_joint_names = [name for name in joint_names if name not in _MIMIC_JOINT_NAMES]
+
+# ---------------------------------------------------------------------------
 # Target pad geometry (same as Dex3 variant)
 # ---------------------------------------------------------------------------
 TARGET_W = 0.15
@@ -183,11 +207,11 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
 ##
 @configclass
 class ActionsCfg:
-    """53D joint control with Inspire FTP mimic enforcement."""
+    """41D joint control (29 body + 12 actuated hand) with mimic enforcement."""
 
     joint_pos = mdp.InspireFTPJointPositionActionCfg(
         asset_name="robot",
-        joint_names=joint_names,
+        joint_names=actuated_joint_names,
         scale=1.0,
         use_default_offset=False,
         offset=offset_dict,
@@ -296,7 +320,7 @@ class EventCfg:
 
 @configclass
 class G1GraspPolicyInspireEnvCfg(ManagerBasedRLEnvCfg):
-    """Inspire FTP grasp-policy environment configuration (RL mode, 53D joint control)."""
+    """Inspire FTP grasp-policy environment configuration (RL mode, 41D joint control)."""
 
     scene: GraspPolicyInspireSceneCfg = GraspPolicyInspireSceneCfg(
         num_envs=1,

@@ -55,12 +55,12 @@ HAND_INSPIRE_RANGES: dict[str, tuple[int, int]] = {
     "right_hand": (6, 12),  # 6 actuated joints
 }
 
-# Where each group's joints land in the 53-D sim action space.
-# The env config joint_names follows the USD tree-traversal order, which
-# interleaves L/R joints. Arm and hand joints are NOT contiguous, so we
+# Where each group's joints land in the 41-D sim action space.
+# The env config actuated_joint_names follows the USD tree-traversal order
+# with mimic joints removed. Arm and hand joints are NOT contiguous, so we
 # use explicit index lists rather than (start, end) ranges.
 #
-# Each list maps the group's canonical joint order to the 53-D action index.
+# Each list maps the group's canonical joint order to the 41-D action index.
 # Canonical arm order: shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
 #   wrist_roll, wrist_pitch, wrist_yaw  (same as _BODY_JOINT_NAMES_CANONICAL[15:29])
 # Canonical hand order: thumb_yaw, thumb_pitch, index, middle, ring, pinky
@@ -68,11 +68,11 @@ HAND_INSPIRE_RANGES: dict[str, tuple[int, int]] = {
 GROUP_SIM_INDICES: dict[str, list[int]] = {
     "left_arm": [11, 15, 19, 21, 23, 25, 27],
     "right_arm": [12, 16, 20, 22, 24, 26, 28],
-    "left_hand": [33, 43, 29, 30, 32, 31],   # thumb_yaw(33), thumb_pitch(43), idx(29), mid(30), ring(32), pinky(31)
-    "right_hand": [38, 48, 34, 35, 37, 36],  # thumb_yaw(38), thumb_pitch(48), idx(34), mid(35), ring(37), pinky(36)
+    "left_hand": [33, 39, 29, 30, 32, 31],   # thumb_yaw(33), thumb_pitch(39), idx(29), mid(30), ring(32), pinky(31)
+    "right_hand": [38, 40, 34, 35, 37, 36],  # thumb_yaw(38), thumb_pitch(40), idx(34), mid(35), ring(37), pinky(36)
 }
 
-SIM_ACTION_DIM = 53  # 29 body + 24 hand
+SIM_ACTION_DIM = 41  # 29 body + 12 actuated hand
 
 VALID_GROUPS = list(GROUP_SIM_INDICES.keys())
 
@@ -137,7 +137,7 @@ class InspireFTPExperimentConfig:
                 inspire_idx.extend(range(s, e))
         self.inspire_state_indices = inspire_idx
 
-        # Scatter indices: policy_dim -> 53-D sim action.
+        # Scatter indices: policy_dim -> 41-D sim action.
         scatter: list[int] = []
         for g in self.joint_groups:
             scatter.extend(GROUP_SIM_INDICES[g])
@@ -195,15 +195,15 @@ class InspireFTPExperimentConfig:
         return torch.cat(parts, dim=-1)
 
     def scatter_to_sim(self, policy_action: Any) -> Any:
-        """Place policy-dim actions at the correct 53-D sim positions.
+        """Place policy-dim actions at the correct 41-D sim positions.
 
         Args:
             policy_action: Tensor of shape ``(..., policy_dim)``.
 
         Returns:
-            Tensor of shape ``(..., 53)`` with zeros elsewhere.
-            NOTE: Mimic joints are NOT filled here — that is done by the
-            InspireFTPJointPositionAction class in the env.
+            Tensor of shape ``(..., 41)`` with zeros elsewhere.
+            Mimic joints are not part of the 41-D action space — they are
+            driven by InspireFTPJointPositionAction.apply_actions().
         """
         import torch
 

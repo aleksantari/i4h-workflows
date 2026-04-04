@@ -16,13 +16,13 @@
 """Custom joint position action with Inspire FTP mimic joint enforcement.
 
 The Inspire FTP hand has 12 joints per hand: 6 independently actuated and
-6 mechanically coupled (mimic) joints. This action class accepts the full
-joint position target vector and overwrites mimic joint targets with values
-computed from the actuated joints using the URDF-specified multipliers.
+6 mechanically coupled (mimic) joints.  This action class accepts a 41-D
+action vector (29 body + 12 actuated hand) and drives the 12 mimic joints
+separately on the articulation using the URDF-specified multipliers.
 
 Processing order matters for chained mimic joints (thumb):
-  thumb_intermediate = thumb_proximal_pitch × 0.8024
-  thumb_distal       = thumb_intermediate   × 0.9487
+  thumb_intermediate = thumb_proximal_pitch x 0.8024
+  thumb_distal       = thumb_intermediate   x 0.9487
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from isaaclab.utils import configclass
 # Order matters: thumb_intermediate must be computed before thumb_distal.
 
 _MIMIC_RULES_PER_SIDE: list[tuple[str, str, float]] = [
-    # Finger _2 joints mimic their _1 (proximal) at 1.0843×
+    # Finger _2 joints mimic their _1 (proximal) at 1.0843x
     ("{side}_index_2_joint", "{side}_index_1_joint", 1.0843),
     ("{side}_middle_2_joint", "{side}_middle_1_joint", 1.0843),
     ("{side}_ring_2_joint", "{side}_ring_1_joint", 1.0843),
@@ -60,47 +60,74 @@ for side in ("left", "right"):
 class InspireFTPJointPositionAction(JointPositionAction):
     """JointPositionAction with mimic joint enforcement for Inspire FTP hands.
 
-    After the standard position target processing, this class reads the
-    actuated hand joint targets and overwrites the mimic joint targets
-    using the defined multipliers.
+    Accepts a 41-D action (29 body + 12 actuated hand).  After setting
+    position targets for those 41 joints, ``apply_actions`` computes and
+    sets targets for the 12 mimic joints on the articulation.
     """
 
     def __init__(self, cfg: InspireFTPJointPositionActionCfg, env):
         super().__init__(cfg, env)
-        self._mimic_indices: list[tuple[int, int, float]] | None = None
 
-    def _resolve_mimic_indices(self) -> list[tuple[int, int, float]]:
-        """Lazily resolve joint name → action-space index mapping.
+        # Resolve mimic joint IDs from the full articulation.
+        all_art_names = list(self._asset.data.joint_names)
+        art_name_to_idx = {n: i for i, n in enumerate(all_art_names)}
 
-        Returns list of (mimic_idx, parent_idx, multiplier) in the
-        action-space ordering defined by cfg.joint_names.
-        """
-        joint_names = list(self.cfg.joint_names)
-        name_to_idx = {name: i for i, name in enumerate(joint_names)}
+        # Map actuated joint names in the 41-D action space to action indices.
+        action_name_to_idx = {n: i for i, n in enumerate(cfg.joint_names)}
 
-        resolved: list[tuple[int, int, float]] = []
+        mimic_art_ids: list[int] = []
+        # Each entry: ("action" | "mimic", parent_index, multiplier)
+        # "action" means parent is in the 41-D action tensor;
+        # "mimic" means parent is another mimic joint (chained thumb case).
+        mimic_parent_info: list[tuple[str, int, float]] = []
+        mimic_name_to_local: dict[str, int] = {}
+
         for mimic_name, parent_name, mult in MIMIC_RULES:
-            mimic_idx = name_to_idx.get(mimic_name)
-            parent_idx = name_to_idx.get(parent_name)
-            if mimic_idx is not None and parent_idx is not None:
-                resolved.append((mimic_idx, parent_idx, mult))
+            if mimic_name not in art_name_to_idx:
+                continue  # joint not in this articulation
 
-        return resolved
+            mimic_art_ids.append(art_name_to_idx[mimic_name])
+            local_idx = len(mimic_art_ids) - 1
+            mimic_name_to_local[mimic_name] = local_idx
 
-    def _apply_mimic(self, actions: torch.Tensor) -> torch.Tensor:
-        """Overwrite mimic joint targets with parent × multiplier."""
-        if self._mimic_indices is None:
-            self._mimic_indices = self._resolve_mimic_indices()
+            if parent_name in action_name_to_idx:
+                mimic_parent_info.append(("action", action_name_to_idx[parent_name], mult))
+            elif parent_name in mimic_name_to_local:
+                mimic_parent_info.append(("mimic", mimic_name_to_local[parent_name], mult))
+            else:
+                raise ValueError(
+                    f"Mimic parent '{parent_name}' for '{mimic_name}' not found in "
+                    f"action space or prior mimic joints."
+                )
 
-        for mimic_idx, parent_idx, mult in self._mimic_indices:
-            actions[:, mimic_idx] = actions[:, parent_idx] * mult
+        self._mimic_art_ids = mimic_art_ids
+        self._mimic_parent_info = mimic_parent_info
+        self._n_mimic = len(mimic_art_ids)
 
-        return actions
+    def apply_actions(self) -> None:
+        """Set targets for actuated joints, then compute and set mimic targets."""
+        # 1. Set targets for the 41 actuated joints (parent class logic).
+        super().apply_actions()
 
-    def process_actions(self, actions: torch.Tensor) -> None:
-        """Apply mimic enforcement then delegate to parent."""
-        actions = self._apply_mimic(actions.clone())
-        super().process_actions(actions)
+        if self._n_mimic == 0:
+            return
+
+        # 2. Compute mimic joint targets from processed_actions.
+        B = self.processed_actions.shape[0]
+        mimic_vals = torch.zeros(
+            B, self._n_mimic,
+            dtype=self.processed_actions.dtype,
+            device=self.processed_actions.device,
+        )
+
+        for i, (source, idx, mult) in enumerate(self._mimic_parent_info):
+            if source == "action":
+                mimic_vals[:, i] = self.processed_actions[:, idx] * mult
+            else:  # "mimic" — chained (e.g. thumb_4 from thumb_3)
+                mimic_vals[:, i] = mimic_vals[:, idx] * mult
+
+        # 3. Set mimic joint targets on the articulation.
+        self._asset.set_joint_position_target(mimic_vals, joint_ids=self._mimic_art_ids)
 
 
 @configclass

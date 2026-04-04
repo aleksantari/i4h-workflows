@@ -129,11 +129,11 @@ def main():
                 self.device = device
 
             def get_action(self, _obs):
-                # 53D action space (29 body + 24 hand)
-                return {"actions": np.zeros((16, 53), dtype=np.float32)}
+                # 41D action space (29 body + 12 actuated hand)
+                return {"actions": np.zeros((16, 41), dtype=np.float32)}
 
         policy = _DummyPolicy(args_cli.device)
-        print("Dummy policy ready (53D zero actions)")
+        print("Dummy policy ready (41D zero actions)")
 
     elif args_cli.policy_type == "act":
         from simulation.act_closedloop_policy import ACTClosedloopPolicy
@@ -150,7 +150,7 @@ def main():
                 "action_chunk_length": 100,
                 "language_instruction": args_cli.task_description,
                 "policy_action_dim": 26,
-                "sim_action_dim": 53,
+                "sim_action_dim": 41,
                 "target_image_size": [480, 640, 3],
             }
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)

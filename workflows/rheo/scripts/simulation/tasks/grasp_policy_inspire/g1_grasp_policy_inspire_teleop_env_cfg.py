@@ -47,7 +47,7 @@ from isaaclab.utils import configclass
 
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (
     G1GraspPolicyInspireEnvCfg,
-    joint_names,
+    joint_names,  # Full 53-joint list (NOT actuated_joint_names) — PinkIK needs all 24 hand joints.
 )
 
 # All 24 hand joints in USD articulation order (indices 29-52 of the full 53-joint list).

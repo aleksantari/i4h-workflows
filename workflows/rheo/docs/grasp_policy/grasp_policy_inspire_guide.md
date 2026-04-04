@@ -25,7 +25,7 @@ Teleoperate (AVP dex-retargeting)  -->  Record HDF5  -->  Convert to LeRobot  --
 | Hand joints | 14 (7 per hand) | 24 (12 per hand: 6 actuated + 6 mimic) |
 | Observed hand state | 14D (`robot_dex3_joint_state`) | 12D (`robot_inspire_joint_state`) |
 | Policy action dim | 28D (14 arm + 14 hand) | 26D (14 arm + 12 hand) |
-| Sim action dim | 43D | 53D (29 body + 24 hand) |
+| Sim action dim | 43D | 41D (29 body + 12 actuated hand) |
 | Cameras | 3 (front + 2 wrist) | 1 (front only) |
 | Teleop controller | WBC+PINK (23D) | PinkIK (38D) |
 | Hand control | Binary gripper (pinch open/close) | Binary gripper (pinch open/close) |
@@ -75,10 +75,10 @@ correctly with the Inspire FTP hands.
 
 - Environment creates without errors
 - Robot spawns with 5-finger Inspire FTP hands visible
-- 53D zero actions are accepted (dummy policy)
+- 41D zero actions are accepted (dummy policy)
 - Front camera renders in the viewport
 - Episode completes and reports 0% success rate (expected with dummy policy)
-- Action Manager shows `shape: 53` (direct joint control)
+- Action Manager shows `shape: 41` (direct joint control, 29 body + 12 actuated hand)
 - Observation Manager shows `robot_joint_state (87,)` and `robot_inspire_joint_state (12,)`
 
 > **Code:**
@@ -140,11 +140,10 @@ IsaacLab env observations
     Policy input/output: 26D
     [left_arm(7) | right_arm(7) | left_hand(6) | right_hand(6)]
             |
-    Scatter to 53D sim action (InspireFTPExperimentConfig.scatter_to_sim)
+    Scatter to 41D sim action (InspireFTPExperimentConfig.scatter_to_sim)
             |
-    Mimic enforcement (InspireFTPJointPositionAction)
-            |
-    Simulator steps with 53D action (29 body + 24 hand)
+    Simulator steps with 41D action (29 body + 12 actuated hand)
+    Mimic joints (12) driven internally by InspireFTPJointPositionAction.apply_actions()
 ```
 
 > **Code:**
@@ -320,7 +319,7 @@ The recorded HDF5 will contain:
 
 | Key | Shape | Description |
 |-----|-------|-------------|
-| `processed_actions` | (T, 38) | PinkIK teleop actions (not 53D joint space) |
+| `processed_actions` | (T, 38) | PinkIK teleop actions (not 41D joint space) |
 | `robot_joint_state` | (T, 87) | Full body state (29 joints x 3) |
 | `robot_inspire_joint_state` | (T, 12) | Actuated hand joints only |
 | `front_camera` | (T, 480, 640, 3) | Front camera RGB (single camera) |
@@ -394,7 +393,7 @@ rheo_camera_mappings_obs:
 ### How Actions Are Derived
 
 The HDF5 `processed_actions` are 38D (PinkIK: 14D arm IK + 24D hand passthrough),
-**not** 53D joint-space. The converter cannot directly extract 26D policy joints from
+**not** 41D joint-space. The converter cannot directly extract 26D policy joints from
 38D, so it uses **observation-derived actions**:
 
 ```
@@ -402,8 +401,9 @@ action[t] = state[t+1]    (next-step observed joint positions)
 ```
 
 This is standard practice for teleop IL recordings. The fallback is automatic —
-`convert_g1_state_action_to_lerobot_26d()` checks `action_full.shape[1] == 53` and
-falls back to observation-derived when it's not.
+`convert_g1_state_action_to_lerobot_26d()` checks `action_full.shape[1]` — it handles
+53D (legacy), 41D (current RL/eval), and falls back to observation-derived for anything
+else (e.g. 38D teleop).
 
 ### Verified Output
 
@@ -560,14 +560,14 @@ number of parallel envs, PPO hyperparameters, object placement randomization.
 The RLinf extension module has full Inspire FTP support:
 
 - Environment wrapper (`IsaaclabGraspPolicyInspireEnv`) with correct 26D state extraction
-- ACT obs/action converters (`act_inspire_ftp`) for 26D policy <-> 53D sim mapping
+- ACT obs/action converters (`act_inspire_ftp`) for 26D policy <-> 41D sim mapping
 - Gym IDs registered: `Isaac-Grasp-Policy-G129-InspireFTP-Joint` and `-Joint-Eval`
 
 > **Code:**
 > [`scripts/simulation/rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py)
 > — Inspire env wrapper (lines 565-636), ACT converters (lines 644-705).
 > [`scripts/utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py)
-> — 26D joint groups, scatter_to_sim (53D), state extraction.
+> — 26D joint groups, scatter_to_sim (41D), state extraction.
 
 ### What Needs To Be Created
 
@@ -697,15 +697,15 @@ with `CONFIG_NAME="isaaclab_ppo_act_grasp_policy_inspire"`.
 Two files need modifications before ACT checkpoint evaluation will work:
 
 1. **`scripts/simulation/act_closedloop_policy.py`** — hardcodes `sim_action_dim = 43`
-   (Dex3). Needs to read `sim_action_dim` from the policy config YAML (which
-   `eval_grasp_policy_inspire.py` auto-generates with `sim_action_dim: 53`).
+   (Dex3). Needs to read `sim_action_dim` from the policy config YAML (the Inspire eval
+   script auto-generates with `sim_action_dim: 41`).
 
 2. **`scripts/simulation/obs_processor.py`** — hardcodes `robot_dex3_joint_state`
    (14D). Needs a branch for `robot_inspire_joint_state` (12D).
 
 > **Code:**
 > [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py).
-> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) (needs 53D fix).
+> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) (needs 41D fix).
 > [`scripts/simulation/obs_processor.py`](../scripts/simulation/obs_processor.py) (needs Inspire branch).
 
 ---
@@ -717,7 +717,7 @@ Two files need modifications before ACT checkpoint evaluation will work:
 | File | Description |
 |------|-------------|
 | [`tasks/grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py) | Gym registrations (Joint, Joint-Eval, Teleop) |
-| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | RL env config (53D action, 87D+12D obs, rewards, terminations) |
+| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | RL env config (41D action, 87D+12D obs, rewards, terminations) |
 | [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | Teleop env config (38D PinkIK, XR, dex-retargeting) |
 | [`tasks/grasp_policy_inspire/config/robot_config.py`](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) | Robot USD asset, actuator configs, default joint positions |
 | [`tasks/grasp_policy_inspire/mdp/mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Mimic joint enforcement (12 rules) |
@@ -738,7 +738,7 @@ Two files need modifications before ACT checkpoint evaluation will work:
 
 | File | Description |
 |------|-------------|
-| [`utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (53D), state extraction |
+| [`utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
 | [`utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion |
 | [`utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (Dex3-only, needs Inspire branch) |
 | [`utils/inspect_inspire_ftp_joints.py`](../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
@@ -767,8 +767,8 @@ Two files need modifications before ACT checkpoint evaluation will work:
 |-------|-----|
 | `ValueError: Not all regular expressions matched -- L_.*: []` | Joint names use URDF convention (`left_index_1_joint`), not Nucleus (`L_index_proximal_joint`). Check `robot_config.py` actuator patterns. |
 | `KeyError: 'robot_dex3_joint_state'` | Wrong task ID or shared code assumes Dex3. Ensure using `InspireFTP` task variant. Check `examples/utils.py` handles both hand types. |
-| `ValueError: Invalid action shape, expected: 38, received: 53` | You're running the eval script against the Teleop env. Use the `Joint` variant for eval, or `record_demos.py` for teleop. |
-| `ValueError: Invalid action shape, expected: 53, received: 43` | Code assumes Dex3 43D sim action. Check `act_closedloop_policy.py` — needs 53D for Inspire. |
+| `ValueError: Invalid action shape, expected: 38, received: 41` | You're running the eval script against the Teleop env. Use the `Joint` variant for eval, or `record_demos.py` for teleop. |
+| `ValueError: Invalid action shape, expected: 41, received: 43` | Code assumes Dex3 43D sim action. Check `act_closedloop_policy.py` — needs 41D for Inspire. |
 | `FrameNotFound: "g1_29dof_rev_1_0_left_wrist_yaw_link"` | PinkIK frame names use wrong prefix. URDF robot name produces prefix `g1_29dof_rev_1_0_with_inspire_hand_FTP_`. Update `FrameTask` link names in teleop env cfg. |
 | `ValueError: 'L_index_proximal_joint' is not in list` | Retargeter uses Nucleus-style joint names. Ensure `RETARGETER_HAND_JOINT_NAMES` (Nucleus naming) is passed to the retargeter, not `HAND_JOINT_NAMES` (URDF naming). |
 | `front_camera does not exist` | Pass `--enable_cameras` to `record_demos.py`. Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |

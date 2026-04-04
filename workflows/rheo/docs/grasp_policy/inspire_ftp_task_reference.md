@@ -1,7 +1,7 @@
 # Inspire FTP Grasp Policy Task Reference
 
 Technical reference for the G1 + Inspire FTP block pick-and-place task.
-Covers both the **RL/eval** (53D joint control) and **teleop** (38D PinkIK) variants,
+Covers both the **RL/eval** (41D joint control) and **teleop** (38D PinkIK) variants,
 plus the 26D data conversion pipeline.
 
 ---
@@ -12,7 +12,7 @@ plus the 26D data conversion pipeline.
 2. [Gym IDs and Registration](#2-gym-ids-and-registration)
 3. [Scene Setup](#3-scene-setup)
 4. [Action Space](#4-action-space)
-   - [4a. RL/Eval: 53D Joint Position](#4a-rleval-53d-joint-position)
+   - [4a. RL/Eval: 41D Joint Position](#4a-rleval-41d-joint-position)
    - [4b. Teleop: 38D PinkIK](#4b-teleop-38d-pinkinverse-kinematics)
 5. [Observation Space](#5-observation-space)
 6. [Reward Structure](#6-reward-structure)
@@ -37,12 +37,13 @@ Three gym variants exist:
 
 | Variant | Gym ID | Action Dim | Episode | Purpose |
 |---------|--------|------------|---------|---------|
-| **RL Training** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | 53D | 20 s | Random block placement |
-| **RL Evaluation** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` | 53D | 20 s | Deterministic block placement |
+| **RL Training** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | 41D | 20 s | Random block placement |
+| **RL Evaluation** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` | 41D | 20 s | Deterministic block placement |
 | **Teleoperation** | `Isaac-Grasp-Policy-G129-InspireFTP-Teleop` | 38D | 300 s | PinkIK + AVP hand tracking |
 
-Key differences from the Dex3 variant: 53D actions (vs 43D), 12D hand observation (vs 14D),
-front camera only (vs 3 cameras), 26D policy dim (vs 28D).
+Key differences from the Dex3 variant: 41D actions (vs 43D), 12D hand observation (vs 14D),
+front camera only (vs 3 cameras), 26D policy dim (vs 28D). The 12 mimic hand joints are
+driven internally by the action class — they are not part of the action space.
 
 ---
 
@@ -82,15 +83,16 @@ No wrist cameras are available on the Inspire FTP hand (no camera mount links in
 
 ## 4. Action Space
 
-### 4a. RL/Eval: 53D Joint Position
+### 4a. RL/Eval: 41D Joint Position
 
-**File:** `g1_grasp_policy_inspire_env_cfg.py` (lines 185-195), `mdp/mimic_action.py`
+**File:** `g1_grasp_policy_inspire_env_cfg.py`, `mdp/mimic_action.py`
 
-The action is a 53D joint position target: **29 body + 24 hand joints**.
-Uses `InspireFTPJointPositionAction`, which enforces mimic constraints after
-standard position target processing.
+The action is a 41D joint position target: **29 body + 12 actuated hand joints**.
+Uses `InspireFTPJointPositionAction`, which sets targets for the 41 actuated joints
+and then computes and sets targets for the 12 mimic joints separately on the
+articulation via `apply_actions()`.
 
-#### Full 53-Joint List (USD Articulation Order)
+#### Full 41-Joint List (USD Articulation Order, Mimic Removed)
 
 | Idx | Joint Name | Group |
 |-----|-----------|-------|
@@ -133,23 +135,15 @@ standard position target processing.
 | 36 | `right_middle_1_joint` | Hand (actuated) |
 | 37 | `right_ring_1_joint` | Hand (actuated) |
 | 38 | `right_thumb_1_joint` | Hand (actuated) |
-| 39 | `left_index_2_joint` | Hand (mimic) |
-| 40 | `left_little_2_joint` | Hand (mimic) |
-| 41 | `left_middle_2_joint` | Hand (mimic) |
-| 42 | `left_ring_2_joint` | Hand (mimic) |
-| 43 | `left_thumb_2_joint` | Hand (actuated) |
-| 44 | `right_index_2_joint` | Hand (mimic) |
-| 45 | `right_little_2_joint` | Hand (mimic) |
-| 46 | `right_middle_2_joint` | Hand (mimic) |
-| 47 | `right_ring_2_joint` | Hand (mimic) |
-| 48 | `right_thumb_2_joint` | Hand (actuated) |
-| 49 | `left_thumb_3_joint` | Hand (mimic) |
-| 50 | `right_thumb_3_joint` | Hand (mimic) |
-| 51 | `left_thumb_4_joint` | Hand (mimic) |
-| 52 | `right_thumb_4_joint` | Hand (mimic) |
+| 39 | `left_thumb_2_joint` | Hand (actuated) |
+| 40 | `right_thumb_2_joint` | Hand (actuated) |
 
 **Note:** `thumb_1` = yaw, `thumb_2` = proximal pitch (both actuated).
-`thumb_3` = intermediate, `thumb_4` = distal (both mimic).
+The 12 mimic joints (`*_2`, `thumb_3`, `thumb_4`) are NOT in the action space
+but are driven by `InspireFTPJointPositionAction.apply_actions()` using mimic rules.
+
+The full 53-joint list (including mimic) is defined as `joint_names` in the env config
+and used by the teleop variant's PinkIK controller.
 
 #### Mimic Rules (12 total: 6 per hand)
 
@@ -509,7 +503,7 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 | Property | Inspire FTP | Dex3 |
 |----------|-------------|------|
 | **Gym ID prefix** | `Isaac-Grasp-Policy-G129-InspireFTP-*` | `Isaac-Grasp-Policy-G129-Dex3-*` |
-| **Action dim (RL)** | 53 | 43 |
+| **Action dim (RL)** | 41 | 43 |
 | **Body joints** | 29 | 29 |
 | **Hand joints (total)** | 24 (12 actuated + 12 mimic) | 14 (7 per hand) |
 | **Actuated hand joints** | 6 per hand | 7 per hand |
@@ -553,7 +547,7 @@ Output: states = cat([arm, hand], dim=-1)              -> (B, 26) policy state
 `_convert_inspire_obs_to_act_format`:
 - Input: 26D states + front camera
 - Policy output: (chunk_size, 26)
-- Scatter to sim: 26D -> 53D (`scatter_to_sim_numpy()`)
+- Scatter to sim: 26D -> 41D (`scatter_to_sim_numpy()`)
 
 ### Data Flow (Eval)
 
@@ -562,8 +556,8 @@ env.step()
   -> obs: {robot_joint_state(87), robot_inspire_joint_state(12), front_camera}
   -> _wrap_obs(): {states(26), main_images, task_descriptions}
   -> ACT policy: select_action() -> (chunk_size, 26)
-  -> scatter: 26 -> 53D
-  -> env.step(action_53D)
+  -> scatter: 26 -> 41D
+  -> env.step(action_41D)
 ```
 
 ---
@@ -575,7 +569,7 @@ All paths relative to `scripts/`.
 | File | Role |
 |------|------|
 | `simulation/tasks/grasp_policy_inspire/__init__.py` | Gym ID registration (3 variants) |
-| `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py` | RL/eval env config (53D, 20s) |
+| `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py` | RL/eval env config (41D, 20s) |
 | `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py` | Teleop env config (38D PinkIK, 300s) |
 | `simulation/tasks/grasp_policy_inspire/mdp/__init__.py` | MDP module exports |
 | `simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py` | `InspireFTPJointPositionAction` with mimic enforcement |

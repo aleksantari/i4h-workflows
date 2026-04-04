@@ -157,6 +157,36 @@ ACTION_HDF5_TO_ENV_26 = [
     _recorded_action_name_to_idx_53[name] for name in STATE_26_NAMES_ENV_ORDER
 ]
 
+# ---------------------------------------------------------------------------
+# 41-D action space (29 body + 12 actuated hand, mimic joints removed).
+# Used for new recordings from the refactored RL/eval env.
+# ---------------------------------------------------------------------------
+_MIMIC_JOINT_NAMES_NUCLEUS = {
+    "L_index_intermediate_joint",
+    "L_middle_intermediate_joint",
+    "L_pinky_intermediate_joint",
+    "L_ring_intermediate_joint",
+    "R_index_intermediate_joint",
+    "R_middle_intermediate_joint",
+    "R_pinky_intermediate_joint",
+    "R_ring_intermediate_joint",
+    "L_thumb_intermediate_joint",
+    "R_thumb_intermediate_joint",
+    "L_thumb_distal_joint",
+    "R_thumb_distal_joint",
+}
+
+RECORDED_ACTION_41_JOINT_NAMES = tuple(
+    name for name in RECORDED_ACTION_53_JOINT_NAMES if name not in _MIMIC_JOINT_NAMES_NUCLEUS
+)
+
+_recorded_action_name_to_idx_41 = {
+    name: i for i, name in enumerate(RECORDED_ACTION_41_JOINT_NAMES)
+}
+ACTION_HDF5_TO_ENV_26_FROM_41 = [
+    _recorded_action_name_to_idx_41[name] for name in STATE_26_NAMES_ENV_ORDER
+]
+
 
 def _extract_26d(state_body: np.ndarray, state_inspire: np.ndarray) -> np.ndarray:
     """Extract canonical 26-D vector from body (87D) and hand (12D) observations."""
@@ -190,8 +220,12 @@ def convert_g1_state_action_to_lerobot_26d(
     if action_full is not None and action_full.shape[1] == 53:
         action = action_full[:-1, ACTION_HDF5_TO_ENV_26].astype(np.float64)
         action += STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA
+    elif action_full is not None and action_full.shape[1] == 41:
+        action = action_full[:-1, ACTION_HDF5_TO_ENV_26_FROM_41].astype(np.float64)
+        action += STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA
     else:
-        # Teleop recording: action = next-step observed joint positions.
+        # Teleop recording (38D PinkIK) or unknown width:
+        # action = next-step observed joint positions.
         # Elbow offset is already baked into the observed positions.
         action = full_26d[1:]  # (T-1, 26)
 
