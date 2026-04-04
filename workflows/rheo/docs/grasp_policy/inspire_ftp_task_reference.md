@@ -566,6 +566,8 @@ env.step()
 
 All paths relative to `scripts/`.
 
+### Task Implementation
+
 | File | Role |
 |------|------|
 | `simulation/tasks/grasp_policy_inspire/__init__.py` | Gym ID registration (3 variants) |
@@ -579,10 +581,34 @@ All paths relative to `scripts/`.
 | `simulation/tasks/grasp_policy/mdp/events.py` | Reset handlers (shared) |
 | `simulation/tasks/grasp_policy_inspire/config/robot_config.py` | G1 + Inspire FTP articulation config |
 | `teleop_devices/inspire_gripper_retargeter.py` | Binary gripper retargeter for AVP |
-| `utils/inspire_ftp_lerobot_fields.py` | 26D state/action conversion logic |
+
+### Data Pipeline
+
+| File | Role |
+|------|------|
+| `utils/inspire_ftp_lerobot_fields.py` | 26D state/action conversion logic (handles 53D, 41D, 38D) |
+| `utils/inspire_ftp_experiment_config.py` | 26D joint groups, scatter_to_sim (41D), state extraction |
 | `utils/convert_hdf5_to_lerobot.py` | HDF5 -> LeRobot dataset converter |
 | `config/g1_grasp_policy_inspire_dataset.yaml` | Dataset conversion config |
+
+### ACT Training and Evaluation
+
+| File | Role |
+|------|------|
+| `policy/act_config_inspire_ftp.yaml` | IL training config (26D state/action, 1 camera) |
+| `policy/train_act_grasp_policy_inspire.sh` | IL training launcher (LeRobot) |
+| `simulation/act_closedloop_policy.py` | ACT eval wrapper (Dex3 43D + Inspire 41D) |
+| `simulation/examples/eval_grasp_policy_inspire.py` | Evaluation entry point (ACT/test modes) |
+
+### RLinf RL Post-Training
+
+| File | Role |
+|------|------|
 | `simulation/rl/rlinf_ext/__init__.py` | RLinf env registration + ACT converters |
+| `simulation/rl/rlinf_ext/act_policy.py` | ACT wrapper with ValueHead for RL (generic) |
+| `simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml` | RLinf model config (action_dim=26) |
+| `simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml` | RLinf env config (InspireFTP gym ID) |
+| `simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml` | RLinf PPO top-level config |
 
 ---
 

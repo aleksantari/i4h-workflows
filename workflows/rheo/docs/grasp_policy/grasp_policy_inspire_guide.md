@@ -437,50 +437,15 @@ test/lerobot/
 
 ## 6. ACT Imitation Learning Training
 
-**Status: TODO** — config file needs to be created
+**Status: TESTED**
 
 Train an ACT policy on the converted LeRobot dataset.
 
 > **Code:**
-> Dex3 training config template:
-> [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml).
+> Training config:
+> [`scripts/policy/act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml).
 > Training launcher:
-> [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh).
-
-### What Needs To Be Created
-
-**ACT training config** — `scripts/policy/act_config_inspire.yaml`
-
-Key changes from the Dex3 config:
-
-```yaml
-experiment:
-  cameras:
-    front_camera: "observation.images.cam_room"
-    # No wrist cameras for Inspire FTP
-  joint_groups:
-    - left_arm    # 7 DOF
-    - right_arm   # 7 DOF
-    - left_hand   # 6 DOF (Inspire FTP actuated)
-    - right_hand  # 6 DOF (Inspire FTP actuated)
-
-policy:
-  input_features:
-    observation.state:
-      type: STATE
-      shape: [26]        # was [28] for Dex3
-    observation.images.cam_room:
-      type: VISUAL
-      shape: [3, 480, 640]
-    # No wrist camera features
-  output_features:
-    action:
-      type: ACTION
-      shape: [26]        # was [28] for Dex3
-```
-
-All other hyperparameters (chunk_size=100, dim_model=512, kl_weight=10, etc.)
-remain the same as Dex3.
+> [`scripts/policy/train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh).
 
 ### Training Configuration
 
@@ -500,14 +465,49 @@ remain the same as Dex3.
 - Images: 1 camera at 480x640 (front/room only)
 - Action output: 26D
 
-### Expected Command (Once Config Created)
+### Key Differences from Dex3 Config
+
+The Inspire FTP config (`act_config_inspire_ftp.yaml`) differs from the Dex3 config
+(`act_config.yaml`) in:
+
+- **`experiment.cameras`**: Front camera only (no wrist cameras)
+- **`experiment.joint_groups`**: Hand groups have 6 DOF (not 7)
+- **`input_features.observation.state.shape`**: [26] (not [28])
+- **`output_features.action.shape`**: [26] (not [28])
+- **`input_features`**: No wrist camera features
+
+All other hyperparameters (chunk_size=100, dim_model=512, kl_weight=10, etc.)
+remain the same as Dex3.
+
+### Training Command
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
-    --dataset_path /datasets/inspire_ftp_lerobot \
-    --config scripts/policy/act_config_inspire.yaml
+    bash scripts/policy/train_act_grasp_policy_inspire.sh \
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot
 ```
+
+Extra args are passed through to LeRobot's training script:
+
+```bash
+# Custom batch size and steps
+./docker/run_docker_grasp.sh \
+    bash scripts/policy/train_act_grasp_policy_inspire.sh \
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot \
+    --steps 50000 --batch_size 32
+
+# Resume from checkpoint
+./docker/run_docker_grasp.sh \
+    bash scripts/policy/train_act_grasp_policy_inspire.sh \
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot \
+    --resume_path /models/act_inspire_ftp/checkpoint_50000
+```
+
+The script automatically:
+- Generates `episodes_stats.jsonl` if missing (required by LeRobot v2.1)
+- Strips the `experiment:` section before passing to LeRobot (it rejects unknown fields)
+- Sets `INSPIRE_FTP_EXPERIMENT_CONFIG` env var for downstream code
+- Saves output to `scripts/simulation/rl/results/act_grasp_policy_inspire/`
 
 ---
 
@@ -555,7 +555,7 @@ number of parallel envs, PPO hyperparameters, object placement randomization.
 
 ## 8. RL Post-Training (PPO via RLinf)
 
-**Status: TODO** — runtime code is fully implemented; config files need to be created
+**Status: UNTESTED** — all config files and runtime code are implemented
 
 The RLinf extension module has full Inspire FTP support:
 
@@ -569,67 +569,19 @@ The RLinf extension module has full Inspire FTP support:
 > [`scripts/utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py)
 > — 26D joint groups, scatter_to_sim (41D), state extraction.
 
-### What Needs To Be Created
+### RLinf Config Files
 
-Three YAML config files plus a shell script, parallel to their Dex3 equivalents:
+Three YAML configs (parallel to their Dex3 equivalents):
 
-**1. Model config** — `scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml`
+| Config | File | Key Difference from Dex3 |
+|--------|------|--------------------------|
+| **Model** | [`config/model/act_inspire_ftp.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml) | `action_dim: 26` (was 28) |
+| **Env** | [`config/env/isaaclab_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | `id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint"` |
+| **PPO** | [`config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | References Inspire env/model configs, eval uses `-Joint-Eval` |
 
-Parallel to [`config/model/act_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml):
+All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as Dex3.
 
-```yaml
-model_type: "act"
-model_path: "/path/to/act_inspire_ftp_checkpoint"
-precision: "bf16"
-action_dim: 26                    # was 28 for Dex3
-num_action_chunks: 1
-obs_converter_type: "act_inspire_ftp"   # was "act" for Dex3
-add_value_head: True
-rl_head_config:
-  add_value_head: ${actor.model.add_value_head}
-  disable_dropout: True
-  noise_level: 0.3
-```
-
-**2. Env config** — `scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`
-
-Parallel to [`config/env/isaaclab_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy.yaml):
-
-```yaml
-env_type: isaaclab
-init_params:
-    id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint"    # was Dex3
-    task_description: "pick up block and place in bin"
-```
-
-**3. Main PPO config** — `scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`
-
-Parallel to [`config/isaaclab_ppo_act_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml):
-
-```yaml
-defaults:
-  - env/isaaclab_grasp_policy_inspire@env.train      # changed
-  - env/isaaclab_grasp_policy_inspire@env.eval        # changed
-  - model/act_inspire_ftp@actor.model                 # changed
-
-runner:
-  logger:
-    experiment_name: "act_grasp_policy_inspire"       # changed
-
-env:
-  eval:
-    init_params:
-      id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval"  # changed
-```
-
-All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same.
-
-**4. Training script** — `scripts/simulation/rl/train_act_grasp_policy_inspire.sh`
-
-Copy of [`train_act_grasp_policy.sh`](../scripts/simulation/rl/train_act_grasp_policy.sh)
-with `CONFIG_NAME="isaaclab_ppo_act_grasp_policy_inspire"`.
-
-### Expected Command (Once Configs Created)
+### Training Command
 
 ```bash
 ./docker/run_docker_grasp.sh \
@@ -667,7 +619,7 @@ with `CONFIG_NAME="isaaclab_ppo_act_grasp_policy_inspire"`.
 
 ### ACT IL Checkpoint
 
-**Status: UNTESTED** (requires trained model + code fixes)
+**Status: UNTESTED** (requires trained model)
 
 ```bash
 ./docker/run_docker_grasp.sh \
@@ -677,6 +629,10 @@ with `CONFIG_NAME="isaaclab_ppo_act_grasp_policy_inspire"`.
     --num_episodes 10 \
     --save_video
 ```
+
+The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
+`hand_type: inspire_ftp`. The `ACTClosedloopPolicy` wrapper detects Inspire FTP and
+loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera only).
 
 ### CLI Arguments
 
@@ -692,21 +648,10 @@ with `CONFIG_NAME="isaaclab_ppo_act_grasp_policy_inspire"`.
 | `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3) |
 | `--enable_pinocchio` | false | Required for PinkIK (teleop task only) |
 
-### Known Issues for ACT Evaluation
-
-Two files need modifications before ACT checkpoint evaluation will work:
-
-1. **`scripts/simulation/act_closedloop_policy.py`** — hardcodes `sim_action_dim = 43`
-   (Dex3). Needs to read `sim_action_dim` from the policy config YAML (the Inspire eval
-   script auto-generates with `sim_action_dim: 41`).
-
-2. **`scripts/simulation/obs_processor.py`** — hardcodes `robot_dex3_joint_state`
-   (14D). Needs a branch for `robot_inspire_joint_state` (12D).
-
 > **Code:**
 > [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py).
-> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) (needs 41D fix).
-> [`scripts/simulation/obs_processor.py`](../scripts/simulation/obs_processor.py) (needs Inspire branch).
+> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py)
+> — supports both Dex3 (43D) and Inspire FTP (41D) via `hand_type` / `sim_action_dim` config.
 
 ---
 
@@ -740,8 +685,16 @@ Two files need modifications before ACT checkpoint evaluation will work:
 |------|-------------|
 | [`utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
 | [`utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion |
-| [`utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (Dex3-only, needs Inspire branch) |
+| [`utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
 | [`utils/inspect_inspire_ftp_joints.py`](../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
+
+### ACT Training
+
+| File | Description |
+|------|-------------|
+| [`policy/act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml) | IL training config (26D state/action, 1 camera) |
+| [`policy/train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh) | IL training launcher (LeRobot) |
+| [`simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (supports both Dex3 43D and Inspire 41D) |
 
 ### RLinf Integration
 
@@ -749,6 +702,9 @@ Two files need modifications before ACT checkpoint evaluation will work:
 |------|-------------|
 | [`rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py) | Inspire env wrapper (L565-636) + ACT converters (L644-705) |
 | [`rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACT wrapper with ValueHead for RL (generic) |
+| [`rl/rlinf_ext/config/model/act_inspire_ftp.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml) | RLinf model config (action_dim=26) |
+| [`rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | RLinf env config (InspireFTP gym ID) |
+| [`rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | RLinf PPO top-level config |
 
 ### Docker
 
@@ -768,7 +724,10 @@ Two files need modifications before ACT checkpoint evaluation will work:
 | `ValueError: Not all regular expressions matched -- L_.*: []` | Joint names use URDF convention (`left_index_1_joint`), not Nucleus (`L_index_proximal_joint`). Check `robot_config.py` actuator patterns. |
 | `KeyError: 'robot_dex3_joint_state'` | Wrong task ID or shared code assumes Dex3. Ensure using `InspireFTP` task variant. Check `examples/utils.py` handles both hand types. |
 | `ValueError: Invalid action shape, expected: 38, received: 41` | You're running the eval script against the Teleop env. Use the `Joint` variant for eval, or `record_demos.py` for teleop. |
-| `ValueError: Invalid action shape, expected: 41, received: 43` | Code assumes Dex3 43D sim action. Check `act_closedloop_policy.py` — needs 41D for Inspire. |
+| `ValueError: Invalid action shape, expected: 41, received: 43` | Policy wrapper defaulting to Dex3. Ensure config YAML has `sim_action_dim: 41` or `hand_type: inspire_ftp`. |
+| `FileExistsError: Output directory ... already exists` | LeRobot rejects pre-existing output dirs. Delete the old run: `rm -rf scripts/simulation/rl/results/act_grasp_policy_inspire/` |
+| `DecodingError: fields 'experiment' are not valid for TrainPipelineConfig` | The `experiment:` section must be stripped before LeRobot sees the config. Use `train_act_grasp_policy_inspire.sh` (handles this automatically). |
+| `PermissionError: ... episodes_stats.jsonl` | Dataset directory owned by root. Fix: `sudo chown -R $USER:$USER datasets/` |
 | `FrameNotFound: "g1_29dof_rev_1_0_left_wrist_yaw_link"` | PinkIK frame names use wrong prefix. URDF robot name produces prefix `g1_29dof_rev_1_0_with_inspire_hand_FTP_`. Update `FrameTask` link names in teleop env cfg. |
 | `ValueError: 'L_index_proximal_joint' is not in list` | Retargeter uses Nucleus-style joint names. Ensure `RETARGETER_HAND_JOINT_NAMES` (Nucleus naming) is passed to the retargeter, not `HAND_JOINT_NAMES` (URDF naming). |
 | `front_camera does not exist` | Pass `--enable_cameras` to `record_demos.py`. Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
