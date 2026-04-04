@@ -41,6 +41,10 @@ class ACTClosedloopPolicy(PolicyBase):
     in the training config YAML (pointed to by ``experiment_config_path`` in
     the policy config).  See :class:`ACTExperimentConfig` for details.
 
+    Supports both Dex3 (43D sim, 28D policy) and Inspire FTP (41D sim, 26D
+    policy).  The hand type is selected via ``hand_type`` in the policy config
+    YAML, or inferred from ``sim_action_dim`` if provided.
+
     Args:
         policy_config_yaml_path: Path to YAML config with model_path, action settings, etc.
         num_envs: Number of parallel environments.
@@ -60,17 +64,32 @@ class ACTClosedloopPolicy(PolicyBase):
         # Image target size (H, W, C)
         self.target_image_size = tuple(self.config.get("target_image_size", [480, 640, 3]))
 
-        # Experiment config: cameras + joint groups (drives dims and mappings)
+        # Determine hand type and load the appropriate experiment config.
+        # "inspire_ftp" uses InspireFTPExperimentConfig (41D sim, 26D policy).
+        # "dex3" (default) uses ACTExperimentConfig (43D sim, 28D policy).
+        hand_type = self.config.get("hand_type", "dex3")
+        if self.config.get("sim_action_dim") == 41:
+            hand_type = "inspire_ftp"
+
         exp_cfg_path = self.config.get("experiment_config_path")
-        if exp_cfg_path:
-            # Resolve relative to the policy config YAML's directory
-            exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
-            self.exp_config = ACTExperimentConfig.from_yaml(exp_cfg_path)
+        if hand_type == "inspire_ftp":
+            from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+
+            if exp_cfg_path:
+                exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
+                self.exp_config = InspireFTPExperimentConfig.from_yaml(exp_cfg_path)
+            else:
+                self.exp_config = InspireFTPExperimentConfig()
+            self.sim_action_dim = 41
         else:
-            self.exp_config = ACTExperimentConfig()  # default: all cameras, all groups
+            if exp_cfg_path:
+                exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
+                self.exp_config = ACTExperimentConfig.from_yaml(exp_cfg_path)
+            else:
+                self.exp_config = ACTExperimentConfig()
+            self.sim_action_dim = 43
 
         self.policy_action_dim = self.exp_config.policy_dim
-        self.sim_action_dim = 43
 
         # Load ACT policy
         self.policy = self._load_policy()
@@ -99,15 +118,18 @@ class ACTClosedloopPolicy(PolicyBase):
         """Convert IsaacLab observation dict to ACT input format.
 
         ACT expects a flat dict with keys like:
-          - observation.state: (B, 28) joint positions
+          - observation.state: (B, policy_dim) joint positions
           - observation.images.cam_left_wrist: (B, C, H, W)
           - observation.images.cam_right_wrist: (B, C, H, W)
           - observation.images.cam_room: (B, C, H, W)
         """
         # Extract joint states using experiment config (selects configured groups)
         body_state = observation["policy"]["robot_joint_state"]  # (B, 87)
-        dex3_state = observation["policy"]["robot_dex3_joint_state"]  # (B, 14)
-        state = self.exp_config.extract_state(body_state, dex3_state)  # (B, policy_dim)
+        if self.sim_action_dim == 41:
+            hand_state = observation["policy"]["robot_inspire_joint_state"]  # (B, 12)
+        else:
+            hand_state = observation["policy"]["robot_dex3_joint_state"]  # (B, 14)
+        state = self.exp_config.extract_state(body_state, hand_state)  # (B, policy_dim)
 
         # Extract camera images and convert to (B, C, H, W) float32 [0, 1]
         camera_obs = observation["camera_images"]
@@ -126,7 +148,7 @@ class ACTClosedloopPolicy(PolicyBase):
         """Get the next action from the current action chunk.
 
         Returns:
-            action: Shape (num_envs, sim_action_dim=43)
+            action: Shape (num_envs, sim_action_dim)
         """
         if any(self.env_requires_new_action_chunk):
             new_chunk = self._get_action_chunk(observation)
@@ -153,7 +175,7 @@ class ACTClosedloopPolicy(PolicyBase):
         """Run ACT forward pass to get a chunk of actions.
 
         Returns:
-            action_chunk: Shape (num_envs, action_chunk_length, sim_action_dim=43)
+            action_chunk: Shape (num_envs, action_chunk_length, sim_action_dim)
         """
         act_obs = self._extract_observations(observation)
 
@@ -170,7 +192,7 @@ class ACTClosedloopPolicy(PolicyBase):
         # Stack: (num_envs, chunk_size, policy_dim)
         policy_actions = torch.stack(chunks, dim=0).to(self.device)
 
-        # Scatter policy_dim → 43D at correct sim joint positions
+        # Scatter policy_dim → sim_action_dim at correct sim joint positions
         sim_actions = self.exp_config.scatter_to_sim(policy_actions)
 
         # Truncate or pad to action_chunk_length

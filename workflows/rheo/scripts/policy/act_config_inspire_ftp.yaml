@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+# http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# LeRobot ACT training configuration for Inspire FTP grasp_policy task
+# Usage: python -m lerobot.scripts.train --config_path <this_file>
+#
+# Parallel to act_config.yaml but for the Inspire FTP hand:
+#   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
+#   - 41D sim action space (29 body + 12 actuated hand, mimic joints driven internally)
+#   - 1 camera (front only — no wrist cameras on Inspire FTP setup)
+
+# ---------------------------------------------------------------------------
+# Experiment: cameras and joint groups.
+# Hand groups have 6 DOF (Inspire FTP) instead of 7 (Dex3).
+# ---------------------------------------------------------------------------
+experiment:
+  cameras:
+    front_camera: "observation.images.cam_room"
+  joint_groups:
+    - left_arm    # 7 DOF, body positions 15-21
+    - right_arm   # 7 DOF, body positions 22-28
+    - left_hand   # 6 DOF, inspire positions 0-5  (actuated only, no mimic)
+    - right_hand  # 6 DOF, inspire positions 6-11 (actuated only, no mimic)
+
+seed: 1000
+
+# Dataset (repo_id set via CLI --dataset.repo_id)
+dataset:
+  repo_id: placeholder
+
+# Training params
+steps: 100000
+batch_size: 64
+eval_freq: 10000
+save_freq: 25000
+log_freq: 250
+save_checkpoint: true
+num_workers: 4
+
+# Eval
+eval:
+  n_episodes: 10
+  batch_size: 10
+
+policy:
+  type: act
+
+  # ACT architecture
+  chunk_size: 100
+  n_obs_steps: 1
+
+  # Transformer dimensions
+  dim_model: 512
+  n_heads: 8
+  dim_feedforward: 3200
+  feedforward_activation: relu
+  n_encoder_layers: 4
+  n_decoder_layers: 1
+
+  # VAE settings
+  use_vae: true
+  latent_dim: 32
+  n_vae_encoder_layers: 4
+  kl_weight: 10.0
+
+  # Input features (26D: left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6))
+  input_features:
+    observation.state:
+      type: STATE
+      shape: [26]
+    observation.images.cam_room:
+      type: VISUAL
+      shape: [3, 480, 640]
+  output_features:
+    action:
+      type: ACTION
+      shape: [26]
+
+  # Normalization (keyed by FeatureType, computed from dataset stats)
+  normalization_mapping:
+    VISUAL: MEAN_STD
+    STATE: MEAN_STD
+    ACTION: MEAN_STD
+
+  # Vision backbone
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  replace_final_stride_with_dilation: false
+
+  # Disable hub push (local training only)
+  push_to_hub: false
+
+  # Optimizer (ACT-specific, used by get_optimizer_preset)
+  optimizer_lr: 1e-5
+  optimizer_weight_decay: 1e-4
+  optimizer_lr_backbone: 1e-5

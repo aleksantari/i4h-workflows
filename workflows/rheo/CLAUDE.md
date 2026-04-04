@@ -6,25 +6,34 @@ See the [parent CLAUDE.md](../../CLAUDE.md) for repo-wide conventions (linting, 
 
 ## Execution Model
 
-Everything runs inside Docker via `docker/run_docker.sh`. Never run simulation scripts on the host.
+Everything runs inside Docker. Never run simulation scripts on the host. There are two Docker scripts:
+
+- **`docker/run_docker.sh`** — General-purpose (GR00T N1.5/N1.6, trocar, locomanip)
+- **`docker/run_docker_grasp.sh`** — Inspire FTP grasp tasks (LeRobot always installed, no GR00T flags)
 
 ```bash
-# Run a command (GR00T N1.6 for locomanip tasks)
+# Inspire FTP grasp — smoketest (41D dummy policy)
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_grasp_policy_inspire.py --test
+
+# Inspire FTP grasp — ACT eval
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_grasp_policy_inspire.py --policy_type act --model_path /models/...
+
+# Inspire FTP grasp — interactive shell
+./docker/run_docker_grasp.sh
+
+# GR00T N1.6 locomanip tasks
 ./docker/run_docker.sh -g1.6 python scripts/simulation/examples/policy_runner.py ...
 
-# Run a command (GR00T N1.5 for trocar/grasp tasks)
+# GR00T N1.5 trocar tasks
 ./docker/run_docker.sh -g1.5 python -u scripts/simulation/examples/eval_assemble_trocar.py ...
 
-# Run a command (ACT policy — requires LeRobot build arg)
+# GR00T N1.5 Dex3 grasp (original hands, not Inspire)
 ./docker/run_docker.sh -g1.5 python scripts/simulation/examples/eval_grasp_policy.py --policy_type act ...
-
-# Interactive shell
-./docker/run_docker.sh -g1.6
 ```
 
-Key flags: `-g1.5` / `-g1.6` (GR00T version), `-u <gpu>` (select GPU), `-N` (new container), `-r` (rebuild), `-R` (rebuild no cache), `-d`/`-m`/`-e` (override dataset/model/eval mount dirs).
+`run_docker.sh` key flags: `-g1.5` / `-g1.6` (GR00T version), `-u <gpu>` (select GPU), `-N` (new container), `-r` (rebuild), `-R` (rebuild no cache), `-d`/`-m`/`-e` (override dataset/model/eval mount dirs).
 
-For ACT/LeRobot support, rebuild with `--build-arg INSTALL_LEROBOT=true`.
+`run_docker_grasp.sh` key flags: `-u <gpu>`, `-N`, `-r`, `-R`, `-d`/`-m`/`-e` (same as above, no GR00T version flags).
 
 Inside the container: `python` is aliased to `/isaac-sim/python.sh`. Working directory is `/workspaces/workflows/rheo`.
 

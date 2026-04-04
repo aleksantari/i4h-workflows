@@ -15,29 +15,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ACT IL Training on grasp_policy task
-# Usage: bash train_act_grasp_policy.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
+# ACT IL Training on Inspire FTP grasp_policy task
+# Usage: bash train_act_grasp_policy_inspire.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
 #
-# This script trains an ACT (Action Chunking Transformer) policy using LeRobot's
-# native training pipeline on demonstration data from the grasp_policy task.
+# Parallel to train_act_grasp_policy.sh but for the Inspire FTP hand:
+#   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
+#   - Uses act_config_inspire_ftp.yaml
+#   - Sets INSPIRE_FTP_EXPERIMENT_CONFIG env var
 #
 # Examples:
 #   # Train with default settings
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot
+#   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot
 #
 #   # Train with custom batch size and steps
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot \
+#   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot \
 #       --steps 50000 --batch_size 32
 #
 #   # Resume from checkpoint
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot \
-#       --resume_path /models/act_grasp_policy/checkpoint_50000
+#   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot \
+#       --resume_path /models/act_inspire_ftp/checkpoint_50000
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="/workspaces"
-CONFIG_PATH="${SCRIPT_DIR}/act_config.yaml"
+CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp.yaml"
 
 # Parse arguments
 DATASET_PATH=""
@@ -86,13 +88,13 @@ fi
 
 # Setup logging directory (only create parent — LeRobot requires output_dir to NOT exist)
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy/train_${TIMESTAMP}"
+OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy_inspire/train_${TIMESTAMP}"
 mkdir -p "$(dirname "${OUTPUT_DIR}")"
 
 # Strip the custom 'experiment:' section — LeRobot's TrainPipelineConfig
 # rejects unknown top-level keys.  Our code reads experiment config via the
-# ACT_EXPERIMENT_CONFIG env var, so LeRobot never needs to see it.
-FILTERED_CONFIG=$(mktemp /tmp/act_config_XXXXXX.yaml)
+# INSPIRE_FTP_EXPERIMENT_CONFIG env var, so LeRobot never needs to see it.
+FILTERED_CONFIG=$(mktemp /tmp/act_config_inspire_XXXXXX.yaml)
 /isaac-sim/python.sh -c "
 import yaml, sys
 with open('${CONFIG_PATH}') as f:
@@ -103,10 +105,9 @@ with open('${FILTERED_CONFIG}', 'w') as f:
 "
 
 # Build command args
-# dataset.root = local path on disk, dataset.repo_id = simple identifier (not a path)
 CMD_ARGS=(
     --config_path "${FILTERED_CONFIG}"
-    --dataset.repo_id grasp_policy
+    --dataset.repo_id grasp_policy_inspire
     --dataset.root "${DATASET_PATH}"
     --dataset.video_backend pyav
     --output_dir "${OUTPUT_DIR}"
@@ -122,8 +123,8 @@ CMD_ARGS+=("${EXTRA_ARGS[@]}")
 
 # Set environment
 export PYTHONPATH="${WORKSPACE_ROOT}/workflows/rheo/scripts:${PYTHONPATH}"
-# Expose experiment config (cameras + joint groups) to downstream code
-export ACT_EXPERIMENT_CONFIG="${CONFIG_PATH}"
+# Expose Inspire FTP experiment config to downstream code
+export INSPIRE_FTP_EXPERIMENT_CONFIG="${CONFIG_PATH}"
 
 # Generate episodes_stats.jsonl if missing (required by LeRobot v2.1 loader)
 STATS_FILE="${DATASET_PATH}/meta/episodes_stats.jsonl"
@@ -183,7 +184,7 @@ print(f'Generated episodes_stats.jsonl for {num_episodes} episodes')
 fi
 
 echo "========================================"
-echo "ACT IL Training: grasp_policy"
+echo "ACT IL Training: Inspire FTP grasp_policy"
 echo "========================================"
 echo "Dataset: ${DATASET_PATH}"
 echo "Output: ${OUTPUT_DIR}"

@@ -1,0 +1,22 @@
+model_type: "act"
+
+# Model path - should be overridden at runtime
+model_path: "/path/to/act_inspire_ftp_checkpoint"
+
+# Model precision
+precision: "bf16"
+
+# Action and policy settings (G1 shoulders + Inspire FTP hands)
+# 26D = left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6)
+action_dim: 26
+num_action_chunks: 1
+
+# Observation and embodiment settings
+obs_converter_type: "act"
+add_value_head: True
+
+# RL head configuration
+rl_head_config:
+  add_value_head: ${actor.model.add_value_head}
+  disable_dropout: True
+  noise_level: 0.3
