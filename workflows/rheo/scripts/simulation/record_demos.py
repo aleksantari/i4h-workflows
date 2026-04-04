@@ -85,6 +85,13 @@ parser.add_argument(
     default=False,
     help="Enable Pinocchio.",
 )
+parser.add_argument(
+    "--object",
+    type=str,
+    default="random",
+    choices=["random", "block", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -447,6 +454,30 @@ def main() -> None:
     # Create and configure environment
     global env_cfg  # Make env_cfg available to setup_teleop_device
     env_cfg, success_term = create_environment_config(output_dir, output_file_name)
+
+    # Override grasp object if a specific one is requested
+    if args_cli.object != "random" and hasattr(env_cfg.scene, "block"):
+        import isaaclab.sim as sim_utils
+        from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
+        from simulation.assets.assets import SINUS_TOOL_USD_PATHS
+
+        obj_name = args_cli.object
+        if obj_name == "block":
+            single_spawner = sim_utils.CuboidCfg(
+                size=(0.05, 0.05, 0.05),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
+            )
+        else:
+            single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+
+        env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
+            assets_cfg=[single_spawner],
+            random_choice=False,
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        )
+        print(f"  Object override: {obj_name}")
 
     # Create environment
     env = create_environment(env_cfg)

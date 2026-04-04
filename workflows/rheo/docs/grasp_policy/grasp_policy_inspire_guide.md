@@ -294,7 +294,7 @@ modifications needed.
 ### Quick Start
 
 ```bash
-# Record 10 demos with AVP hand tracking
+# Record 10 demos with AVP hand tracking (random objects)
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -309,6 +309,40 @@ modifications needed.
 > **Important:** The `--enable_cameras` flag is required. Without it,
 > `remove_camera_configs()` strips the front camera from the scene but leaves
 > the observation term, causing a `front_camera does not exist` error.
+
+### Object Selection During Recording
+
+By default, a random object (block or sinus tool) is spawned per env clone.
+Use `--object` to force a specific one — useful for collecting balanced
+per-object datasets:
+
+```bash
+# Record demos with a specific tool
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio \
+    --enable_cameras \
+    --object tool_2 \
+    --dataset_file ./datasets/inspire_ftp/tool_2_demos.hdf5 \
+    --num_demos 10 \
+    --xr
+
+# Record demos with block only
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio \
+    --enable_cameras \
+    --object block \
+    --dataset_file ./datasets/inspire_ftp/block_demos.hdf5 \
+    --num_demos 10 \
+    --xr
+```
+
+Options: `random` (default), `block`, `tool_0`, `tool_1`, `tool_2`, `tool_3`, `tool_4`.
 
 ### Recording Controls
 

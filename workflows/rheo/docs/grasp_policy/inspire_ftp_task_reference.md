@@ -101,7 +101,9 @@ The .obj meshes must be converted to .usd before first use:
 ./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py
 ```
 
-The eval script supports `--object <name>` to force a specific object (default: `random`).
+Both the eval script (`eval_grasp_policy_inspire.py`) and the recording script
+(`record_demos.py`) support `--object <name>` to force a specific object (default: `random`).
+This is useful for per-object evaluation or collecting balanced per-object demo datasets.
 
 No wrist cameras are available on the Inspire FTP hand (no camera mount links in the USD).
 
