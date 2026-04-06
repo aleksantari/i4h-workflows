@@ -146,6 +146,7 @@ venv.bak/
 
 # Datasets
 **/datasets/
+**/.datasets/
 
 # Robot assets (URDF, meshes)
 workflows/rheo/assets/
