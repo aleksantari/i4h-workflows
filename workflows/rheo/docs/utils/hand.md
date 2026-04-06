@@ -6,8 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 # G1 Hand Configuration Reference
 
 Reference for how the Unitree G1's hands are wired through the rheo pipeline.
-Documents the Dex3 hand, the Inspire FTP hand specification, and the binary gripper
-adaptation that simplifies Inspire FTP teleop for imitation learning.
+Documents the Dex3 hand, the Inspire FTP hand specification, and the
+dex-retargeting setup for Inspire FTP teleop.
 
 ---
 
@@ -26,7 +26,7 @@ adaptation that simplifies Inspire FTP teleop for imitation learning.
 11. [Camera Setup](#11-camera-setup)
 12. [Experiment Config System](#12-experiment-config-system)
 13. [Files That Change for Inspire FTP Swap](#13-files-that-change-for-inspire-ftp-swap)
-14. [Inspire FTP Binary Gripper Adaptation](#14-inspire-ftp-binary-gripper-adaptation)
+14. [Inspire FTP Dex-Retargeting](#14-inspire-ftp-dex-retargeting)
 
 ---
 
@@ -717,339 +717,94 @@ Changing the robot embodiment means all data collection starts fresh:
 
 ---
 
-## 14. Inspire FTP Binary Gripper Adaptation
+## 14. Inspire FTP Dex-Retargeting
 
-This section documents the **implemented** binary gripper retargeter that simplifies
-Inspire FTP teleop for imitation learning. Instead of per-finger dex-retargeting
-(where each of the 24 hand joints moves independently based on AVP hand tracking),
-the gripper retargeter reduces hand control to a single binary open/close per hand.
-
----
-
-### 14.1 Motivation and Strategy
-
-The Inspire FTP hand has 6 independently actuated joints per hand (12 total) plus
-6 mechanically coupled mimic joints per hand (12 total, 24 grand total). Teaching a
-policy to predict all 12 actuated dimensions from imitation learning alone is hard —
-especially when the teleoperator's pinch gesture only conveys "grasp" or "release."
-
-The two-phase training strategy:
-
-| Phase | Hand control | Policy dim | Env variant |
-|-------|-------------|------------|-------------|
-| **IL (teleop + ACT training)** | Binary gripper — all fingers open/close together | 26D (14 arm + 12 hand, but hand values are binary patterns) | `Isaac-Grasp-Policy-G129-InspireFTP-Teleop` |
-| **RL (post-training)** | Full per-finger control — each of the 6 actuated joints moves independently | 26D (14 arm + 12 hand, truly independent) | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` |
-
-**Why this works:** IL learns the hard part (arm trajectories, approach angles, grasp
-timing) with a simple hand model. RL then fine-tunes grasp quality by unlocking
-per-finger control, starting from a policy that already knows *when* and *where* to
-grasp. This mirrors the Dex3 pipeline where teleop uses a binary gripper
-(`G1HandtrackingGripperRetargeter`) and the recorded joint positions are what the
-policy learns.
+The Inspire FTP teleop uses **full 5-finger DexPilot IK retargeting** via
+`UnitreeG1Retargeter`. All fingers are individually tracked from the operator's
+hand pose through the Apple Vision Pro.
 
 ---
 
-### 14.2 Architecture: How the Gripper Retargeter Works
-
-#### Class Hierarchy
+### 14.1 Architecture
 
 ```
 RetargeterBase                         (isaaclab.devices.retargeter_base)
   └── UnitreeG1Retargeter              (isaaclab...inspire.g1_upper_body_retargeter)
-        │   - _retarget_abs()          wrist OpenXR → USD frame transform
-        │   - _hands_controller        UnitreeG1DexRetargeting (per-finger)
-        │
-        └── InspireGripperRetargeter   (teleop_devices.inspire_gripper_retargeter)
-              - Skips _hands_controller init (no dex-retargeting engine)
-              - Inherits _retarget_abs() for wrist retargeting
-              - Adds binary pinch detection + 24D gripper expansion
+        - _retarget_abs()              wrist OpenXR → USD frame transform
+        - _hands_controller            UnitreeG1DexRetargeting (DexPilot IK)
 ```
-
-`InspireGripperRetargeter` calls `RetargeterBase.__init__()` directly, bypassing
-`UnitreeG1Retargeter.__init__()` which would instantiate `UnitreeG1DexRetargeting`
-(requires pinocchio and Nucleus retargeting URDFs). The wrist retargeting method
-`_retarget_abs()` is a pure method on `UnitreeG1Retargeter` and is inherited without
-any init dependency.
 
 #### Data Flow
 
 ```
-AVP Hand Tracking (OpenXR)
+AVP Hand Tracking (OpenXR, 26 joints per hand)
     │
     ├── wrist pose (7D each) ──→ _retarget_abs() ──→ left_wrist(7), right_wrist(7)
-    │                             (inherited from UnitreeG1Retargeter)
     │
-    └── thumb_tip + index_tip ──→ pinch distance ──→ hysteresis ──→ binary 0/1
-                                                                        │
-                                                          ┌─────────────┘
-                                                          ▼
-                                                 gripper expansion
-                                                 0 → open_joints (24D zeros)
-                                                 1 → closed_joints (24D pre-computed)
-                                                          │
-                                                          ▼
+    └── 21 MANO joints ──→ UnitreeG1DexRetargeting
+                             ├── convert_hand_joints()   (OpenXR → MANO frame)
+                             ├── compute_ref_value()     (target link positions)
+                             └── DexPilot IK optimizer ──→ 12D per hand
+                                                            │
+                                              placed into 24D hand joint array
+                                              via Nucleus→URDF positional mapping
+                                                            │
+                                                            ▼
                                               torch.cat([left_wrist(7),
                                                          right_wrist(7),
                                                          hand_joints(24)])
-                                                          │
-                                                      = 38D output
-                                                          │
-                                                    PinkIK action
-                                              (unchanged — same 38D format)
+                                                        = 38D output
+                                                            │
+                                                      PinkIK action
 ```
 
-#### Before vs After
+### 14.2 Nucleus Joint Name Mapping
 
-| Aspect | Before (dex-retargeting) | After (binary gripper) |
-|--------|-------------------------|----------------------|
-| Retargeter class | `UnitreeG1Retargeter` | `InspireGripperRetargeter` |
-| Hand controller | `UnitreeG1DexRetargeting` (pinocchio) | None (pre-computed arrays) |
-| Hand joint names | Nucleus-style via `_URDF_TO_NUCLEUS` bridge | URDF-style directly (`joint_names[29:]`) |
-| Finger control | Independent per-finger from AVP tracking | Binary open/close from pinch distance |
-| Output format | 38D `[wrist(7), wrist(7), hand(24)]` | 38D `[wrist(7), wrist(7), hand(24)]` (identical) |
-| PinkIK config | Unchanged | Unchanged |
-| Dependencies | pinocchio, dex-retargeting URDFs | None (numpy only) |
+The dex-retargeting library loads hand-only URDFs from Nucleus that use a different
+naming convention than our URDF. A `_URDF_TO_NUCLEUS` mapping dict in the teleop
+env cfg converts names so the retargeter output aligns with PinkIK's joint order:
 
-> **Code:**
-> [`scripts/teleop_devices/inspire_gripper_retargeter.py`](../../scripts/teleop_devices/inspire_gripper_retargeter.py)
-> — `InspireGripperRetargeter`, `InspireGripperRetargeterCfg`.
+| URDF name | Nucleus name |
+|-----------|-------------|
+| `left_thumb_1_joint` | `L_thumb_proximal_yaw_joint` |
+| `left_thumb_2_joint` | `L_thumb_proximal_pitch_joint` |
+| `left_index_1_joint` | `L_index_proximal_joint` |
+| `left_little_1_joint` | `L_pinky_proximal_joint` |
+| ... | ... (24 entries total, same pattern for right hand) |
 
----
+### 14.3 Comparison: Dex3 vs Inspire FTP Teleop
 
-### 14.3 Pinch Detection (Hysteresis)
+| Aspect | Dex3 (`G1HandtrackingGripperRetargeter`) | Inspire FTP (`UnitreeG1Retargeter`) |
+|--------|-------|---------|
+| **Hand control** | Binary gripper (pinch open/close) | Full dex-retargeting (per-finger IK) |
+| **IK solver** | WBC+PINK (whole-body, 23D input) | PinkIK (arm-only, 38D input) |
+| **Output format** | 16D `[grip(1), grip(1), wrist(7), wrist(7)]` | 38D `[wrist(7), wrist(7), hand(24)]` |
+| **Hand DOF (actuated)** | 7 per hand (14 total) | 6 per hand (12 total) |
+| **Mimic joints** | None (all 7 are independent) | 6 per hand (computed from actuated) |
+| **Policy dim** | 28D (14 arm + 14 hand) | 26D (14 arm + 12 hand) |
 
-The gripper uses the same pinch-based detection as the Dex3 teleop. The user's
-thumb tip and index finger tip positions (from OpenXR hand tracking) are compared:
-
-```
-distance = ||thumb_tip[:3] - index_tip[:3]||
-```
-
-A hysteresis state machine prevents oscillation when the user's fingers are near
-the threshold boundary:
-
-```
-                    distance < 0.03m
-         ┌──────────────────────────────────┐
-         │                                  ▼
-     ┌───────┐                         ┌────────┐
-     │ OPEN  │                         │ CLOSED │
-     │ (0.0) │                         │ (1.0)  │
-     └───────┘                         └────────┘
-         ▲                                  │
-         │                                  │
-         └──────────────────────────────────┘
-                    distance > 0.05m
-```
-
-| Parameter | Default | Unit | Effect |
-|-----------|---------|------|--------|
-| `pinch_close_distance` | 0.03 | meters | Pinch tighter than this to close |
-| `pinch_open_distance` | 0.05 | meters | Spread wider than this to open |
-
-The 2cm dead zone (0.03–0.05m) prevents flickering. If the user's fingers are at
-0.04m, the gripper holds its previous state.
-
-> **Dex3 reference:**
-> [`scripts/teleop_devices/handtracking.py`](../../scripts/teleop_devices/handtracking.py)
-> — `G1HandtrackingGripperRetargeter._compute_pinch_gripper()` uses identical
-> thresholds (0.03m / 0.05m).
-
----
-
-### 14.4 Gripper Expansion: 1D to 24D
-
-When the gripper closes, all 12 actuated joints are set to `gripper_closed_angle`
-(default: 1.0 rad), and the 12 mimic joints are computed from the actuated values
-using the URDF multiplier rules. When the gripper opens, all 24 joints go to 0.
-
-These two 24D arrays (`_open_joints` and `_closed_joints`) are pre-computed at init
-time since they are deterministic for a given `gripper_closed_angle`.
-
-#### Mimic Rules (applied sequentially)
-
-Order matters for the thumb chain — `thumb_3` depends on `thumb_2`, and `thumb_4`
-depends on `thumb_3`:
-
-| Mimic joint | Parent joint | Multiplier | Closed value (at 1.0 rad) |
-|-------------|-------------|------------|--------------------------|
-| `{side}_index_2_joint` | `{side}_index_1_joint` | 1.0843 | 1.0843 |
-| `{side}_middle_2_joint` | `{side}_middle_1_joint` | 1.0843 | 1.0843 |
-| `{side}_ring_2_joint` | `{side}_ring_1_joint` | 1.0843 | 1.0843 |
-| `{side}_little_2_joint` | `{side}_little_1_joint` | 1.0843 | 1.0843 |
-| `{side}_thumb_3_joint` | `{side}_thumb_2_joint` | 0.8024 | 0.8024 |
-| `{side}_thumb_4_joint` | `{side}_thumb_3_joint` | 0.9487 | 0.7613 |
-
-> **Note:** `thumb_4` is a chained mimic — it mimics `thumb_3` (not `thumb_2`
-> directly), so its closed value is `1.0 × 0.8024 × 0.9487 = 0.7613`.
-
-#### Full 24D Joint Table (at default `gripper_closed_angle = 1.0`)
-
-The 24 hand joints are in USD articulation order (`joint_names[29:]`):
-
-```
-Idx  Joint name              Type      Open   Closed
-───  ──────────────────────  ────────  ─────  ──────
- 0   left_index_1_joint      actuated  0.0    1.0000
- 1   left_little_1_joint     actuated  0.0    1.0000
- 2   left_middle_1_joint     actuated  0.0    1.0000
- 3   left_ring_1_joint       actuated  0.0    1.0000
- 4   left_thumb_1_joint      actuated  0.0    1.0000
- 5   right_index_1_joint     actuated  0.0    1.0000
- 6   right_little_1_joint    actuated  0.0    1.0000
- 7   right_middle_1_joint    actuated  0.0    1.0000
- 8   right_ring_1_joint      actuated  0.0    1.0000
- 9   right_thumb_1_joint     actuated  0.0    1.0000
-10   left_index_2_joint      mimic     0.0    1.0843
-11   left_little_2_joint     mimic     0.0    1.0843
-12   left_middle_2_joint     mimic     0.0    1.0843
-13   left_ring_2_joint       mimic     0.0    1.0843
-14   left_thumb_2_joint      actuated  0.0    1.0000
-15   right_index_2_joint     mimic     0.0    1.0843
-16   right_little_2_joint    mimic     0.0    1.0843
-17   right_middle_2_joint    mimic     0.0    1.0843
-18   right_ring_2_joint      mimic     0.0    1.0843
-19   right_thumb_2_joint     actuated  0.0    1.0000
-20   left_thumb_3_joint      mimic     0.0    0.8024
-21   right_thumb_3_joint     mimic     0.0    0.8024
-22   left_thumb_4_joint      mimic     0.0    0.7613
-23   right_thumb_4_joint     mimic     0.0    0.7613
-```
-
-> **Code (mimic rules):**
-> [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py)
-> — `_MIMIC_RULES_PER_SIDE`, `MIMIC_RULES`.
->
-> **Code (expansion):**
-> [`scripts/teleop_devices/inspire_gripper_retargeter.py`](../../scripts/teleop_devices/inspire_gripper_retargeter.py)
-> — `_compute_closed_joints()`.
-
----
-
-### 14.5 Tunable Parameters
-
-All parameters are fields on `InspireGripperRetargeterCfg` and can be adjusted in the
-teleop env config without modifying the retargeter code.
-
-#### `gripper_closed_angle` (default: 1.0 rad)
-
-The uniform angle applied to **all 12 actuated joints** when the gripper closes.
-Mimic joints scale from this value via their multipliers.
-
-**URDF joint limits (from the Inspire FTP URDF):**
-
-| Joint | Lower | Upper |
-|-------|-------|-------|
-| `thumb_1_joint` (yaw) | 0 | 1.1641 rad |
-| `thumb_2_joint` (pitch) | 0 | 0.5864 rad |
-| `index/middle/ring/little_1_joint` | 0 | 1.4381 rad |
-
-**Tuning notes:**
-
-- The thumb pitch (`thumb_2_joint`) has the tightest limit at **0.5864 rad**. At the
-  default `gripper_closed_angle = 1.0`, thumb_2 is commanded to 1.0 rad which exceeds
-  its URDF limit. IsaacLab's actuator will clamp to the joint limit, but you may want
-  to reduce `gripper_closed_angle` to stay within bounds for all joints.
-- Setting `gripper_closed_angle = 0.5864` would respect the thumb_2 limit, but the
-  four-finger joints (limit 1.4381) would only close ~40% of their range.
-- **Recommended approach for tuning:** Start with the default (1.0 rad) and observe
-  the sim. If the thumb looks over-extended or the grip is too weak, reduce toward
-  0.5–0.7. The four-finger joints are forgiving (large range), so thumb_2 is the
-  binding constraint.
-- **Future extension:** To use per-finger closed angles (e.g., different angle for
-  thumb vs fingers), modify `_compute_closed_joints()` to accept a dict mapping joint
-  names to angles instead of a single float. The expansion logic is already
-  name-based, so this is a straightforward change.
-
-#### `pinch_close_distance` (default: 0.03m) and `pinch_open_distance` (default: 0.05m)
-
-Control how sensitive the gripper is to the user's thumb-index pinch.
-
-**Tuning notes:**
-
-- **Too sensitive (close too large, e.g., 0.05m):** Gripper closes when the user
-  isn't intending to grasp. Accidental closures during reaching.
-- **Too insensitive (close too small, e.g., 0.01m):** User must pinch very hard.
-  Fatiguing for long recording sessions. Missed grasps.
-- **Dead zone too small (close ≈ open):** Oscillation / flickering between states.
-  Minimum recommended gap: 1.5cm.
-- **Dead zone too large:** Sluggish response. User must exaggerate gestures.
-- The Dex3 defaults (0.03 / 0.05) are well-tested with AVP hand tracking and are
-  a good starting point. Adjust if your tracking environment differs (e.g., different
-  lighting, gloves, hand size).
-
-#### Thumb Yaw vs Pitch Angles
-
-The thumb has two actuated joints with very different roles:
-
-- `thumb_1_joint` (yaw): rotates the thumb in/out. At 0 the thumb is abducted; at
-  1.16 rad it's adducted against the palm.
-- `thumb_2_joint` (pitch): curls the thumb. At 0 the thumb is straight; at 0.59 rad
-  the tip is flexed.
-
-Currently both get the same `gripper_closed_angle`. For a more natural grip, you might
-want the yaw to close more than the pitch. This would require the per-finger extension
-described above.
-
----
-
-### 14.6 Files Involved
+### 14.4 Files Involved
 
 | File | Role |
 |------|------|
-| [`scripts/teleop_devices/inspire_gripper_retargeter.py`](../../scripts/teleop_devices/inspire_gripper_retargeter.py) | `InspireGripperRetargeter` class + cfg. Pinch detection, 24D expansion, mimic rules. |
-| [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | Teleop env config. Wires `InspireGripperRetargeterCfg` into the OpenXR device. Defines `HAND_JOINT_NAMES` (24 joints from `joint_names[29:]`). |
-| [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Canonical mimic rules (`_MIMIC_RULES_PER_SIDE`, `MIMIC_RULES`). The retargeter duplicates these rules — keep them in sync. |
-| [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | Base env config. Defines `joint_names` (53D) — the 24 hand joints at indices 29–52 are the source of truth for joint ordering. |
-| [`scripts/teleop_devices/handtracking.py`](../../scripts/teleop_devices/handtracking.py) | Dex3 gripper retargeter (`G1HandtrackingGripperRetargeter`). Reference implementation for pinch detection. |
-| [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py) | 26D LeRobot field definitions. `convert_g1_state_action_to_lerobot_26d()` handles observation-derived actions. |
-| [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | HDF5 → LeRobot converter. The `rheo_26d_state_action` branch calls the 26D conversion. |
-| [`scripts/config/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/g1_grasp_policy_inspire_dataset.yaml) | Dataset conversion config. Sets `rheo_26d_state_action: true`, front camera only. |
-| IsaacLab: `g1_upper_body_retargeter.py` | Parent class `UnitreeG1Retargeter` — provides `_retarget_abs()` for wrist retargeting. Located in `third_party/IsaacLab/source/isaaclab/isaaclab/devices/openxr/retargeters/humanoid/unitree/inspire/`. |
+| [`g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | Teleop env config. Wires `UnitreeG1RetargeterCfg` with Nucleus-style names. Defines `HAND_JOINT_NAMES` and `_URDF_TO_NUCLEUS`. |
+| [`g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | Base env config. Defines `joint_names` (53D) — hand joints at indices 29-52. |
+| [`mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Canonical mimic rules (`_MIMIC_RULES_PER_SIDE`, `MIMIC_RULES`). |
+| IsaacLab: `g1_upper_body_retargeter.py` | `UnitreeG1Retargeter` — wrist + hand dex-retargeting. |
+| IsaacLab: `g1_dex_retargeting_utils.py` | `UnitreeG1DexRetargeting` — DexPilot IK solver wrapper. |
 
----
+### 14.5 Data Pipeline Impact
 
-### 14.7 Data Pipeline Impact
-
-The binary gripper changes how teleop data flows from recording to training.
-
-#### Why PinkIK Actions Can't Be Used Directly
-
-During teleop, PinkIK receives 38D input:
-
-```
-38D input = [left_wrist_pose(7), right_wrist_pose(7), hand_joints(24)]
-```
-
-PinkIK solves arm IK (wrist poses → arm joint positions) but **passes hand joints
-through unchanged**. The resulting 38D `processed_actions` in HDF5 contain:
-
-```
-38D processed_actions = [arm_IK_output(14), hand_joints_passthrough(24)]
-```
-
-This is **not** in the 53D joint-space format that the converter expects. The arm
-portion is IK-solved positions (14D), not the full 53D articulation order. Extracting
-26D policy joints from 38D requires knowing which 14 of the 38 are arm joints and
-remapping them — which the current converter doesn't do.
-
-#### Observation-Derived Actions (the actual approach)
-
-Instead, the converter uses the standard IL approach for teleop recordings:
+During teleop, PinkIK receives 38D input and solves arm IK but **passes hand joints
+through unchanged**. The resulting 38D `processed_actions` in HDF5 are not in 53D
+joint-space format, so the converter uses observation-derived actions:
 
 ```
 action[t] = state[t+1]    (next-step observed joint positions)
 ```
 
-This works because:
-1. The observations (`robot_joint_state` 87D + `robot_inspire_joint_state` 12D)
-   contain the **actual** joint positions the robot achieved
-2. These positions already reflect the gripper expansion (the sim drove the fingers
-   to the commanded open/closed positions)
-3. The 26D extraction pulls 14 arm + 12 hand from observations in canonical order
-
 The converter in `convert_g1_state_action_to_lerobot_26d()` automatically falls back
-to observation-derived actions when `processed_actions.shape[1] != 53`:
+to this when `processed_actions.shape[1] != 53`:
 
 ```python
 if action_full is not None and action_full.shape[1] == 53:
@@ -1058,60 +813,6 @@ else:
     action = full_26d[1:]  # observation-derived fallback
 ```
 
-#### End-to-End Data Flow
-
-```
-Recording (in sim):
-  AVP pinch ──→ InspireGripperRetargeter ──→ 38D [wrist(14), hand(24)]
-       │                                           │
-       │                                    PinkIK resolves arms
-       │                                           │
-       │                                    38D processed_actions
-       │                                    (saved to HDF5)
-       │
-       └──→ Robot moves ──→ Observations recorded:
-                              obs/robot_joint_state       (T, 87) = 29×3
-                              obs/robot_inspire_joint_state (T, 12) = 12 actuated
-                              obs/front_camera              (T, H, W, 3)
-
-Conversion (convert_hdf5_to_lerobot.py):
-  obs/robot_joint_state[:, 15:29]        ──→ arm positions (14D)
-  obs/robot_inspire_joint_state          ──→ hand positions (12D)
-  concatenate                            ──→ full_26d (T, 26)
-  state = full_26d[:-1]                  ──→ (T-1, 26)
-  action = full_26d[1:]                  ──→ (T-1, 26) [observation-derived]
-                                              │
-                                         LeRobot dataset
-                                         (26D state + 26D action + video)
-
-Training (ACT):
-  Policy input:  26D state + front camera image
-  Policy output: 26D action (14 arm + 12 hand)
-  Hand values in training data are binary patterns (near 0 or near closed_angle)
-```
-
----
-
-### 14.8 Comparison: Dex3 Gripper vs Inspire Gripper
-
-| Aspect | Dex3 (`G1HandtrackingGripperRetargeter`) | Inspire (`InspireGripperRetargeter`) |
-|--------|-------|---------|
-| **File** | `scripts/teleop_devices/handtracking.py` | `scripts/teleop_devices/inspire_gripper_retargeter.py` |
-| **Parent class** | `RetargeterBase` | `UnitreeG1Retargeter` (for wrist retargeting) |
-| **IK solver** | WBC+PINK (whole-body, 23D input) | PinkIK (arm-only, 38D input) |
-| **Wrist retargeting** | Done by WBC+PINK solver | Inherited `_retarget_abs()` from parent |
-| **Pinch thresholds** | 0.03m close / 0.05m open | 0.03m close / 0.05m open (identical) |
-| **Gripper expansion** | `get_hand_joint_pos()` → 7D per hand | Pre-computed 24D arrays (12 actuated + 12 mimic) |
-| **Expansion method** | Fixed per-joint amplitudes | Uniform angle + URDF mimic multipliers |
-| **Output format** | 16D `[grip(1), grip(1), wrist(7), wrist(7)]` | 38D `[wrist(7), wrist(7), hand(24)]` |
-| **Processed actions dim** | 43D (WBC+PINK resolves full body) | 38D (PinkIK resolves arms only) |
-| **Data conversion** | Direct extraction from 43D → 28D | Observation-derived: `action[t] = state[t+1]` → 26D |
-| **Hand DOF (actuated)** | 7 per hand (14 total) | 6 per hand (12 total) |
-| **Policy dim** | 28D (14 arm + 14 hand) | 26D (14 arm + 12 hand) |
-| **Mimic joints** | None (all 7 are independent) | 6 per hand (computed from actuated) |
-
-The key architectural difference: Dex3 uses WBC+PINK which resolves the entire
-43-joint body, giving the converter clean joint-space actions. Inspire uses PinkIK
-which only resolves the 14 arm joints, so the converter must derive actions from
-observations instead. Both approaches produce correct training data — the observation-
-derived method is standard practice for teleop IL.
+> **Code:**
+> [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py),
+> [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).

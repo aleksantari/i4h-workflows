@@ -92,13 +92,6 @@ parser.add_argument(
     choices=["random", "block", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
     help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
 )
-parser.add_argument(
-    "--retarget_mode",
-    type=str,
-    default="gripper",
-    choices=["gripper", "dex"],
-    help="Hand retargeting: 'gripper' (hybrid) or 'dex' (full 5-finger dex-retargeting).",
-)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -111,10 +104,6 @@ if args_cli.task is None:
 
 app_launcher_args = vars(args_cli)
 
-# Full dex-retargeting requires pinocchio for the DexPilot IK solver
-if args_cli.retarget_mode == "dex":
-    args_cli.enable_pinocchio = True
-
 if args_cli.enable_pinocchio:
     # Import pinocchio before AppLauncher to force the use of the version
     # installed by IsaacLab and not the one installed by Isaac Sim.
@@ -126,11 +115,6 @@ if "handtracking" in args_cli.teleop_device.lower():
 # launch the simulator
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
-
-# Pass retarget mode to env config via carb settings (read in teleop env cfg __post_init__)
-import carb
-
-carb.settings.get_settings().set("/app/retarget_mode", args_cli.retarget_mode)
 
 """Rest everything follows."""
 

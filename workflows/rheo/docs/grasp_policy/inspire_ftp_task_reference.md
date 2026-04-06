@@ -364,48 +364,30 @@ block randomization range is the same but placement is deterministic per env ind
 
 ## 9. Teleop Devices
 
-**File:** `teleop_devices/inspire_gripper_retargeter.py`
+**File:** `tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`
 
 The teleop variant uses Apple Vision Pro (AVP) hand tracking with the
-`InspireGripperRetargeter`, a **binary gripper** that replaces per-finger dex-retargeting
-with pinch-based open/close.
+`UnitreeG1Retargeter`, which provides **full 5-finger DexPilot IK retargeting**.
+All fingers are individually tracked from the operator's hand pose.
 
 ### Class Hierarchy
 
 ```
 RetargeterBase
-  -> UnitreeG1Retargeter      (provides _retarget_abs for wrist retargeting)
-       -> InspireGripperRetargeter  (binary gripper, skips dex-retargeting init)
+  -> UnitreeG1Retargeter      (wrist retargeting + full dex-retargeting for all fingers)
 ```
 
-### Pinch Detection (Hysteresis)
+### Dex-Retargeting
 
-| Parameter | Value |
-|-----------|-------|
-| Close threshold | 0.03 m (thumb-index distance) |
-| Open threshold | 0.05 m |
-| Hysteresis band | 0.02 m |
-| Gripper closed angle | 1.0 rad (uniform for all actuated joints) |
+`UnitreeG1DexRetargeting` computes per-finger joint angles using DexPilot IK:
+- Extracts 21 MANO joints from 26 OpenXR joints per hand
+- Runs IK optimizer against Nucleus hand-only URDFs
+- Returns 12D per hand (thumb yaw/pitch + 4 finger proximals + intermediates)
+- Values are placed into the 24D hand joint array via positional name mapping
 
-State machine:
-- **Currently open** (state < 0.5): close when distance < 0.03 m
-- **Currently closed** (state >= 0.5): open when distance > 0.05 m
-
-### Gripper Expansion: 1D -> 24D
-
-When grip state = 1.0 (closed), all 6 actuated joints per hand are set to
-`gripper_closed_angle` (1.0 rad), then mimic rules are applied sequentially:
-
-| Joint Type | Closed Value |
-|------------|-------------|
-| index/middle/ring/little `_1` (proximal) | 1.0 rad |
-| thumb `_1` (yaw) | 1.0 rad |
-| thumb `_2` (pitch) | 1.0 rad |
-| index/middle/ring/little `_2` (mimic) | 1.0843 rad |
-| thumb `_3` (intermediate, mimic) | 0.8024 rad |
-| thumb `_4` (distal, mimic) | 0.7614 rad |
-
-When grip state = 0.0 (open), all joints are 0.0.
+A `_URDF_TO_NUCLEUS` mapping dict in the teleop env cfg converts URDF-style joint
+names (`left_thumb_1_joint`) to Nucleus-style (`L_thumb_proximal_yaw_joint`) so the
+retargeter output aligns with PinkIK's expected joint order.
 
 ### XR Configuration
 
@@ -416,12 +398,6 @@ When grip state = 0.0 (open), all joints are 0.0.
 | Rotation mode | `FOLLOW_PRIM_SMOOTHED` |
 | Anchor position offset | (0.0, 0.0, -1.0) |
 | Anchor rotation | (0.70711, 0.0, 0.0, -0.70711) |
-
-### Design Philosophy
-
-The binary gripper simplifies teleop for **imitation learning (IL)**. The policy learns
-binary grip patterns from demonstrations. **RL post-training** on the full Inspire env
-(53D action space with per-finger control) can then unlock finer manipulation.
 
 ---
 
@@ -541,7 +517,7 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 | **Policy dim (26D/28D)** | 26 (14 arm + 12 hand) | 28 (14 arm + 14 hand) |
 | **Cameras** | 1 (front only) | 3 (front, left wrist, right wrist) |
 | **Teleop action dim** | 38 (PinkIK) | 23 (WBC+PINK) |
-| **Teleop hand control** | Binary gripper (pinch) | Binary gripper (pinch) |
+| **Teleop hand control** | Full dex-retargeting (DexPilot IK) | Binary gripper (pinch) |
 | **Action class** | `InspireFTPJointPositionActionCfg` | `JointPositionActionCfg` |
 | **Eval script** | `eval_grasp_policy.py` (shared) | `eval_grasp_policy.py` (shared) |
 | **Reward/termination/events** | Shared (`grasp_policy/mdp/`) | Same files |
@@ -608,7 +584,7 @@ All paths relative to `scripts/`.
 | `simulation/tasks/grasp_policy/mdp/terminations.py` | Drop/success/timeout (shared) |
 | `simulation/tasks/grasp_policy/mdp/events.py` | Reset handlers (shared) |
 | `simulation/tasks/grasp_policy_inspire/config/robot_config.py` | G1 + Inspire FTP articulation config |
-| `teleop_devices/inspire_gripper_retargeter.py` | Binary gripper retargeter for AVP |
+| `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py` | Teleop env cfg with full dex-retargeting via `UnitreeG1Retargeter` |
 
 ### Data Pipeline
 

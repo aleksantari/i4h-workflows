@@ -29,7 +29,7 @@ Teleoperate (AVP dex-retargeting)  -->  Record HDF5  -->  Convert to LeRobot  --
 | Sim action dim | 43D | 41D (29 body + 12 actuated hand) |
 | Cameras | 3 (front + 2 wrist) | 1 (front only) |
 | Teleop controller | WBC+PINK (23D) | PinkIK (38D) |
-| Hand control | Binary gripper (pinch open/close) | Binary gripper (pinch open/close) |
+| Hand control | Binary gripper (pinch open/close) | Full dex-retargeting (DexPilot IK) |
 | Mimic joints | None | 12 (with multiplier rules) |
 | Gym IDs | `Isaac-Grasp-Policy-G129-Dex3-*` | `Isaac-Grasp-Policy-G129-InspireFTP-*` |
 
@@ -232,10 +232,9 @@ from the Apple Vision Pro to the 24 Inspire FTP finger actuators.
 **Status: TESTED**
 
 The teleop environment (`Isaac-Grasp-Policy-G129-InspireFTP-Teleop`) uses PinkIK with
-binary gripper retargeting from the Apple Vision Pro via `InspireGripperRetargeter`.
-All fingers open/close together based on thumb-index pinch distance (same hysteresis
-as Dex3: 0.03m close / 0.05m open). Wrist retargeting is inherited from the parent
-`UnitreeG1Retargeter`.
+full 5-finger dex-retargeting from the Apple Vision Pro via `UnitreeG1Retargeter`.
+All fingers are individually tracked using DexPilot IK, which maps the operator's
+hand pose to the 24 Inspire FTP finger joints via Nucleus hand-only URDFs.
 
 > **Code:** Task registration in
 > [`scripts/simulation/tasks/grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py).

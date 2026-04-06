@@ -17,11 +17,11 @@
 
 Inherits the RL env config and overrides actions to use PinkIK (38D),
 extends episode length for human teleoperation, and registers the
-InspireGripperRetargeter for AVP binary gripper control.
+UnitreeG1Retargeter for full 5-finger DexPilot IK retargeting via AVP.
 
 Key differences from the Dex3 teleop variant:
 - PinkIK (38D) instead of WBC+PINK (23D)
-- Binary gripper (pinch-based open/close, uniform angle for all fingers)
+- Full dex-retargeting for all 5 fingers (DexPilot IK)
 - No WBC state reset needed (PinkIK is stateless per-step)
 
 Action format (38D):
@@ -39,7 +39,6 @@ import isaaclab.controllers.utils as ControllerUtils
 from isaaclab.controllers.pink_ik import NullSpacePostureTask, PinkIKControllerCfg
 from isaaclab.devices.device_base import DevicesCfg
 from isaaclab.devices.openxr import OpenXRDeviceCfg
-from teleop_devices.inspire_gripper_retargeter import InspireGripperRetargeterCfg, _URDF_TO_NUCLEUS
 from isaaclab.devices.openxr.retargeters.humanoid.unitree.inspire.g1_upper_body_retargeter import (
     UnitreeG1RetargeterCfg,
 )
@@ -57,6 +56,41 @@ from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg impor
 # This order MUST match robot.joint_names[-24:] for the retargeter output
 # to be correctly interpreted by the PinkIK action.
 HAND_JOINT_NAMES: list[str] = joint_names[29:]
+
+# The UnitreeG1DexRetargeting retargeter loads Nucleus hand-only URDFs whose joints use
+# L_/R_ prefixes and anatomical suffixes ("pinky" instead of "little", etc.).
+# We must pass Nucleus-style names in the same positional order as HAND_JOINT_NAMES
+# so the retargeted values end up in the correct slots for PinkIK.
+_URDF_TO_NUCLEUS: dict[str, str] = {
+    # Left hand
+    "left_index_1_joint": "L_index_proximal_joint",
+    "left_index_2_joint": "L_index_intermediate_joint",
+    "left_little_1_joint": "L_pinky_proximal_joint",
+    "left_little_2_joint": "L_pinky_intermediate_joint",
+    "left_middle_1_joint": "L_middle_proximal_joint",
+    "left_middle_2_joint": "L_middle_intermediate_joint",
+    "left_ring_1_joint": "L_ring_proximal_joint",
+    "left_ring_2_joint": "L_ring_intermediate_joint",
+    "left_thumb_1_joint": "L_thumb_proximal_yaw_joint",
+    "left_thumb_2_joint": "L_thumb_proximal_pitch_joint",
+    "left_thumb_3_joint": "L_thumb_intermediate_joint",
+    "left_thumb_4_joint": "L_thumb_distal_joint",
+    # Right hand
+    "right_index_1_joint": "R_index_proximal_joint",
+    "right_index_2_joint": "R_index_intermediate_joint",
+    "right_little_1_joint": "R_pinky_proximal_joint",
+    "right_little_2_joint": "R_pinky_intermediate_joint",
+    "right_middle_1_joint": "R_middle_proximal_joint",
+    "right_middle_2_joint": "R_middle_intermediate_joint",
+    "right_ring_1_joint": "R_ring_proximal_joint",
+    "right_ring_2_joint": "R_ring_intermediate_joint",
+    "right_thumb_1_joint": "R_thumb_proximal_yaw_joint",
+    "right_thumb_2_joint": "R_thumb_proximal_pitch_joint",
+    "right_thumb_3_joint": "R_thumb_intermediate_joint",
+    "right_thumb_4_joint": "R_thumb_distal_joint",
+}
+
+RETARGETER_HAND_JOINT_NAMES: list[str] = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
 
 
 @configclass
@@ -188,31 +222,20 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
         self.xr.fixed_anchor_height = True
         self.xr.anchor_rotation_mode = XrAnchorRotationMode.FOLLOW_PRIM_SMOOTHED
 
-        # Select retargeting mode via carb setting (set by record_demos.py --retarget_mode).
-        # "dex" = full 5-finger DexPilot IK (UnitreeG1Retargeter, Nucleus-style names)
-        # "gripper" = hybrid dex thumb + binary 4-finger (InspireGripperRetargeter, URDF names)
-        retarget_mode = carb.settings.get_settings().get("/app/retarget_mode") or "gripper"
-
-        if retarget_mode == "dex":
-            retargeter_hand_names = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
-            retargeter_cfg = UnitreeG1RetargeterCfg(
-                enable_visualization=True,
-                num_open_xr_hand_joints=2 * 26,
-                sim_device=self.sim.device,
-                hand_joint_names=retargeter_hand_names,
-            )
-        else:
-            retargeter_cfg = InspireGripperRetargeterCfg(
-                enable_visualization=True,
-                num_open_xr_hand_joints=2 * 26,
-                sim_device=self.sim.device,
-                hand_joint_names=HAND_JOINT_NAMES,
-            )
-
+        # Register AVP hand tracking with full 5-finger DexPilot IK retargeting.
+        # Uses Nucleus-style joint names (RETARGETER_HAND_JOINT_NAMES) so the
+        # dex-retargeting output aligns positionally with PinkIK's hand joint order.
         self.teleop_devices = DevicesCfg(
             devices={
                 "handtracking": OpenXRDeviceCfg(
-                    retargeters=[retargeter_cfg],
+                    retargeters=[
+                        UnitreeG1RetargeterCfg(
+                            enable_visualization=True,
+                            num_open_xr_hand_joints=2 * 26,
+                            sim_device=self.sim.device,
+                            hand_joint_names=RETARGETER_HAND_JOINT_NAMES,
+                        ),
+                    ],
                     sim_device=self.sim.device,
                     xr_cfg=self.xr,
                 ),
