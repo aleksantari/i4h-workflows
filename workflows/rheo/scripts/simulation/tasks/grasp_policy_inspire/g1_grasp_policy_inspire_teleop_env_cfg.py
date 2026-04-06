@@ -39,7 +39,10 @@ import isaaclab.controllers.utils as ControllerUtils
 from isaaclab.controllers.pink_ik import NullSpacePostureTask, PinkIKControllerCfg
 from isaaclab.devices.device_base import DevicesCfg
 from isaaclab.devices.openxr import OpenXRDeviceCfg
-from teleop_devices.inspire_gripper_retargeter import InspireGripperRetargeterCfg
+from teleop_devices.inspire_gripper_retargeter import InspireGripperRetargeterCfg, _URDF_TO_NUCLEUS
+from isaaclab.devices.openxr.retargeters.humanoid.unitree.inspire.g1_upper_body_retargeter import (
+    UnitreeG1RetargeterCfg,
+)
 from isaaclab.devices.openxr.xr_cfg import XrAnchorRotationMode, XrCfg
 from isaaclab.envs.mdp.actions.pink_actions_cfg import PinkInverseKinematicsActionCfg
 from isaaclab.managers.action_manager import ActionTermCfg
@@ -185,21 +188,31 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
         self.xr.fixed_anchor_height = True
         self.xr.anchor_rotation_mode = XrAnchorRotationMode.FOLLOW_PRIM_SMOOTHED
 
-        # Register AVP hand tracking with binary gripper retargeting.
-        # Uses HAND_JOINT_NAMES directly (URDF-style names matching joint_names[29:]).
-        # No need for RETARGETER_HAND_JOINT_NAMES — the Nucleus-to-URDF bridge was
-        # only required by UnitreeG1DexRetargeting, which we no longer use.
+        # Select retargeting mode via carb setting (set by record_demos.py --retarget_mode).
+        # "dex" = full 5-finger DexPilot IK (UnitreeG1Retargeter, Nucleus-style names)
+        # "gripper" = hybrid dex thumb + binary 4-finger (InspireGripperRetargeter, URDF names)
+        retarget_mode = carb.settings.get_settings().get("/app/retarget_mode") or "gripper"
+
+        if retarget_mode == "dex":
+            retargeter_hand_names = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
+            retargeter_cfg = UnitreeG1RetargeterCfg(
+                enable_visualization=True,
+                num_open_xr_hand_joints=2 * 26,
+                sim_device=self.sim.device,
+                hand_joint_names=retargeter_hand_names,
+            )
+        else:
+            retargeter_cfg = InspireGripperRetargeterCfg(
+                enable_visualization=True,
+                num_open_xr_hand_joints=2 * 26,
+                sim_device=self.sim.device,
+                hand_joint_names=HAND_JOINT_NAMES,
+            )
+
         self.teleop_devices = DevicesCfg(
             devices={
                 "handtracking": OpenXRDeviceCfg(
-                    retargeters=[
-                        InspireGripperRetargeterCfg(
-                            enable_visualization=True,
-                            num_open_xr_hand_joints=2 * 26,
-                            sim_device=self.sim.device,
-                            hand_joint_names=HAND_JOINT_NAMES,
-                        ),
-                    ],
+                    retargeters=[retargeter_cfg],
                     sim_device=self.sim.device,
                     xr_cfg=self.xr,
                 ),

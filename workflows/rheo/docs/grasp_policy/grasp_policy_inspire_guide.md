@@ -70,12 +70,15 @@ correctly with the Inspire FTP hands.
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
-    --test --enable_cameras
+    --test --enable_cameras --device cuda:0
 ```
 
 > **Important:** `--enable_cameras` is required for all eval/recording scripts.
 > Without it, camera scene entities are stripped but observation terms still reference
 > them, causing runtime errors.
+>
+> **Important:** `--device cuda:0` is required for GPU acceleration. IsaacLab defaults
+> to CPU when running with `--xr`, so always pass it explicitly.
 
 **What to verify:**
 
@@ -265,6 +268,7 @@ docker stop cloudxr-runtime 2>/dev/null
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
+    --device cuda:0 \
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --num_demos 10 \
     --xr
@@ -301,6 +305,7 @@ modifications needed.
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
+    --device cuda:0 \
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --num_demos 10 \
     --xr
@@ -324,6 +329,7 @@ per-object datasets:
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
+    --device cuda:0 \
     --object tool_2 \
     --dataset_file ./datasets/inspire_ftp/tool_2_demos.hdf5 \
     --num_demos 10 \
@@ -336,6 +342,7 @@ per-object datasets:
     --teleop_device handtracking \
     --enable_pinocchio \
     --enable_cameras \
+    --device cuda:0 \
     --object block \
     --dataset_file ./datasets/inspire_ftp/block_demos.hdf5 \
     --num_demos 10 \
@@ -383,14 +390,14 @@ The recorded HDF5 will contain:
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
-    --enable_cameras --enable_pinocchio
+    --enable_cameras --enable_pinocchio --device cuda:0
 
 # Replay with success validation
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
-    --enable_cameras --enable_pinocchio \
+    --enable_cameras --enable_pinocchio --device cuda:0 \
     --validate_success_rate
 ```
 
@@ -659,7 +666,7 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
-    --test --enable_cameras
+    --test --enable_cameras --device cuda:0
 ```
 
 ### ACT IL Checkpoint
@@ -673,7 +680,7 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
     --model_path /models/act_inspire_ftp \
     --num_episodes 10 \
     --save_video \
-    --enable_cameras
+    --enable_cameras --device cuda:0
 ```
 
 ### Object Selection
@@ -686,13 +693,13 @@ Use `--object` to force a specific one:
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
     --policy_type act --model_path /models/act_inspire_ftp \
-    --object block --enable_cameras
+    --object block --enable_cameras --device cuda:0
 
 # Evaluate on a specific tool
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
     --policy_type act --model_path /models/act_inspire_ftp \
-    --object tool_0 --enable_cameras
+    --object tool_0 --enable_cameras --device cuda:0
 ```
 
 The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
@@ -712,6 +719,7 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | `--object` | `random` | Grasp object: `random`, `block`, `tool_0`..`tool_4` |
 | `--save_video` | false | Save evaluation videos |
 | `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3) |
+| `--device` | `cuda:0` | **Recommended.** Simulation device. XR mode overrides to CPU if not set explicitly. |
 | `--enable_cameras` | false | **Required.** Enable camera rendering for observations. |
 | `--enable_pinocchio` | false | Required for PinkIK (teleop task only) |
 
