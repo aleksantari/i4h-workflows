@@ -66,14 +66,15 @@ parser.add_argument(
 parser.add_argument("--frequency", type=float, default=0.0, help="control frequency (Hz)")
 parser.add_argument("--success_stage", type=int, default=3, help="success stage for the task")
 parser.add_argument(
-    "--task_description", type=str, default="pick up block and place in bin", help="task description"
+    "--task_description", type=str, default="pick up surgical tool from tray and place in bin", help="task description"
 )
 parser.add_argument("--test", action="store_true", help="run integration test with dummy policy")
+parser.add_argument("--view", action="store_true", help="load scene and render without stepping (scene inspection mode)")
 parser.add_argument(
     "--object",
     type=str,
     default="random",
-    choices=["random", "block", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    choices=["random", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
     help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
 )
 parser.add_argument(
@@ -108,11 +109,14 @@ def main():
     print(f"Model: {args_cli.model_path or '<test>'}")
     print("=" * 60)
 
+    view_mode = bool(getattr(args_cli, "view", False))
     test_mode = bool(getattr(args_cli, "test", False)) or args_cli.policy_type == "test"
-    if test_mode:
+    if view_mode:
+        print("View mode enabled (scene inspection, no policy)")
+    elif test_mode:
         print("Test mode enabled (dummy policy, no checkpoint needed)")
     elif not args_cli.model_path:
-        print("--model_path is required unless --test is set")
+        print("--model_path is required unless --test or --view is set")
         return
 
     # Parse environment configuration
@@ -128,13 +132,7 @@ def main():
         from simulation.assets.assets import SINUS_TOOL_USD_PATHS
 
         obj_name = args_cli.object
-        if obj_name == "block":
-            single_spawner = sim_utils.CuboidCfg(
-                size=(0.05, 0.05, 0.05),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
-            )
-        else:
-            single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+        single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
 
         # Replace MultiAssetSpawnerCfg with a single-asset spawner
         env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
@@ -152,6 +150,16 @@ def main():
     env.seed(args_cli.seed)
 
     set_viewport_camera("/World/envs/env_0/Robot/d435_link/front_cam")
+
+    # View-only mode: load scene, render, no policy stepping
+    if getattr(args_cli, "view", False):
+        print("\n[VIEW MODE] Scene loaded. Rendering without stepping. Close the window to exit.")
+        obs, _ = env.reset()
+        while simulation_app.is_running():
+            env.sim.render()
+        env.close()
+        simulation_app.close()
+        return
 
     # Load policy
     print("\n[3/4] Loading policy...")

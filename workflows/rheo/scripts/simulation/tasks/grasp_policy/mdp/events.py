@@ -65,3 +65,48 @@ def reset_block_random_position(
 
     # Write to sim
     block.write_root_state_to_sim(default_state, env_ids)
+
+
+def reset_block_to_tray_slot(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    block_cfg: SceneEntityCfg = SceneEntityCfg("block"),
+    slot_pos: tuple[float, float, float] = (-1.55, 1.86, 0.875),
+    slot_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+    xy_noise: tuple[float, float] = (-0.005, 0.005),
+) -> None:
+    """Reset the block (grasp target) to its tray slot position.
+
+    Teleports the block to the slot centre with optional small XY jitter
+    for training robustness. Orientation is set to *slot_rot* (w, x, y, z).
+    Velocities are zeroed.
+    """
+    block = env.scene[block_cfg.name]
+    num_reset = len(env_ids)
+    device = env.device
+
+    # Build root state: [pos(3), quat(4), lin_vel(3), ang_vel(3)] = 13
+    default_state = block.data.default_root_state[env_ids].clone()
+
+    # Override position to slot centre
+    default_state[:, 0] = slot_pos[0]
+    default_state[:, 1] = slot_pos[1]
+    default_state[:, 2] = slot_pos[2]
+
+    # Add small XY noise for training robustness
+    if xy_noise[1] > xy_noise[0]:
+        dx = torch.empty(num_reset, device=device).uniform_(*xy_noise)
+        dy = torch.empty(num_reset, device=device).uniform_(*xy_noise)
+        default_state[:, 0] += dx
+        default_state[:, 1] += dy
+
+    # Orientation (w, x, y, z)
+    default_state[:, 3] = slot_rot[0]
+    default_state[:, 4] = slot_rot[1]
+    default_state[:, 5] = slot_rot[2]
+    default_state[:, 6] = slot_rot[3]
+
+    # Zero velocities
+    default_state[:, 7:] = 0.0
+
+    block.write_root_state_to_sim(default_state, env_ids)

@@ -1,0 +1,21 @@
+Evaluation Results — Inspire FTP Grasp Policy
+============================================================
+Task: Isaac-Grasp-Policy-G129-InspireFTP-Joint
+Policy Type: act
+Model: None
+Episodes: 10
+Action Chunk Size: 1
+Success Rate: 0.0%
+Average Success Steps: 0.0
+
+Detailed Results:
+  Episode 1: FAILED | Stage: 1/3 | Steps: 256 | Reward: 1.000
+  Episode 2: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 3: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 4: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 5: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 6: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 7: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 8: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 9: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000
+  Episode 10: FAILED | Stage: 0/3 | Steps: 256 | Reward: 0.000

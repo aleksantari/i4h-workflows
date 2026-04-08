@@ -15,5 +15,6 @@
 
 from simulation.tasks.grasp_policy.mdp.events import (  # noqa: F401
     reset_block_random_position,
+    reset_block_to_tray_slot,
     reset_task_stage,
 )

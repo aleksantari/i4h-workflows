@@ -59,3 +59,5 @@ _SINUS_TOOLKIT_DIR = _os.path.join(_RHEO_DIR, "assets", "sinus_toolkit_v1")
 SINUS_TOOL_USD_PATHS: dict[str, str] = {
     f"tool_{i}": _os.path.join(_SINUS_TOOLKIT_DIR, f"tool_{i}", f"tool_{i}.usd") for i in range(5)
 }
+
+SURGICAL_TRAY_USD: str = _os.path.join(_SINUS_TOOLKIT_DIR, "surgical_tray", "SurgicalTray_endo.usd")

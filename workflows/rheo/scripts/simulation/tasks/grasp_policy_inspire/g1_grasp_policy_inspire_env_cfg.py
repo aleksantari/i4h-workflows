@@ -38,7 +38,7 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
-from simulation.assets.assets import SINUS_TOOL_USD_PATHS, TROCAR_ASSEMBLY_SCENE_USD
+from simulation.assets.assets import SINUS_TOOL_USD_PATHS, SURGICAL_TRAY_USD, TROCAR_ASSEMBLY_SCENE_USD
 from simulation.tasks.grasp_policy_inspire import mdp
 
 from simulation.tasks.grasp_policy_inspire.config import CameraPresets, G1InspireRobotPresets  # isort: skip
@@ -149,10 +149,39 @@ BIN_CY = 1.61
 TABLE_Z = 0.855
 TARGET_Z = 0.835
 
+# ---------------------------------------------------------------------------
+# Surgical tray configuration
+# Tray origin sits on the table surface. Slot offsets are from Xform markers
+# embedded in the USD by the asset creator (6 prims: /root/tool_0 .. tool_5).
+# Tray bounding box: 63cm x 23cm x 8cm, centered at origin.
+# ---------------------------------------------------------------------------
+TRAY_POS = (-1.55, 1.90, 0.855)
+TRAY_ROT = (0.70711, 0.0, 0.0, 0.70711)  # 90° CCW around Z
+TOOL_ROT = (0.70711, 0.0, 0.0, 0.70711)  # match tray rotation
+
+# Local slot offsets from USD Xform markers, rotated 90° CCW to match tray.
+# Original local coords (x, y) rotated by (-y, x).
+# fmt: off
+_SLOT_LOCAL = [
+    (-0.055,    0.13255, 0.0),   # slot 0 — /root/tool_0
+    ( 0.000,    0.13255, 0.0),   # slot 1 — /root/tool_1
+    ( 0.055,    0.13255, 0.0),   # slot 2 — /root/tool_2
+    (-0.055,   -0.13397, 0.0),   # slot 3 — /root/tool_3
+    ( 0.000,   -0.13397, 0.0),   # slot 4 — /root/tool_4
+    ( 0.055,   -0.13397, 0.0),   # slot 5 — /root/tool_5 (empty)
+]
+# fmt: on
+
+# World-space slot positions (tray pos + local offset)
+TRAY_SLOT_POSITIONS = [
+    (TRAY_POS[0] + dx, TRAY_POS[1] + dy, TRAY_POS[2] + dz) for dx, dy, dz in _SLOT_LOCAL
+]
+ACTIVE_SLOT_IDX = 4  # slot 4 is the physics-enabled grasp target
+
 
 @configclass
 class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
-    """Scene: G1 + Inspire FTP robot + random grasp object (block or sinus tool) + bin."""
+    """Scene: G1 + Inspire FTP robot + surgical tray with 5 tools + bin."""
 
     robot = G1InspireRobotPresets.g1_29dof_inspire_ftp_base_fix(
         init_pos=(-1.84919, 1.94, 0.81168), init_rot=(1.0, 0, 0, 0.0)
@@ -167,29 +196,52 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
         spawn=UsdFileCfg(usd_path=TROCAR_ASSEMBLY_SCENE_USD),
     )
 
-    # Grasp target — randomly selects one of 6 objects (block + 5 sinus tools) per env clone.
-    # The attribute is named "block" so that shared MDP code (rewards, terminations) which
-    # references env.scene["block"] works without modification.
+    # Surgical tray — static prop centered on table (no physics)
+    surgical_tray = AssetBaseCfg(
+        prim_path="/World/envs/env_.*/surgical_tray",
+        spawn=UsdFileCfg(usd_path=SURGICAL_TRAY_USD),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_POS, rot=TRAY_ROT),
+    )
+
+    # Distractor tools — visual-only props sitting in tray slots 0-3
+    tray_tool_0 = AssetBaseCfg(
+        prim_path="/World/envs/env_.*/tray_tool_0",
+        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_0"]),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[0], rot=TOOL_ROT),
+    )
+    tray_tool_1 = AssetBaseCfg(
+        prim_path="/World/envs/env_.*/tray_tool_1",
+        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_1"]),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[1], rot=TOOL_ROT),
+    )
+    tray_tool_2 = AssetBaseCfg(
+        prim_path="/World/envs/env_.*/tray_tool_2",
+        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_2"]),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[2], rot=TOOL_ROT),
+    )
+    tray_tool_3 = AssetBaseCfg(
+        prim_path="/World/envs/env_.*/tray_tool_3",
+        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_3"]),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[3], rot=TOOL_ROT),
+    )
+
+    # Active grasp target — randomly selects one of 5 sinus tools per env clone.
+    # Named "block" so shared MDP code (rewards, terminations) works unmodified.
+    # Positioned at tray slot 4; reset event teleports it back to this slot.
     # Requires replicate_physics=False on InteractiveSceneCfg.
     block = RigidObjectCfg(
         prim_path="/World/envs/env_.*/block",
         spawn=sim_utils.MultiAssetSpawnerCfg(
-            assets_cfg=[
-                sim_utils.CuboidCfg(
-                    size=(0.05, 0.05, 0.05),
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
-                ),
-            ]
-            + [UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[f"tool_{i}"]) for i in range(5)],
+            assets_cfg=[UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[f"tool_{i}"]) for i in range(5)],
             random_choice=True,
             mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-1.55, 1.90, 0.885)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[ACTIVE_SLOT_IDX], rot=TOOL_ROT),
     )
 
-    # Target pad
+    # Target pad (bin)
     target_pad = RigidObjectCfg(
         prim_path="/World/envs/env_.*/target_pad",
         spawn=sim_utils.CuboidCfg(
@@ -316,12 +368,13 @@ class EventCfg:
     reset_scene = EventTermCfg(func=base_mdp.reset_scene_to_default, mode="reset")
     reset_task_stage = EventTermCfg(func=mdp.reset_task_stage, mode="reset")
     reset_block_position = EventTermCfg(
-        func=mdp.reset_block_random_position,
+        func=mdp.reset_block_to_tray_slot,
         mode="reset",
         params={
             "block_cfg": SceneEntityCfg("block"),
-            "x_range": (-0.03, 0.03),
-            "y_range": (-0.03, 0.03),
+            "slot_pos": TRAY_SLOT_POSITIONS[ACTIVE_SLOT_IDX],
+            "slot_rot": TOOL_ROT,
+            "xy_noise": (-0.005, 0.005),
         },
     )
 

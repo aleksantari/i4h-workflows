@@ -89,7 +89,7 @@ parser.add_argument(
     "--object",
     type=str,
     default="random",
-    choices=["random", "block", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    choices=["random", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
     help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
 )
 
@@ -462,13 +462,7 @@ def main() -> None:
         from simulation.assets.assets import SINUS_TOOL_USD_PATHS
 
         obj_name = args_cli.object
-        if obj_name == "block":
-            single_spawner = sim_utils.CuboidCfg(
-                size=(0.05, 0.05, 0.05),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.2, 0.2)),
-            )
-        else:
-            single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+        single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
 
         env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
             assets_cfg=[single_spawner],
