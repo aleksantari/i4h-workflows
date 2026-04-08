@@ -155,20 +155,20 @@ TARGET_Z = 0.835
 # embedded in the USD by the asset creator (6 prims: /root/tool_0 .. tool_5).
 # Tray bounding box: 63cm x 23cm x 8cm, centered at origin.
 # ---------------------------------------------------------------------------
-TRAY_POS = (-1.55, 1.90, 0.855)
-TRAY_ROT = (0.70711, 0.0, 0.0, 0.70711)  # 90° CCW around Z
-TOOL_ROT = (0.70711, 0.0, 0.0, 0.70711)  # match tray rotation
+TRAY_POS = (-1.49919, 2.03365, 0.84554)  # from trocar task, +5cm in x
+TRAY_ROT = (0.70711, 0.0, 0.0, -0.70711)  # 90° CW around Z (from trocar task)
+TOOL_ROT = (0.70711, 0.0, 0.0, -0.70711)  # match tray rotation
 
-# Local slot offsets from USD Xform markers, rotated 90° CCW to match tray.
-# Original local coords (x, y) rotated by (-y, x).
+# Local slot offsets from USD Xform markers, rotated 90° CW to match tray.
+# Original local coords (x, y) rotated by (y, -x).
 # fmt: off
 _SLOT_LOCAL = [
-    (-0.055,    0.13255, 0.0),   # slot 0 — /root/tool_0
-    ( 0.000,    0.13255, 0.0),   # slot 1 — /root/tool_1
-    ( 0.055,    0.13255, 0.0),   # slot 2 — /root/tool_2
-    (-0.055,   -0.13397, 0.0),   # slot 3 — /root/tool_3
-    ( 0.000,   -0.13397, 0.0),   # slot 4 — /root/tool_4
-    ( 0.055,   -0.13397, 0.0),   # slot 5 — /root/tool_5 (empty)
+    ( 0.055,   -0.13255, 0.03),  # slot 0 — /root/tool_0
+    ( 0.000,   -0.13255, 0.03),  # slot 1 — /root/tool_1
+    (-0.055,   -0.13255, 0.03),  # slot 2 — /root/tool_2
+    ( 0.055,    0.13397, 0.03),  # slot 3 — /root/tool_3
+    ( 0.000,    0.13397, 0.03),  # slot 4 — /root/tool_4
+    (-0.055,    0.13397, 0.03),  # slot 5 — /root/tool_5 (empty)
 ]
 # fmt: on
 
@@ -181,7 +181,7 @@ ACTIVE_SLOT_IDX = 4  # slot 4 is the physics-enabled grasp target
 
 @configclass
 class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
-    """Scene: G1 + Inspire FTP robot + surgical tray with 5 tools + bin."""
+    """Scene: G1 + Inspire FTP robot + surgical tray + single tool + bin."""
 
     robot = G1InspireRobotPresets.g1_29dof_inspire_ftp_base_fix(
         init_pos=(-1.84919, 1.94, 0.81168), init_rot=(1.0, 0, 0, 0.0)
@@ -203,42 +203,20 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_POS, rot=TRAY_ROT),
     )
 
-    # Distractor tools — visual-only props sitting in tray slots 0-3
-    tray_tool_0 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/tray_tool_0",
-        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_0"]),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[0], rot=TOOL_ROT),
-    )
-    tray_tool_1 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/tray_tool_1",
-        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_1"]),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[1], rot=TOOL_ROT),
-    )
-    tray_tool_2 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/tray_tool_2",
-        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_2"]),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[2], rot=TOOL_ROT),
-    )
-    tray_tool_3 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/tray_tool_3",
-        spawn=UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS["tool_3"]),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[3], rot=TOOL_ROT),
-    )
-
-    # Active grasp target — randomly selects one of 5 sinus tools per env clone.
+    # Active grasp target — single tool (default: tool_0), overridable via CLI.
     # Named "block" so shared MDP code (rewards, terminations) works unmodified.
-    # Positioned at tray slot 4; reset event teleports it back to this slot.
-    # Requires replicate_physics=False on InteractiveSceneCfg.
+    # Positioned at tray slot 4; reset event teleports it back with XY/yaw noise.
     block = RigidObjectCfg(
         prim_path="/World/envs/env_.*/block",
-        spawn=sim_utils.MultiAssetSpawnerCfg(
-            assets_cfg=[UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[f"tool_{i}"]) for i in range(5)],
-            random_choice=True,
+        spawn=UsdFileCfg(
+            usd_path=SINUS_TOOL_USD_PATHS["tool_0"],
             mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=TRAY_SLOT_POSITIONS[ACTIVE_SLOT_IDX], rot=TOOL_ROT),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=TRAY_SLOT_POSITIONS[ACTIVE_SLOT_IDX], rot=TOOL_ROT
+        ),
     )
 
     # Target pad (bin)
@@ -374,7 +352,8 @@ class EventCfg:
             "block_cfg": SceneEntityCfg("block"),
             "slot_pos": TRAY_SLOT_POSITIONS[ACTIVE_SLOT_IDX],
             "slot_rot": TOOL_ROT,
-            "xy_noise": (-0.005, 0.005),
+            "xy_noise": (-0.02, 0.02),
+            "yaw_noise_deg": (-15.0, 15.0),
         },
     )
 

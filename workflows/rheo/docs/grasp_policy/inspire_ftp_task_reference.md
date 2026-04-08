@@ -1,9 +1,9 @@
 # Inspire FTP Grasp Policy Task Reference
 
 Technical reference for the G1 + Inspire FTP pick-and-place task.
-The scene randomly selects one of 6 objects (red block + 5 sinus toolkit surgical tools)
-per environment clone via `MultiAssetSpawnerCfg`. Covers both the **RL/eval** (41D joint
-control) and **teleop** (38D PinkIK) variants, plus the 26D data conversion pipeline.
+The scene spawns a surgical tray with a single tool (default: tool_0) that the robot
+must grasp and place on a target pad. Covers both the **RL/eval** (41D joint control)
+and **teleop** (38D PinkIK) variants, plus the 26D data conversion pipeline.
 
 ---
 
@@ -30,12 +30,12 @@ control) and **teleop** (38D PinkIK) variants, plus the 26D data conversion pipe
 
 ## 1. Overview
 
-The task is a **pick-and-place**: grasp an object from the table, transport it to a green
-target pad, and place it on the pad. The scene uses `MultiAssetSpawnerCfg` to randomly
-select one of 6 objects per env clone: a 5 cm red cube (block) or one of 5 sinus toolkit
-surgical tools (tool_0..tool_4, converted from .obj to .usd). The robot is a Unitree G1
-(29 body DOF) with **Inspire FTP 5-finger hands** (24 hand joints: 12 actuated + 12 mimic,
-per pair of hands).
+The task is a **pick-and-place**: grasp a surgical tool from a tray, transport it to a green
+target pad, and place it on the pad. The scene loads a surgical tray with a single tool
+(default: tool_0 in slot 4, overridable via `--object` and `--slot` CLI args). On each
+reset, the tool position is randomized +/-2 cm in X/Y with +/-15° yaw rotation.
+The robot is a Unitree G1 (29 body DOF) with **Inspire FTP 5-finger hands** (24 hand
+joints: 12 actuated + 12 mimic, per pair of hands).
 
 Three gym variants exist:
 
@@ -73,7 +73,8 @@ The Eval variant inherits the RL config but uses deterministic block placement.
 | Entity | Size / Type | Init Position | Notes |
 |--------|-------------|---------------|-------|
 | **Robot** | G1 29DOF + Inspire FTP | (-1.849, 1.94, 0.812) | Fixed base, gravity disabled |
-| **Grasp Object** | Random: block or sinus tool, 0.1 kg | (-1.55, 1.90, 0.885) | `MultiAssetSpawnerCfg` with `random_choice=True` |
+| **Surgical Tray** | Static prop (no physics) | (-1.549, 2.034, 0.846) | 90° CW rotation, from trocar task |
+| **Grasp Tool** | Single sinus tool, 0.1 kg | Tray slot 4 (default) | `UsdFileCfg`, default: tool_0 |
 | **Target Pad** | 15x15x0.5 cm, 0.3 kg | (-1.55, 1.61, 0.8375) | Green, friction 1.0/0.8 |
 | **Front Camera** | RGB 640x480 | On robot head | focal_length=10.5 |
 | **Scene** | Surgical room USD | - | Trocar assembly scene (table) |
@@ -81,29 +82,33 @@ The Eval variant inherits the RL config but uses deterministic block placement.
 
 **Table height (TABLE_Z):** 0.855 m
 
-**`replicate_physics=False`** is required because `MultiAssetSpawnerCfg` spawns different
-meshes per env clone (collision shapes and inertia differ).
+### Surgical Tray
 
-### Grasp Objects (6 total)
+The tray (`SurgicalTray_endo.usd`) is a static `AssetBaseCfg` positioned to match the
+trocar task's tray placement. It has 6 slots defined by Xform markers in the USD
+(`/root/tool_0` through `/root/tool_5`). Slot positions are rotated 90° CW to match the
+tray orientation and offset +3 cm in Z so tools rest on top of the tray surface.
 
-| Index | Name | Type | Source |
-|-------|------|------|--------|
-| 0 | `block` | 5 cm red cube | Procedural (`CuboidCfg`) |
-| 1 | `tool_0` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_0/tool_0.usd` |
-| 2 | `tool_1` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_1/tool_1.usd` |
-| 3 | `tool_2` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_2/tool_2.usd` |
-| 4 | `tool_3` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_3/tool_3.usd` |
-| 5 | `tool_4` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_4/tool_4.usd` |
+### Grasp Tools (5 available)
 
-The .obj meshes must be converted to .usd before first use:
+| Name | Type | Source |
+|------|------|--------|
+| `tool_0` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_0/tool_0.usd` |
+| `tool_1` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_1/tool_1.usd` |
+| `tool_2` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_2/tool_2.usd` |
+| `tool_3` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_3/tool_3.usd` |
+| `tool_4` | Sinus surgical tool | `assets/sinus_toolkit_v1/tool_4/tool_4.usd` |
+
+Only one tool is loaded at a time (default: `tool_0`). The .obj meshes must be converted
+to .usd before first use:
 
 ```bash
 ./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py
 ```
 
 Both the eval script (`eval_grasp_policy_inspire.py`) and the recording script
-(`record_demos.py`) support `--object <name>` to force a specific object (default: `random`).
-This is useful for per-object evaluation or collecting balanced per-object demo datasets.
+(`record_demos.py`) support `--object <name>` (default: `tool_0`) to select the tool
+and `--slot N` (default: 4) to choose the tray slot (0-5).
 
 No wrist cameras are available on the Inspire FTP hand (no camera mount links in the USD).
 
@@ -355,10 +360,13 @@ Three-stage sparse rewards. Total possible reward per episode = **3.0**.
 |-------|--------|---------|
 | `reset_scene` | Restore default joint/object poses | On reset |
 | `reset_task_stage` | Set stage -> 0, clear reward caches | On reset |
-| `reset_block_position` | Random offset: +/-3 cm in x, +/-3 cm in y from default | On reset |
+| `reset_block_position` | Teleport tool to slot position with +/-2 cm XY noise and +/-15° yaw noise | On reset |
 
-The eval variant (`G1GraspPolicyInspireEvalEnvCfg`) inherits the RL config --
-block randomization range is the same but placement is deterministic per env index.
+The `reset_block_to_tray_slot` function accepts `slot_pos`, `slot_rot`, `xy_noise`,
+and `yaw_noise_deg` parameters. The yaw noise composes a random Z-axis rotation with
+the base `slot_rot` quaternion via Hamilton product.
+
+The eval variant (`G1GraspPolicyInspireEvalEnvCfg`) inherits the RL config.
 
 ---
 

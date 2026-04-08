@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -74,11 +75,13 @@ def reset_block_to_tray_slot(
     slot_pos: tuple[float, float, float] = (-1.55, 1.86, 0.875),
     slot_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
     xy_noise: tuple[float, float] = (-0.005, 0.005),
+    yaw_noise_deg: tuple[float, float] = (0.0, 0.0),
 ) -> None:
     """Reset the block (grasp target) to its tray slot position.
 
-    Teleports the block to the slot centre with optional small XY jitter
-    for training robustness. Orientation is set to *slot_rot* (w, x, y, z).
+    Teleports the block to the slot centre with optional XY jitter and
+    random yaw rotation for training robustness. Base orientation is
+    *slot_rot* (w, x, y, z), with yaw noise composed on top.
     Velocities are zeroed.
     """
     block = env.scene[block_cfg.name]
@@ -93,18 +96,35 @@ def reset_block_to_tray_slot(
     default_state[:, 1] = slot_pos[1]
     default_state[:, 2] = slot_pos[2]
 
-    # Add small XY noise for training robustness
+    # Add XY noise for training robustness
     if xy_noise[1] > xy_noise[0]:
         dx = torch.empty(num_reset, device=device).uniform_(*xy_noise)
         dy = torch.empty(num_reset, device=device).uniform_(*xy_noise)
         default_state[:, 0] += dx
         default_state[:, 1] += dy
 
-    # Orientation (w, x, y, z)
-    default_state[:, 3] = slot_rot[0]
-    default_state[:, 4] = slot_rot[1]
-    default_state[:, 5] = slot_rot[2]
-    default_state[:, 6] = slot_rot[3]
+    # Base orientation (w, x, y, z)
+    w0, x0, y0, z0 = slot_rot
+
+    if yaw_noise_deg[1] > yaw_noise_deg[0]:
+        # Random yaw around Z, composed with slot_rot: q_final = q_yaw * q_slot
+        yaw = torch.empty(num_reset, device=device).uniform_(
+            math.radians(yaw_noise_deg[0]),
+            math.radians(yaw_noise_deg[1]),
+        )
+        half = yaw * 0.5
+        cw = torch.cos(half)  # q_yaw.w
+        sz = torch.sin(half)  # q_yaw.z (x,y = 0 for Z-axis rotation)
+        # Hamilton product: q_yaw (cw,0,0,sz) * q_slot (w0,x0,y0,z0)
+        default_state[:, 3] = cw * w0 - sz * z0
+        default_state[:, 4] = cw * x0 - sz * y0
+        default_state[:, 5] = cw * y0 + sz * x0
+        default_state[:, 6] = cw * z0 + sz * w0
+    else:
+        default_state[:, 3] = w0
+        default_state[:, 4] = x0
+        default_state[:, 5] = y0
+        default_state[:, 6] = z0
 
     # Zero velocities
     default_state[:, 7:] = 0.0

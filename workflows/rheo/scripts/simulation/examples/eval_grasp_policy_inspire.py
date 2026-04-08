@@ -73,9 +73,16 @@ parser.add_argument("--view", action="store_true", help="load scene and render w
 parser.add_argument(
     "--object",
     type=str,
-    default="random",
-    choices=["random", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
-    help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
+    default="tool_0",
+    choices=["tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    help="Grasp object (default: tool_0).",
+)
+parser.add_argument(
+    "--slot",
+    type=int,
+    default=4,
+    choices=range(6),
+    help="Tray slot index 0-5 for tool spawn (default: 4).",
 )
 parser.add_argument(
     "--enable_pinocchio",
@@ -94,6 +101,7 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 import gymnasium as gym  # noqa: E402
+import isaaclab.sim as sim_utils  # noqa: E402
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg  # noqa: E402
 from simulation.examples.utils import _MultiViewConcatWriter, evaluate_episode, set_viewport_camera  # noqa: E402
 from simulation.tasks import grasp_policy_inspire  # noqa: F401
@@ -125,24 +133,33 @@ def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=num_envs)
     env_cfg.seed = args_cli.seed
 
-    # Override grasp object if a specific one is requested
-    if args_cli.object != "random":
-        import isaaclab.sim as sim_utils
-        from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
-        from simulation.assets.assets import SINUS_TOOL_USD_PATHS
+    # Override tool and slot from CLI args
+    from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
+    from simulation.assets.assets import SINUS_TOOL_USD_PATHS
+    from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (
+        TOOL_ROT,
+        TRAY_SLOT_POSITIONS,
+    )
 
-        obj_name = args_cli.object
-        single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+    obj_name = args_cli.object
+    slot_idx = args_cli.slot
 
-        # Replace MultiAssetSpawnerCfg with a single-asset spawner
-        env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
-            assets_cfg=[single_spawner],
-            random_choice=False,
+    # Override tool USD (default: tool_0, scene cfg already has tool_0)
+    if obj_name != "tool_0":
+        env_cfg.scene.block.spawn = _UsdFileCfg(
+            usd_path=SINUS_TOOL_USD_PATHS[obj_name],
             mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         )
-        print(f"  Object override: {obj_name}")
+    print(f"  Tool: {obj_name}")
+
+    # Override slot position (default: slot 4)
+    if slot_idx != 4:
+        slot_pos = TRAY_SLOT_POSITIONS[slot_idx]
+        env_cfg.scene.block.init_state.pos = slot_pos
+        env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+    print(f"  Slot: {slot_idx}")
 
     # Create environment
     print("\n[2/4] Creating environment...")

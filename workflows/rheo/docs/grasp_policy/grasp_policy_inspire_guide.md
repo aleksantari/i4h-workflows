@@ -6,9 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 # Grasp Policy (Inspire FTP): End-to-End Training Guide
 
 Complete guide for training and evaluating an ACT (Action Chunking Transformer) policy
-on the **grasp_policy_inspire** task (pick up an object and place it on a target) using the
-G1 robot with **Inspire FTP 5-finger hands**. The scene randomly selects one of 6 objects
-(red block + 5 sinus toolkit surgical tools) per environment clone.
+on the **grasp_policy_inspire** task (pick up a surgical tool from a tray and place it on a
+target) using the G1 robot with **Inspire FTP 5-finger hands**. The scene spawns a surgical
+tray with a single tool (default: tool_0) that the robot must grasp and place.
 
 **Pipeline overview:**
 
@@ -84,15 +84,16 @@ correctly with the Inspire FTP hands.
 
 - Environment creates without errors
 - Robot spawns with 5-finger Inspire FTP hands visible
-- A random grasp object (block or sinus tool) appears on the table
+- A surgical tray appears on the table with a single tool (tool_0 by default)
 - 41D zero actions are accepted (dummy policy)
 - Front camera renders in the viewport
 - Episode completes and reports 0% success rate (expected with dummy policy)
 - Action Manager shows `shape: 41` (direct joint control, 29 body + 12 actuated hand)
 - Observation Manager shows `robot_joint_state (87,)` and `robot_inspire_joint_state (12,)`
 
-**Object selection:** By default, a random object is chosen per env clone. Use
-`--object block` or `--object tool_0` through `--object tool_4` to force a specific one.
+**Tool selection:** By default, `tool_0` is loaded. Use `--object tool_1` through
+`--object tool_4` to select a different tool. Use `--slot N` (0-5) to change the
+tray slot (default: 4). Use `--view` to inspect the scene without running a policy.
 
 > **Code:**
 > [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py) —
@@ -297,7 +298,7 @@ modifications needed.
 ### Quick Start
 
 ```bash
-# Record 10 demos with AVP hand tracking (random objects)
+# Record 10 demos with AVP hand tracking (tool_0 in slot 4 by default)
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -314,11 +315,11 @@ modifications needed.
 > `remove_camera_configs()` strips the front camera from the scene but leaves
 > the observation term, causing a `front_camera does not exist` error.
 
-### Object Selection During Recording
+### Tool and Slot Selection During Recording
 
-By default, a random object (block or sinus tool) is spawned per env clone.
-Use `--object` to force a specific one — useful for collecting balanced
-per-object datasets:
+By default, `tool_0` is spawned in tray slot 4. Use `--object` to select a
+different tool and `--slot` to change the tray slot (0-5). On each reset, the
+tool position is randomized +/-2 cm in X/Y with +/-15° yaw rotation.
 
 ```bash
 # Record demos with a specific tool
@@ -334,7 +335,7 @@ per-object datasets:
     --num_demos 10 \
     --xr
 
-# Record demos with block only
+# Record demos with tool_3 in slot 1
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -342,13 +343,14 @@ per-object datasets:
     --enable_pinocchio \
     --enable_cameras \
     --device cuda:0 \
-    --object block \
-    --dataset_file ./datasets/inspire_ftp/block_demos.hdf5 \
+    --object tool_3 --slot 1 \
+    --dataset_file ./datasets/inspire_ftp/tool_3_slot1_demos.hdf5 \
     --num_demos 10 \
     --xr
 ```
 
-Options: `random` (default), `block`, `tool_0`, `tool_1`, `tool_2`, `tool_3`, `tool_4`.
+Options: `--object` accepts `tool_0` (default), `tool_1`, `tool_2`, `tool_3`, `tool_4`.
+`--slot` accepts 0-5 (default: 4).
 
 ### Recording Controls
 
@@ -360,7 +362,7 @@ When using XR (AVP), recording is controlled via **VR gestures** in the headset 
 | **STOP** | Stop and save current demo |
 | **RESET** | Reset environment (discard current demo) |
 
-**Auto-success detection:** When the block is placed on the target pad (stage 3),
+**Auto-success detection:** When the tool is placed on the target pad (stage 3),
 the demo auto-saves after `--num_success_steps` consecutive successes (default: 1).
 
 ### HDF5 Output Format
@@ -682,23 +684,22 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
     --enable_cameras --device cuda:0
 ```
 
-### Object Selection
+### Tool and Slot Selection
 
-By default, a random object (block or sinus tool) is spawned per env clone.
-Use `--object` to force a specific one:
+By default, `tool_0` is loaded in tray slot 4. Use `--object` and `--slot` to override:
 
 ```bash
-# Evaluate on block only
+# Evaluate on tool_2 in default slot
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
     --policy_type act --model_path /models/act_inspire_ftp \
-    --object block --enable_cameras --device cuda:0
+    --object tool_2 --enable_cameras --device cuda:0
 
-# Evaluate on a specific tool
+# Evaluate on tool_0 in slot 1
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_grasp_policy_inspire.py \
     --policy_type act --model_path /models/act_inspire_ftp \
-    --object tool_0 --enable_cameras --device cuda:0
+    --slot 1 --enable_cameras --device cuda:0
 ```
 
 The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
@@ -715,7 +716,9 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | `--num_episodes` | 10 | Number of evaluation episodes |
 | `--max_steps` | 256 | Max steps per episode |
 | `--action_chunk_size` | 1 | Actions per chunk to execute |
-| `--object` | `random` | Grasp object: `random`, `block`, `tool_0`..`tool_4` |
+| `--object` | `tool_0` | Grasp tool: `tool_0`..`tool_4` |
+| `--slot` | 4 | Tray slot index (0-5) |
+| `--view` | false | Load scene and render without stepping (scene inspection) |
 | `--save_video` | false | Save evaluation videos |
 | `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3) |
 | `--device` | `cuda:0` | **Recommended.** Simulation device. XR mode overrides to CPU if not set explicitly. |
@@ -757,7 +760,7 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 
 | File | Description |
 |------|-------------|
-| [`assets/sinus_toolkit_v1/`](../assets/sinus_toolkit_v1/) | 5 surgical tool .obj meshes (tool_0..tool_4) |
+| [`assets/sinus_toolkit_v1/`](../assets/sinus_toolkit_v1/) | 5 surgical tool .obj meshes (tool_0..tool_4) + surgical tray USD |
 | [`simulation/assets/convert_sinus_toolkit.py`](../scripts/simulation/assets/convert_sinus_toolkit.py) | Batch .obj→.usd converter (run inside Docker) |
 | [`simulation/assets/assets.py`](../scripts/simulation/assets/assets.py) | USD path constants (`SINUS_TOOL_USD_PATHS`) |
 

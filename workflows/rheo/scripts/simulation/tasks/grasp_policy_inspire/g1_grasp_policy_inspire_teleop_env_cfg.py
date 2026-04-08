@@ -125,14 +125,14 @@ class TeleopActionsCfg:
                     position_cost=8.0,
                     orientation_cost=2.0,
                     lm_damping=10,
-                    gain=0.5,
+                    gain=0.8,
                 ),
                 FrameTask(
                     "g1_29dof_rev_1_0_with_inspire_hand_FTP_right_wrist_yaw_link",
                     position_cost=8.0,
                     orientation_cost=2.0,
                     lm_damping=10,
-                    gain=0.5,
+                    gain=0.8,
                 ),
                 NullSpacePostureTask(
                     cost=0.5,

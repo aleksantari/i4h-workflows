@@ -88,9 +88,16 @@ parser.add_argument(
 parser.add_argument(
     "--object",
     type=str,
-    default="random",
-    choices=["random", "tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
-    help="Grasp object: 'random' (default) selects randomly per env, or specify one.",
+    default="tool_0",
+    choices=["tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    help="Grasp object (default: tool_0).",
+)
+parser.add_argument(
+    "--slot",
+    type=int,
+    default=4,
+    choices=range(6),
+    help="Tray slot index 0-5 for tool spawn (default: 4).",
 )
 
 # append AppLauncher cli args
@@ -455,23 +462,33 @@ def main() -> None:
     global env_cfg  # Make env_cfg available to setup_teleop_device
     env_cfg, success_term = create_environment_config(output_dir, output_file_name)
 
-    # Override grasp object if a specific one is requested
-    if args_cli.object != "random" and hasattr(env_cfg.scene, "block"):
+    # Override tool and slot from CLI args (Inspire FTP tasks)
+    if hasattr(env_cfg.scene, "block"):
         import isaaclab.sim as sim_utils
         from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
         from simulation.assets.assets import SINUS_TOOL_USD_PATHS
 
         obj_name = args_cli.object
-        single_spawner = _UsdFileCfg(usd_path=SINUS_TOOL_USD_PATHS[obj_name])
+        slot_idx = getattr(args_cli, "slot", 4)
 
-        env_cfg.scene.block.spawn = sim_utils.MultiAssetSpawnerCfg(
-            assets_cfg=[single_spawner],
-            random_choice=False,
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-        )
-        print(f"  Object override: {obj_name}")
+        if obj_name != "tool_0":
+            env_cfg.scene.block.spawn = _UsdFileCfg(
+                usd_path=SINUS_TOOL_USD_PATHS[obj_name],
+                mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+                collision_props=sim_utils.CollisionPropertiesCfg(),
+            )
+        print(f"  Tool: {obj_name}")
+
+        if slot_idx != 4 and hasattr(env_cfg, "events"):
+            from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (
+                TRAY_SLOT_POSITIONS,
+            )
+
+            slot_pos = TRAY_SLOT_POSITIONS[slot_idx]
+            env_cfg.scene.block.init_state.pos = slot_pos
+            env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+        print(f"  Slot: {slot_idx}")
 
     # Create environment
     env = create_environment(env_cfg)
