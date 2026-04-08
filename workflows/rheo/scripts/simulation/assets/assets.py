@@ -60,4 +60,4 @@ SINUS_TOOL_USD_PATHS: dict[str, str] = {
     f"tool_{i}": _os.path.join(_SINUS_TOOLKIT_DIR, f"tool_{i}", f"tool_{i}.usd") for i in range(5)
 }
 
-SURGICAL_TRAY_USD: str = _os.path.join(_SINUS_TOOLKIT_DIR, "surgical_tray", "SurgicalTray_endo.usd")
+SURGICAL_TRAY_USD: str = _os.path.join(_SINUS_TOOLKIT_DIR, "surgical_tray", "SurgicalTray_endo_v2.usd")

@@ -14,10 +14,10 @@
 # limitations under the License.
 
 # Root directory for all data storage
-data_root: "/workspaces/workflows/rheo/datasets/inspire_ftp"
+data_root: "/workspaces/workflows/rheo/datasets/inspire_tool0"
 
 # Instruction given to the policy in natural language
-language_instruction: "pick up block and place in bin"
+language_instruction: "pick up surgical tool from tray and place in bin"
 task_index: 0
 
 # Name of the HDF5 file to use for the dataset

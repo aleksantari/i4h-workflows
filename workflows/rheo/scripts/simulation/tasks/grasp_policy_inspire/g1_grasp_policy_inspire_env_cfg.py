@@ -163,12 +163,12 @@ TOOL_ROT = (0.70711, 0.0, 0.0, -0.70711)  # match tray rotation
 # Original local coords (x, y) rotated by (y, -x).
 # fmt: off
 _SLOT_LOCAL = [
-    ( 0.055,   -0.13255, 0.03),  # slot 0 — /root/tool_0
-    ( 0.000,   -0.13255, 0.03),  # slot 1 — /root/tool_1
-    (-0.055,   -0.13255, 0.03),  # slot 2 — /root/tool_2
-    ( 0.055,    0.13397, 0.03),  # slot 3 — /root/tool_3
-    ( 0.000,    0.13397, 0.03),  # slot 4 — /root/tool_4
-    (-0.055,    0.13397, 0.03),  # slot 5 — /root/tool_5 (empty)
+    ( 0.055,   -0.12097, 0.03),  # slot 0 — /root/tool_0
+    ( 0.000,   -0.12097, 0.03),  # slot 1 — /root/tool_1
+    (-0.055,   -0.12097, 0.03),  # slot 2 — /root/tool_2
+    ( 0.055,    0.11557, 0.03),  # slot 3 — /root/tool_3
+    ( 0.000,    0.11557, 0.03),  # slot 4 — /root/tool_4
+    (-0.055,    0.11557, 0.03),  # slot 5 — /root/tool_5
 ]
 # fmt: on
 
@@ -199,7 +199,14 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
     # Surgical tray — static prop centered on table (no physics)
     surgical_tray = AssetBaseCfg(
         prim_path="/World/envs/env_.*/surgical_tray",
-        spawn=UsdFileCfg(usd_path=SURGICAL_TRAY_USD),
+        spawn=UsdFileCfg(
+            usd_path=SURGICAL_TRAY_USD,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=True,
+                disable_gravity=True,
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=TRAY_POS, rot=TRAY_ROT),
     )
 
