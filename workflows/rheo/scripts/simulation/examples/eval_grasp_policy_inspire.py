@@ -67,8 +67,8 @@ parser.add_argument("--save_video_all_envs", action="store_true", help="save vid
 parser.add_argument(
     "--action_chunk_size",
     type=int,
-    default=1,
-    help="number of actions to use from action chunk per observation (default: 1)",
+    default=50,
+    help="number of actions to execute from each predicted chunk before re-observing (default: 50)",
 )
 parser.add_argument("--frequency", type=float, default=0.0, help="control frequency (Hz)")
 parser.add_argument("--success_stage", type=int, default=3, help="success stage for the task")
@@ -226,7 +226,7 @@ def main():
 
             config = {
                 "model_path": args_cli.model_path,
-                "action_chunk_length": 100,
+                "action_chunk_length": 50,
                 "language_instruction": args_cli.task_description,
                 "policy_action_dim": _exp_policy_dim,
                 "sim_action_dim": 41,

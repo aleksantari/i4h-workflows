@@ -389,7 +389,7 @@ class G1GraspPolicyInspireEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 4
-        self.episode_length_s = 20.0
+        self.episode_length_s = 200.0
         self.sim.dt = 1 / 200
         self.sim.render_interval = self.decimation
         self.sim.physx.bounce_threshold_velocity = 0.01

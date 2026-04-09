@@ -303,7 +303,7 @@ def evaluate_episode(
     When num_envs > 1: runs episodes in parallel across envs, resetting only done envs.
     """
     num_envs = int(getattr(env, "num_envs", 1) or 1)
-    action_chunk_size = int(max(1, min(16, action_chunk_size)))
+    action_chunk_size = int(max(1, action_chunk_size))
     is_single_env = num_envs == 1
 
     # Assign episode ids to env slots.
@@ -354,12 +354,11 @@ def evaluate_episode(
                 [np.atleast_1d(action_dict[key]) for key in action_dict.keys()],
                 axis=-1,
             )
-            # Handle shape: ensure (num_envs, 16, action_dim)
+            # Handle shape: ensure (num_envs, chunk_size, action_dim)
             if action_chunk.ndim == 2:
-                # Single env: (16, action_dim) -> (1, 16, action_dim)
                 action_chunk = action_chunk[np.newaxis, :, :]
             if action_chunk.shape[-1] == 28:
-                action_chunk = np.concatenate([np.zeros((action_chunk.shape[0], 16, 15)), action_chunk], axis=-1)
+                action_chunk = np.concatenate([np.zeros((action_chunk.shape[0], action_chunk.shape[1], 15)), action_chunk], axis=-1)
             action_buffer = [action_chunk[:, t, :] for t in range(action_chunk_size)]
 
         action_arr = action_buffer.pop(0)
