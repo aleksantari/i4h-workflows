@@ -209,13 +209,30 @@ def main():
 
             import yaml
 
+            # Resolve experiment config to get the correct policy_action_dim
+            # (13D for right-arm-only, 26D for full bimanual).
+            _act_cfg_path = Path(_SCRIPTS_DIR) / "policy" / "act_config_inspire_ftp.yaml"
+            _exp_policy_dim = 26  # default fallback
+            _exp_cfg_rel = None
+            if _act_cfg_path.exists():
+                with open(_act_cfg_path) as _f:
+                    _act_raw = yaml.safe_load(_f)
+                _exp_section = _act_raw.get("experiment", {})
+                _groups = _exp_section.get("joint_groups", [])
+                _group_sizes = {"left_arm": 7, "right_arm": 7, "left_hand": 6, "right_hand": 6}
+                if _groups:
+                    _exp_policy_dim = sum(_group_sizes.get(g, 0) for g in _groups)
+                _exp_cfg_rel = str(_act_cfg_path.resolve())
+
             config = {
                 "model_path": args_cli.model_path,
                 "action_chunk_length": 100,
                 "language_instruction": args_cli.task_description,
-                "policy_action_dim": 26,
+                "policy_action_dim": _exp_policy_dim,
                 "sim_action_dim": 41,
                 "target_image_size": [480, 640, 3],
+                "hand_type": "inspire_ftp",
+                "experiment_config_path": _exp_cfg_rel,
             }
             tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
             yaml.dump(config, tmp)
