@@ -230,7 +230,7 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
                 "handtracking": OpenXRDeviceCfg(
                     retargeters=[
                         UnitreeG1RetargeterCfg(
-                            enable_visualization=True,
+                            enable_visualization=False,
                             num_open_xr_hand_joints=2 * 26,
                             sim_device=self.sim.device,
                             hand_joint_names=RETARGETER_HAND_JOINT_NAMES,

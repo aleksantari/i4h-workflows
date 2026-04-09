@@ -227,7 +227,7 @@ def main():
     if args_cli.save_video:
         model_name_for_file = "test" if test_mode else Path(args_cli.model_path).stem
         base_name = f"{timestamp}_{args_cli.policy_type}_{model_name_for_file}"
-        video_writer = _MultiViewConcatWriter(args_cli.video_dir, base_name=base_name, fps=30)
+        video_writer = _MultiViewConcatWriter(args_cli.video_dir, base_name=base_name, fps=50)
 
     results = evaluate_episode(
         env,

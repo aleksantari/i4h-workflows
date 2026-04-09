@@ -304,7 +304,7 @@ def convert_hdf5_to_lerobot_multivideos(config: ExtendedDatasetConfig):
                 if video_name_lerobot not in video_paths:
                     video_paths[video_name_lerobot] = new_video_path
                 frames = np.array(trajectory["obs"][hdf5_key])
-                frames = frames[1:]
+                frames = frames[:-1]
                 if frames.ndim == 4 and frames.shape[-1] == 4:
                     frames = frames[..., :3]
                 assert len(frames) == length
