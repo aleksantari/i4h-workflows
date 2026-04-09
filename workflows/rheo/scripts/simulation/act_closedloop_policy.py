@@ -20,15 +20,44 @@ Loads a LeRobot-trained ACT checkpoint and wraps it in the PolicyBase interface
 used by the rheo evaluation pipeline.
 """
 
+import sys
 from pathlib import Path
 from typing import Any
 
-import gymnasium as gym
+# Resolve scripts/ directory for local imports (Isaac Sim's python.sh may reset PYTHONPATH)
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+
+def _import_from_utils(module_name: str):
+    """Import a module from scripts/utils/ by absolute path, bypassing namespace collisions."""
+    import importlib.util
+
+    fqn = f"utils.{module_name}"
+    if fqn in sys.modules:
+        return sys.modules[fqn]
+
+    # Ensure the parent 'utils' package is registered in sys.modules
+    if "utils" not in sys.modules:
+        import types
+
+        utils_pkg = types.ModuleType("utils")
+        utils_pkg.__path__ = [str(_SCRIPTS_DIR / "utils")]
+        utils_pkg.__package__ = "utils"
+        sys.modules["utils"] = utils_pkg
+
+    module_path = _SCRIPTS_DIR / "utils" / f"{module_name}.py"
+    spec = importlib.util.spec_from_file_location(fqn, str(module_path))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[fqn] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
 import numpy as np
 import torch
 import yaml
 from isaaclab_arena.policy.policy_base import PolicyBase
-from utils.act_experiment_config import ACTExperimentConfig
 
 
 class ACTClosedloopPolicy(PolicyBase):
@@ -73,7 +102,8 @@ class ACTClosedloopPolicy(PolicyBase):
 
         exp_cfg_path = self.config.get("experiment_config_path")
         if hand_type == "inspire_ftp":
-            from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+            _mod = _import_from_utils("inspire_ftp_experiment_config")
+            InspireFTPExperimentConfig = _mod.InspireFTPExperimentConfig
 
             if exp_cfg_path:
                 exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
@@ -82,6 +112,9 @@ class ACTClosedloopPolicy(PolicyBase):
                 self.exp_config = InspireFTPExperimentConfig()
             self.sim_action_dim = 41
         else:
+            _mod = _import_from_utils("act_experiment_config")
+            ACTExperimentConfig = _mod.ACTExperimentConfig
+
             if exp_cfg_path:
                 exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
                 self.exp_config = ACTExperimentConfig.from_yaml(exp_cfg_path)
@@ -114,16 +147,12 @@ class ACTClosedloopPolicy(PolicyBase):
         print(f"[ACT] Loaded policy from {pretrained_path}")
         return policy
 
-    def _extract_observations(self, observation: dict[str, Any]) -> dict[str, torch.Tensor]:
-        """Convert IsaacLab observation dict to ACT input format.
+    def _extract_observations_from_raw(self, observation: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Convert raw IsaacLab env observation dict to ACT input format.
 
-        ACT expects a flat dict with keys like:
-          - observation.state: (B, policy_dim) joint positions
-          - observation.images.cam_left_wrist: (B, C, H, W)
-          - observation.images.cam_right_wrist: (B, C, H, W)
-          - observation.images.cam_room: (B, C, H, W)
+        Used when calling the policy directly with raw env observations
+        (e.g. from RL training paths).
         """
-        # Extract joint states using experiment config (selects configured groups)
         body_state = observation["policy"]["robot_joint_state"]  # (B, 87)
         if self.sim_action_dim == 41:
             hand_state = observation["policy"]["robot_inspire_joint_state"]  # (B, 12)
@@ -131,53 +160,84 @@ class ACTClosedloopPolicy(PolicyBase):
             hand_state = observation["policy"]["robot_dex3_joint_state"]  # (B, 14)
         state = self.exp_config.extract_state(body_state, hand_state)  # (B, policy_dim)
 
-        # Extract camera images and convert to (B, C, H, W) float32 [0, 1]
         camera_obs = observation["camera_images"]
-
         act_obs = {"observation.state": state.to(self.device)}
 
         for sim_key, act_key in self.exp_config.cameras.items():
             img = camera_obs[sim_key]  # (B, H, W, C) uint8 on GPU
-            img = img.float() / 255.0  # normalize to [0, 1]
+            img = img.float() / 255.0
             img = img.permute(0, 3, 1, 2)  # (B, C, H, W)
             act_obs[act_key] = img.to(self.device)
 
         return act_obs
 
-    def get_action(self, env: gym.Env, observation: dict[str, Any]) -> torch.Tensor:
-        """Get the next action from the current action chunk.
+    def _extract_observations_from_processed(self, observation: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Convert process_observation() output to ACT input format.
+
+        process_observation() returns keys like "state.left_arm" (B,1,7),
+        "video.room_view" (B,1,H,W,3). This method reassembles them into the
+        flat ACT format: "observation.state" (B, policy_dim) and
+        "observation.images.cam_room" (B, C, H, W).
+        """
+        # Reassemble joint state from pre-split groups.
+        # process_observation adds a time dim (B,1,D) — squeeze it.
+        state_parts = []
+        for group in self.exp_config.joint_groups:
+            key = f"state.{group}"
+            s = observation[key]
+            if isinstance(s, torch.Tensor):
+                s = s.squeeze(1) if s.ndim == 3 else s  # (B,1,D) -> (B,D)
+            state_parts.append(s.to(self.device))
+        state = torch.cat(state_parts, dim=-1)  # (B, policy_dim)
+
+        act_obs: dict[str, torch.Tensor] = {"observation.state": state}
+
+        # Map video keys to ACT camera keys.
+        # process_observation uses "video.room_view", ACT expects "observation.images.cam_room".
+        _VIDEO_TO_ACT = {
+            "video.room_view": "observation.images.cam_room",
+            "video.left_wrist_view": "observation.images.cam_left_wrist",
+            "video.right_wrist_view": "observation.images.cam_right_wrist",
+        }
+        for video_key, act_key in _VIDEO_TO_ACT.items():
+            if video_key in observation and act_key in self.exp_config.cameras.values():
+                img = observation[video_key]
+                if isinstance(img, torch.Tensor):
+                    img = img.squeeze(1) if img.ndim == 5 else img  # (B,1,H,W,C) -> (B,H,W,C)
+                    if img.dtype == torch.uint8:
+                        img = img.float() / 255.0
+                    img = img.permute(0, 3, 1, 2)  # (B, C, H, W)
+                act_obs[act_key] = img.to(self.device)
+
+        return act_obs
+
+    def get_action(self, observation: dict[str, Any]) -> dict[str, np.ndarray]:
+        """Get a full action chunk for evaluate_episode().
+
+        Accepts the pre-processed observation dict from ``process_observation()``
+        (keys like ``state.left_arm``, ``video.room_view``).
 
         Returns:
-            action: Shape (num_envs, sim_action_dim)
+            Dict with key ``"actions"`` containing a numpy array of shape
+            ``(chunk_size, sim_action_dim)`` where chunk_size matches the ACT
+            model's configured chunk_size (default 100, capped to 16 for the
+            evaluate_episode action buffer).
         """
-        if any(self.env_requires_new_action_chunk):
-            new_chunk = self._get_action_chunk(observation)
-            self.current_action_chunk[self.env_requires_new_action_chunk] = new_chunk[
-                self.env_requires_new_action_chunk
-            ]
-            self.current_action_index[self.env_requires_new_action_chunk] = 0
-            self.env_requires_new_action_chunk[self.env_requires_new_action_chunk] = False
-
-        # Select action at current index for each env
-        action = self.current_action_chunk[torch.arange(self.num_envs), self.current_action_index]
-        self.current_action_index += 1
-
-        # Reset envs that exhausted their chunk
-        reset_mask = self.current_action_index >= self.action_chunk_length
-        self.current_action_chunk[reset_mask] = 0.0
-        self.env_requires_new_action_chunk[reset_mask] = True
-        self.current_action_index[reset_mask] = -1
-
-        return action
+        act_obs = self._extract_observations_from_processed(observation)
+        sim_actions = self._forward_action_chunk(act_obs)
+        # Return first env's chunk as numpy (evaluate_episode handles multi-env via its own loop)
+        return {"actions": sim_actions[0].cpu().numpy()}
 
     @torch.no_grad()
-    def _get_action_chunk(self, observation: dict[str, Any]) -> torch.Tensor:
+    def _forward_action_chunk(self, act_obs: dict[str, torch.Tensor]) -> torch.Tensor:
         """Run ACT forward pass to get a chunk of actions.
 
+        Args:
+            act_obs: Dict in ACT format (observation.state, observation.images.*).
+
         Returns:
-            action_chunk: Shape (num_envs, action_chunk_length, sim_action_dim)
+            action_chunk: Shape (num_envs, chunk_size, sim_action_dim)
         """
-        act_obs = self._extract_observations(observation)
 
         # ACT forward: returns (B, chunk_size, action_dim) or processes per-env
         # LeRobot ACT select_action returns (chunk_size, action_dim) for single env

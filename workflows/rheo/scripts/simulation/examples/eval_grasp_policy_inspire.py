@@ -24,9 +24,16 @@ Usage:
     python eval_grasp_policy_inspire.py --test
 """
 
+import sys
+from pathlib import Path
+
+# Ensure scripts/ is on sys.path (Isaac Sim's python.sh may reset PYTHONPATH)
+_SCRIPTS_DIR = str(Path(__file__).resolve().parents[2])
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
 import argparse
 import time
-from pathlib import Path
 
 import numpy as np
 from isaaclab.app import AppLauncher

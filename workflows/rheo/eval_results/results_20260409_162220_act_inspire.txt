@@ -1,0 +1,14 @@
+Evaluation Results — Inspire FTP Grasp Policy
+============================================================
+Task: Isaac-Grasp-Policy-G129-InspireFTP-Joint
+Policy Type: act
+Model: /workspaces/workflows/rheo/scripts/simulation/rl/results/act_grasp_policy_inspire/train_20260409-151824/checkpoints/000500/pretrained_model
+Episodes: 3
+Action Chunk Size: 1
+Success Rate: 0.0%
+Average Success Steps: 0.0
+
+Detailed Results:
+  Episode 1: FAILED | Stage: 0/3 | Steps: 200 | Reward: 0.000
+  Episode 2: FAILED | Stage: 0/3 | Steps: 200 | Reward: 0.000
+  Episode 3: FAILED | Stage: 0/3 | Steps: 200 | Reward: 0.000

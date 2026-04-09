@@ -202,7 +202,13 @@ else
                     "--env" "DOCKER_RUN_GROUP_ID=$(id -g)"
                     "--env" "DOCKER_RUN_GROUP_NAME=$(id -gn)"
                     "--env" "ISAACLAB_PATH=${WORKDIR}/third_party/IsaacLab"
+                    "--env" "WANDB_API_KEY"
                     )
+
+    # WandB auth fallback: mount ~/.netrc if it exists (file, not directory)
+    if [ -f "$HOME/.netrc" ]; then
+        DOCKER_RUN_ARGS+=("-v" "$HOME/.netrc:/home/$(id -un)/.netrc:ro")
+    fi
 
     # X11
     if [ -n "$DISPLAY" ]; then

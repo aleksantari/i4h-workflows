@@ -36,6 +36,11 @@ experiment:
 
 seed: 1000
 
+wandb:
+  enable: true
+  project: "rheo-act-inspire"
+  disable_artifact: false
+
 # Dataset (repo_id set via CLI --dataset.repo_id)
 dataset:
   repo_id: placeholder
