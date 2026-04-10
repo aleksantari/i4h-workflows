@@ -386,7 +386,7 @@ The recorded HDF5 will contain:
 **Status: TESTED**
 
 ```bash
-# Replay all episodes
+# Replay all episodes (default tool_0)
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -400,10 +400,28 @@ The recorded HDF5 will contain:
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --enable_cameras --enable_pinocchio --device cuda:0 \
     --validate_success_rate
+
+# Replay a dataset recorded with a non-default tool
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/replay_demos_isaaclab.py \
+    --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
+    --dataset_file ./datasets/inspire_tool2_slot1/single_arm.hdf5 \
+    --object tool_2 \
+    --enable_cameras --enable_pinocchio --device cuda:0
 ```
 
 > **Note:** Use the `Teleop` task variant (not `Joint`) for replay since demos are
 > recorded with the 38D PinkIK action space.
+
+> **Tool selection (`--object`):** The HDF5 `initial_state` group restores per-episode
+> poses (robot, block, target_pad) via `env.reset_to()`, so the `--slot` flag from
+> `record_demos.py` has no equivalent on replay — the recorded block pose is played
+> back regardless of the env's default slot. Geometry, however, is fixed at env-spawn
+> time: if you recorded with a different tool, pass `--object <tool_N>` so replay
+> spawns the matching USD. Mismatched geometry will leave the wrist trajectory
+> physically correct in world space but grasping empty air relative to the loaded
+> mesh. The HDF5 does not record which tool was used, so this flag must be set
+> externally (e.g. from the dataset directory name).
 
 ---
 

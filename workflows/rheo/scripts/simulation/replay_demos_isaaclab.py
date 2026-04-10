@@ -75,6 +75,16 @@ parser.add_argument(
     default=False,
     help="Enable Pinocchio.",
 )
+parser.add_argument(
+    "--object",
+    type=str,
+    default="tool_0",
+    choices=["tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
+    help=(
+        "Inspire FTP tool USD to spawn. Must match the tool used during recording —"
+        " the HDF5 initial_state overrides pose but not geometry."
+    ),
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -180,6 +190,22 @@ def main():
     num_envs = args_cli.num_envs
 
     env_cfg = parse_env_cfg(env_name, device=args_cli.device, num_envs=num_envs)
+
+    # Override tool USD for Inspire FTP tasks. The HDF5 initial_state restores
+    # the block pose via env.reset_to(), but geometry is fixed at spawn time,
+    # so the USD asset must be set to match the tool used during recording.
+    if hasattr(env_cfg.scene, "block") and args_cli.object != "tool_0":
+        import isaaclab.sim as sim_utils
+        from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg as _UsdFileCfg
+        from simulation.assets.assets import SINUS_TOOL_USD_PATHS
+
+        env_cfg.scene.block.spawn = _UsdFileCfg(
+            usd_path=SINUS_TOOL_USD_PATHS[args_cli.object],
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        )
+        print(f"Replay tool override: {args_cli.object}")
 
     # extract success checking function to invoke in the main loop
     success_term = None
