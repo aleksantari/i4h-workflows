@@ -3,11 +3,20 @@ SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# ACT Pipeline Architecture
+# ACT Pipeline Architecture — Inspire FTP Grasp
 
 Technical reference for the ACT (Action Chunking Transformer) imitation learning
-pipeline in the rheo workflow. For step-by-step usage instructions, see
+pipeline as it currently runs on the **Inspire FTP surgical-tool grasp task**
+in the rheo workflow. For step-by-step usage instructions, see
 [`grasp_policy_guide.md`](grasp_policy_guide.md).
+
+> **Scope:** This doc covers the Inspire FTP variant (G1 + Inspire FTP hands,
+> 26D policy → 41D sim action, surgical tool pickup). An earlier revision of
+> this doc targeted the original Dex3-hand block-grasping task. The Dex3
+> codepath still exists (see [`act_experiment_config.py`](../../scripts/utils/act_experiment_config.py),
+> [`act_config.yaml`](../../scripts/policy/act_config.yaml),
+> [`train_act_grasp_policy.sh`](../../scripts/policy/train_act_grasp_policy.sh)),
+> but it is not the active focus and is not documented here.
 
 ---
 
@@ -16,12 +25,12 @@ pipeline in the rheo workflow. For step-by-step usage instructions, see
 1. [Overview](#1-overview)
 2. [ACT Model Architecture](#2-act-model-architecture)
 3. [Pipeline Stages](#3-pipeline-stages)
-4. [Shared Infrastructure with GR00T](#4-shared-infrastructure-with-groot)
-5. [Joint Dimension Flow](#5-joint-dimension-flow)
-6. [Docker Setup](#6-docker-setup)
-7. [RLinf Integration Pattern](#7-rlinf-integration-pattern)
-8. [Configuration Reference](#8-configuration-reference)
-9. [Task Definition](#9-task-definition)
+4. [Joint & Action Dimension Flow](#4-joint--action-dimension-flow)
+5. [Mimic Joint Enforcement](#5-mimic-joint-enforcement)
+6. [Experiment Config Propagation](#6-experiment-config-propagation)
+7. [RLinf Integration](#7-rlinf-integration)
+8. [Task Definition](#8-task-definition)
+9. [Docker](#9-docker)
 10. [Key Files Reference](#10-key-files-reference)
 
 ---
@@ -29,619 +38,857 @@ pipeline in the rheo workflow. For step-by-step usage instructions, see
 ## 1. Overview
 
 ACT is a CVAE-based imitation learning policy that predicts multi-step action
-chunks from visual and proprioceptive observations. In the rheo pipeline it
-serves as an alternative to GR00T for precision manipulation tasks, specifically
-the **grasp_policy** task (pick up a block and place it in a bin) using the G1
-robot with Dex3 hands.
+chunks from visual and proprioceptive observations. In the Inspire FTP
+pipeline it is the primary policy used to solve the surgical-tool pick-and-place
+task: **pick up a surgical tool from the tray and place it in the bin.**
+The robot is G1 29-DoF with Inspire FTP hands (6 actuated DOF + 6 mimic per
+hand).
 
-### End-to-End Pipeline
+### End-to-end pipeline
 
 ```
-Teleoperate (AVP)
+AVP teleoperation (hand tracking + PinkIK wrist retarget + DexPilot hand retarget)
     |
     v
-record_demos.py -----> HDF5 (87D body + 14D hands + 3 cameras + 43D WBC actions)
+record_demos.py
+    |  obs:  robot_joint_state (T, 87)            -- 29 body joints x [pos|vel|torque]
+    |        robot_inspire_joint_state (T, 12)    -- 6 actuated x 2 hands
+    |        front_camera (T, 480, 640, 3)        -- single RGB
+    |  action: processed_actions (T, 53 or 41)    -- post-teleop targets
+    v
+HDF5 demo files
     |
     v
-convert_hdf5_to_lerobot.py -----> LeRobot v2.1 (parquet + MP4 video, 28D state/action)
+convert_hdf5_to_lerobot.py  (rheo_26d_state_action: true)
     |
     v
-train_act_grasp_policy.sh -----> lerobot.scripts.train (ACT IL)
+LeRobot v2.1 dataset  (26D state + 26D action + 1 MP4 per episode)
     |
     v
-eval_grasp_policy.py --policy_type act -----> ACTClosedloopPolicy (IL evaluation)
+train_act_grasp_policy_inspire.sh   (LeRobot ACT IL training)
     |
     v
-rl/train_act_grasp_policy.sh -----> RLinf PPO (RL post-training with ValueHead)
+ACT checkpoint (LeRobot HF-format folder)
     |
     v
-eval_grasp_policy.py --policy_type act -----> Final evaluation
+eval_act_inspire.py  -->  ACTClosedloopPolicy  -->  IsaacLab env  -->  video + results
+    |
+    v
+(optional) RLinf PPO post-training  -->  refined checkpoint
 ```
 
-Both ACT and GR00T share the same data collection pipeline, task environments,
-evaluation loop, and RLinf RL framework. The key difference is the model
-architecture and training toolchain (LeRobot for ACT vs GR00T SFT for GR00T).
+### Two eval paths
+
+Two scripts can evaluate an Inspire ACT checkpoint today:
+
+| Script | Status | Notes |
+|-|-|-|
+| [`eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py) | **Primary / canonical** | ~230-line clean rewrite purpose-built for ACT + Inspire FTP. Uses `get_action_from_raw()` to read obs directly from the env without going through the legacy `process_observation()` reassembly layer. Adds `--log_actions` and `--clamp_actions` diagnostic flags. |
+| [`eval_grasp_policy_inspire.py`](../../scripts/simulation/examples/eval_grasp_policy_inspire.py) | Legacy | Unified evaluator inherited from the GR00T workflow; routes through `evaluate_episode()` and `process_observation()`. Kept working but harder to debug. |
+
+The rest of this doc walks through the **primary** path.
 
 ---
 
 ## 2. ACT Model Architecture
 
 ACT (Action Chunking with Transformers) is a Conditional Variational Autoencoder
-(CVAE) that predicts a sequence of future actions from a single observation.
+that predicts a sequence of future joint targets from a single observation.
+Architecture values below are for the Inspire FTP configuration, taken from
+[`act_config_inspire_ftp.yaml`](../../scripts/policy/act_config_inspire_ftp.yaml).
 
-### Input Modalities
+### Inputs
 
 | Input | Shape | Source |
-|-------|-------|--------|
-| Joint state | `(B, 28)` | `left_arm(7) + right_arm(7) + left_hand(7) + right_hand(7)` |
-| Front camera | `(B, 3, 480, 640)` | Room-view RGB (ResNet18 backbone) |
-| Left wrist camera | `(B, 3, 480, 640)` | Left wrist-mounted RGB |
-| Right wrist camera | `(B, 3, 480, 640)` | Right wrist-mounted RGB |
+|-|-|-|
+| Joint state | `(B, 26)` | `left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6)` |
+| Front camera | `(B, 3, 480, 640)` | `front_camera` (RGB), mapped to ACT feature key `observation.images.cam_room` |
+
+There are **no wrist cameras** — the Inspire FTP setup uses a single head-mounted
+front camera. (The Dex3 variant used three cameras; the Inspire variant does not.)
 
 ### Output
 
 | Output | Shape | Description |
-|--------|-------|-------------|
-| Action chunk | `(B, 100, 28)` | 100 future joint position targets (arms + hands) |
+|-|-|-|
+| Action chunk | `(B, 50, 26)` | 50 future joint position targets in policy-dim order |
 
-### Architecture Components
+The 50-step chunk length flows end-to-end:
+`act_config_inspire_ftp.yaml:chunk_size=50` → `ACTClosedloopPolicy.action_chunk_length` →
+`eval_act_inspire.py --action_chunk_size` default.
 
-```
-                     Observation
-                    /     |     \
-          ResNet18   ResNet18   ResNet18       Joint state (28D)
-          (front)   (left)     (right)             |
-              \        |         /                 |
-               Visual tokens (3 x 512D)      Linear projection
-                        \                        /
-                         Transformer Encoder (4 layers)
-                                  |
-                           Latent z ~ N(mu, sigma)    [VAE: 32-dim]
-                                  |
-                         Transformer Decoder (1 layer)
-                                  |
-                         Action sequence (100 x 28D)
-```
-
-### Model Parameters
-
-| Component | Parameters | Details |
-|-----------|-----------|---------|
-| 3x ResNet18 backbones | ~33M | Pretrained ImageNet weights, shared architecture |
-| Transformer encoder | ~8M | 4 layers, 512-dim, 8 heads, 3200 FFN |
-| VAE encoder | ~4M | 4 layers, 32-dim latent |
-| Transformer decoder | ~4M | 1 layer |
-| Linear projections | ~3M | Input/output embeddings |
-| **Total** | **~52M** | |
-
-### Training Loss
+### Architecture (from `policy:` block of the YAML)
 
 ```
-L = L_reconstruction + kl_weight * D_KL(q(z|obs,action) || p(z|obs))
+                  Observation
+                  /           \
+           ResNet18            Linear(26 -> dim_model)
+           (front cam)              |
+               \                   /
+                Transformer Encoder (2 layers, dim_model=256, 8 heads, FFN=1600)
+                         |
+                VAE encoder (2 layers, latent_dim=32)
+                         |
+                 z ~ N(mu, sigma)        <-- sampled from prior at inference
+                         |
+                Transformer Decoder (1 layer)
+                         |
+                 Action sequence (50 x 26)
 ```
 
-- `L_reconstruction`: L1 loss between predicted and ground-truth action chunks
-- `kl_weight`: 10.0 (strong regularization, encourages diverse behaviors)
-- At inference, z is sampled from the prior `p(z|obs)` (no teacher forcing)
+### Hyperparameters (Inspire variant)
+
+| Parameter | Value | Note |
+|-|-|-|
+| `chunk_size` | 50 | Actions per forward pass |
+| `n_action_steps` | 50 | Executed per observation |
+| `n_obs_steps` | 1 | Single-frame observation |
+| `dim_model` | 256 | Transformer hidden dim |
+| `n_heads` | 8 | |
+| `dim_feedforward` | 1600 | |
+| `n_encoder_layers` | 2 | |
+| `n_decoder_layers` | 1 | |
+| `use_vae` | true | CVAE enabled |
+| `latent_dim` | 32 | |
+| `n_vae_encoder_layers` | 2 | |
+| `kl_weight` | 10.0 | Strong regularization |
+| `vision_backbone` | resnet18 | ImageNet-pretrained |
+| `steps` | 50000 | Default training length |
+| `batch_size` | 16 | |
+| `optimizer_lr` | 1e-5 | Same for backbone and heads |
+| `optimizer_weight_decay` | 1e-4 | AdamW |
+
+### Loss
+
+```
+L = L1(action_pred, action_gt) + kl_weight * D_KL(q(z|obs, action) || p(z|obs))
+```
+
+- `kl_weight = 10.0` encourages diverse behaviors.
+- At inference, `z` is sampled from the observation-conditional prior
+  `p(z|obs)` — no teacher forcing.
 
 ---
 
 ## 3. Pipeline Stages
 
-### 3.1 Data Collection
+### 3.1 Data collection
 
-> **Code:** [`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py)
+> **Code:** [`record_demos.py`](../../scripts/simulation/record_demos.py),
+> [`g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py)
 
-Records teleoperated demonstrations in HDF5 format. The operator controls the
-robot via AVP hand tracking (or keyboard), while IsaacLab records observations
-and the Whole-Body Controller's output actions.
+The teleop env uses the full 53-joint G1 articulation (29 body + 24 hand,
+including all 12 mimic joints) so that VR teleop can drive the hand through
+PinkIK wrist retargeting + DexPilot finger retargeting.
 
-**HDF5 structure per episode:**
+Per-episode HDF5 structure recorded by `record_demos.py`:
 
 ```
 episode_NNNNNN/
   obs/
-    robot_joint_state         (T, 87)    Full-body joint positions
-    robot_dex3_joint_state    (T, 14)    Dex3 hand joint positions
-    front_camera              (T, H, W, 4)  RGBA images
-    left_wrist_camera         (T, H, W, 4)  RGBA images
-    right_wrist_camera        (T, H, W, 4)  RGBA images
-  processed_actions           (T, 43)    WBC + PINK IK output
+    robot_joint_state           (T, 87)              29 body joints x [pos|vel|torque]
+    robot_inspire_joint_state   (T, 12)              6 actuated x 2 hands
+    front_camera                (T, 480, 640, 3)     uint8 RGB
+  processed_actions             (T, 53 or 41)        post-teleop targets
   metadata/
-    success                   bool
+    success                     bool
 ```
 
-Camera observations are recorded at simulation framerate (30 Hz) and stored as
-raw uint8 arrays. The `processed_actions` capture the full 43D WBC output
-(legs + waist + arms + hands).
-
 Auto-success detection saves episodes after N consecutive frames where the
-block reaches the target stage, reducing manual annotation.
+tool reaches stage 3, so the operator does not need to hand-label successes.
 
-### 3.2 Dataset Conversion
+### 3.2 Dataset conversion
 
-> **Code:** [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py)
+> **Code:** [`convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py)
+> (see the `rheo_26d_state_action` branch at lines 65–82),
+> [`g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/g1_grasp_policy_inspire_dataset.yaml)
 
-Converts HDF5 demos to LeRobot v2.1 format, which the LeRobot training pipeline
-expects.
+The dataset YAML sets `rheo_26d_state_action: true`, which routes conversion
+through `convert_g1_state_action_to_lerobot_26d()`. That function:
 
-**Key transformations:**
+1. Reads `robot_joint_state[:, 15:29]` to get 14 arm joints.
+2. Reads `robot_inspire_joint_state[:, 0:12]` to get 12 actuated hand joints.
+3. Concatenates into a canonical 26D state vector
+   (`left_arm | right_arm | left_hand | right_hand`) — order enforced by
+   `STATE_26_NAMES_ENV_ORDER`.
+4. Extracts the matching 26D slice from `processed_actions` as the action
+   label.
 
-| From (HDF5) | To (LeRobot) | Operation |
-|-------------|-------------|-----------|
-| `robot_joint_state[15:29]` (14D) + `robot_dex3_joint_state` (14D) | `observation.state` (28D) | Slice + concatenate |
-| `processed_actions` (43D) | `action` (28D) | Extract arm+hand joints only |
-| Camera RGBA arrays | MP4 video files | Multiprocess video encoding |
-| Episode arrays | Parquet files | One file per episode in `data/chunk-000/` |
+The YAML also maps sim camera names to ACT feature keys:
 
-**Output structure:**
+```yaml
+rheo_camera_mappings_obs:
+  front_camera: observation.images.cam_room
+```
+
+Output layout:
 
 ```
 lerobot/
   data/chunk-000/
-    episode_000000.parquet    28D state, 28D action, timestamps
-    episode_000001.parquet
+    episode_000000.parquet     26D state + 26D action + timestamps
     ...
   videos/chunk-000/
     observation.images.cam_room/
-      episode_000000.mp4
-    observation.images.cam_left_wrist/
-      episode_000000.mp4
-    observation.images.cam_right_wrist/
-      episode_000000.mp4
+      episode_000000.mp4       480x640 RGB, H.264
   meta/
-    info.json                 Feature metadata (shapes, dtypes, FPS)
-    episodes.jsonl            Episode lengths
-    tasks.jsonl               Task descriptions
-    episodes_stats.jsonl      Per-episode statistics (for normalization)
+    info.json                  feature shapes/dtypes/fps
+    episodes.jsonl
+    tasks.jsonl
+    episodes_stats.jsonl       (auto-generated by the training launcher if missing)
 ```
 
-### 3.3 IL Training
-
-> **Code:** [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh),
-> [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml)
-
-A bash wrapper around LeRobot's native training pipeline
-(`python -m lerobot.scripts.train`). The wrapper handles:
-
-1. CLI argument parsing (`--dataset_path`, `--resume_path`)
-2. Timestamped output directory creation
-3. Auto-generation of `episodes_stats.jsonl` if missing (required by LeRobot v2.1)
-4. PYTHONPATH setup for the rheo workspace
-
-The training loop is entirely LeRobot's: it loads the dataset, constructs the
-ACT model from config, runs AdamW optimization, and saves checkpoints.
-
-**Config system:** LeRobot uses **draccus** (not Hydra). CLI overrides use
-`--key value` format (e.g., `--steps 50000`), and config values map directly to
-dataclass fields (`TrainPipelineConfig`, `ACTConfig`, `DatasetConfig`).
-
-### 3.4 IL Evaluation
-
-> **Code:** [`scripts/simulation/examples/eval_grasp_policy.py`](../scripts/simulation/examples/eval_grasp_policy.py),
-> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py)
-
-The unified evaluator (`eval_grasp_policy.py`) supports `--policy_type act` to
-load an ACT checkpoint via `ACTClosedloopPolicy`. The evaluation loop:
-
-1. Creates the IsaacLab gym environment (`Isaac-Grasp-Policy-G129-Dex3-Joint`)
-2. Loads the ACT checkpoint via `ACTPolicy.from_pretrained()`
-3. Runs episodes: extracts observations, feeds to ACT, pads 28D->43D, steps env
-4. Tracks success rate across episodes (3-stage reward completion)
-
-`ACTClosedloopPolicy` implements `PolicyBase` (from `isaaclab_arena`) and manages
-the action chunk lifecycle: it requests a new 100-step chunk when the current one
-is exhausted, returning one action per simulation step.
-
-### 3.5 RL Post-Training
-
-> **Code:** [`scripts/simulation/rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py),
-> [`scripts/simulation/rl/train_act_grasp_policy.sh`](../scripts/simulation/rl/train_act_grasp_policy.sh)
-
-RL post-training uses PPO (via RLinf) to refine the IL-trained ACT policy with
-environment rewards. The key adaptation:
-
-- **`ACTForRLActionPrediction`** wraps the LeRobot ACTPolicy into RLinf's
-  `BasePolicy` interface
-- A **`ValueHead`** (3-layer MLP, 256-dim hidden) is attached for critic
-  estimation, using features from ACT's transformer encoder
-- The ACT backbone can be frozen or fine-tuned at a lower learning rate (5e-6)
-  while the value head trains at a higher rate (1e-4)
-
-**RL training setup:**
-
-| Parameter | Value |
-|-----------|-------|
-| Algorithm | PPO with GAE |
-| Environments | 64 parallel |
-| Epochs | 100 |
-| Sequence length | 4096 |
-| Actor LR | 5e-6 |
-| Value head LR | 1e-4 |
-| Discount | 0.99 |
-| GAE lambda | 0.95 |
-
----
-
-## 4. Shared Infrastructure with GR00T
-
-The ACT pipeline reuses most of the rheo infrastructure originally built for
-GR00T. The table below shows what is shared and what is specialized.
-
-| Component | Shared? | Notes |
-|-----------|---------|-------|
-| **Demo recording** | Fully shared | `record_demos.py` is policy-agnostic; same HDF5 structure feeds both pipelines |
-| **Teleop devices** | Fully shared | AVP hand tracking outputs 16D gripper+wrist commands, independent of downstream policy |
-| **Dataset conversion** | Fully shared | `convert_hdf5_to_lerobot.py` converts to 28D state/action for both |
-| **Task environments** | Fully shared | Same gym IDs (`Isaac-Grasp-Policy-G129-Dex3-*`), rewards, terminations |
-| **Observation schema** | Same raw obs | Both extract from `robot_joint_state` (87D) + `robot_dex3_joint_state` (14D) + 3 cameras |
-| **43D padding** | Identical logic | Both prepend 15 zeros (legs/waist) to 28D arm+hand actions |
-| **RLinf registration** | Same pattern | Both use plugin architecture: obs converter + action converter + model factory |
-| **Eval loop** | Shared | `eval_grasp_policy.py` dispatches on `--policy_type` |
-| **Action chunking** | Pattern duplicated | Both implement identical chunk state management, but `ACTClosedloopPolicy` does not inherit from `BaseClosedloopPolicy` |
-| **ObsProcessor** | Available, unused | `obs_processor.py` provides a model-agnostic `ProcessedObservation` dataclass; both policies implement their own extraction |
-| **Joint remapping** | GR00T only | GR00T uses config-based `remap_policy_joints_to_sim_joints()`; ACT uses direct index slicing |
-| **Docker image** | Separate | ACT uses `Dockerfile.grasp` (LeRobot, no GR00T); GR00T uses `Dockerfile.x86` |
-| **Config system** | Different | ACT: LeRobot draccus YAML; GR00T: custom YAML configs in `scripts/config/` |
-| **Model loading** | Different | ACT: `ACTPolicy.from_pretrained()`; GR00T: `Gr00tPolicy` + optional TensorRT |
-
-### Design Decision: Why ACT Duplicates BaseClosedloopPolicy
-
-`BaseClosedloopPolicy` defines the abstract interface (`_load_model()`,
-`_get_action_chunk()`) and shared action chunking logic. However,
-`ACTClosedloopPolicy` reimplements the chunking state rather than inheriting
-from it. This is because:
-
-1. ACT's `_load_policy()` signature differs from `_load_model()` (takes config
-   path instead of returning model)
-2. ACT needs per-env sequential inference (`select_action` processes one env at
-   a time), while the base class assumes batched forward passes
-3. The chunk truncation/padding logic (matching `action_chunk_length` to ACT's
-   `chunk_size`) is ACT-specific
-
-The GR00T wrapper (`CustomGr00tClosedloopPolicy`) also does not inherit from
-`BaseClosedloopPolicy` for similar reasons: it manages its own joint remapping
-pipeline that doesn't fit the base class's return type assumptions.
-
----
-
-## 5. Joint Dimension Flow
-
-The G1 robot has 43 controllable joints. ACT operates on a 28D subset
-(arms + hands), with legs and waist held at zero.
-
-```
-IsaacLab environment
-    robot_joint_state: 87D (full body including fingers)
-    robot_dex3_joint_state: 14D (Dex3 hand joints)
-            |
-    ACTExperimentConfig.extract_state(body_87d, dex3_14d)
-    Selects configured joint groups (default: all 4)
-            |
-    ACT input/output: policy_dim (default 28D, configurable)
-    [left_arm(7) | right_arm(7) | left_hand(7) | right_hand(7)]
-            |
-    ACTExperimentConfig.scatter_to_sim(policy_action)
-    Places joints at correct 43D positions
-            |
-    Simulator action: 43D
-    [legs(10) | waist(5) | left_arm(7) | right_arm(7) | left_hand(7) | right_hand(7)]
-```
-
-### Joint Group → Sim Position Mapping
-
-| Joint Group | Body State Indices | Dex3 Indices | 43D Sim Positions |
-|-------------|-------------------|--------------|-------------------|
-| `left_arm` | 15–21 | — | 15–21 |
-| `right_arm` | 22–28 | — | 22–28 |
-| `left_hand` | — | 0–6 | 29–35 |
-| `right_hand` | — | 7–13 | 36–42 |
-
-When using a subset (e.g., `[right_arm, right_hand]`), `extract_state()` selects
-only those groups from the raw observations (producing 14D), and
-`scatter_to_sim()` places the 14D output at positions [22–28, 36–42] in the 43D
-action tensor, with zeros elsewhere.
-
-### Why ACT Does Not Need Joint Remapping
-
-GR00T's internal joint ordering differs from the simulator's 43D ordering, so it
-requires config-driven remapping via `remap_policy_joints_to_sim_joints()` in
-[`joint_conversion.py`](../scripts/utils/joint_conversion.py).
-
-ACT's output is trained on data that was extracted in the same fixed order
-(`body_state[15:29]` + `dex3_state`), so the mapping is handled by
-`ACTExperimentConfig.scatter_to_sim()` which places each group at its known
-sim positions. No external remapping configuration is needed.
-
----
-
-## 6. Docker Setup
-
-The ACT pipeline uses a dedicated Docker image to avoid dependency conflicts
-between LeRobot and GR00T.
-
-### Image Comparison
-
-| | `grasp-policy` (ACT) | `rheo` (GR00T) |
-|-|---------------------|----------------|
-| **Dockerfile** | [`Dockerfile.grasp`](../docker/Dockerfile.grasp) | [`Dockerfile.x86`](../docker/Dockerfile.x86) |
-| **Run script** | [`run_docker_grasp.sh`](../docker/run_docker_grasp.sh) | `run_docker.sh -g1.5` |
-| **LeRobot** | Always installed (pinned commit) | Optional (`--build-arg INSTALL_LEROBOT=true`) |
-| **GR00T** | Not installed | Optional (`--build-arg INSTALL_GROOT=true`) |
-| **Prompt** | `[GRASP]` | `[RHEO]` |
-
-### Container Mounts
-
-Both images share the same host mounts:
-
-| Host Path | Container Path | Purpose |
-|-----------|---------------|---------|
-| `~/datasets` | `/datasets` | Recorded HDF5 demos + converted datasets |
-| `~/models` | `/models` | Trained model checkpoints |
-| `~/eval` | `/eval` | Evaluation results and videos |
-| `i4h-workflows/` | `/workspaces` | Live code editing (source volume mount) |
-
-### Video Decoding
-
-The default video decoder (`torchcodec`) requires `libnvrtc.so.13` which is not
-present in the grasp-policy image. The training script overrides this with
-`--dataset.video_backend pyav`, which uses CPU-based FFmpeg decoding instead.
-
----
-
-## 7. RLinf Integration Pattern
-
-Both ACT and GR00T integrate with RLinf through a plugin system defined in
-[`rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py).
-The `RLINF_EXT_MODULE=rlinf_ext` environment variable triggers the `register()`
-function at import time.
-
-### Registration Architecture
-
-```
-RLINF_EXT_MODULE=rlinf_ext
-        |
-    rlinf_ext/__init__.py:register()
-        |
-        +-- Register gym IDs
-        |     Isaac-Grasp-Policy-G129-Dex3-Joint
-        |     Isaac-Grasp-Policy-G129-Dex3-Joint-Eval
-        |
-        +-- Register obs converters
-        |     "dex3" --> _convert_dex3_obs_to_gr00t_format()  [GR00T]
-        |     "act"  --> _convert_dex3_obs_to_act_format()    [ACT]
-        |
-        +-- Register action converters
-        |     "dex3" --> _convert_to_dex3_action()            [GR00T]
-        |     "act"  --> _convert_act_action_to_sim()         [ACT]
-        |
-        +-- Register model factories
-              "new_embodiment" --> patched get_model()         [GR00T]
-              "act"            --> act_policy.get_model()      [ACT]
-```
-
-### Converter Comparison
-
-**Observation conversion** — both converters receive the same RLinf observation
-format and produce model-specific input dicts:
-
-| Step | GR00T (`"dex3"`) | ACT (`"act"`) |
-|------|-----------------|---------------|
-| Images | Map to `video.room_view`, `video.left_wrist_view`, etc. | Map to `observation.images.cam_room`, `observation.images.cam_left_wrist`, etc. |
-| Format | Keep (B,H,W,C) uint8 | Convert to (B,C,H,W) float32 [0,1] |
-| State | Split into `state.left_arm`, `state.right_arm`, etc. | Flatten to `observation.state` (28D) |
-
-**Action conversion** — both converters pad 28D policy output to 43D sim
-actions by prepending 15 zeros for legs/waist. The logic is identical.
-
-### Model Config
-
-RLinf selects model type via YAML config:
-
-- **ACT:** [`config/model/act_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml) — `model_type: "act"`, `obs_converter_type: "act"`, `add_value_head: true`
-- **GR00T:** [`config/model/gr00t_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/gr00t_dex3.yaml) — `model_type: "gr00t"`, `obs_converter_type: "dex3"`, `embodiment_tag: "new_embodiment"`
-
----
-
-## 8. Configuration Reference
-
-### Experiment Config (Camera & Joint Selection)
-
-> **Code:** [`scripts/utils/act_experiment_config.py`](../scripts/utils/act_experiment_config.py)
-
-The `experiment:` section in `act_config.yaml` is the single source of truth for
-which cameras and joint groups the ACT pipeline uses. All downstream consumers
-(IL eval, RL obs/action converters, RL policy wrapper) read from this config via
-the `ACTExperimentConfig` dataclass.
-
-```yaml
-experiment:
-  cameras:
-    front_camera: "observation.images.cam_room"
-    # left_wrist_camera: "observation.images.cam_left_wrist"  # comment out to exclude
-    right_wrist_camera: "observation.images.cam_right_wrist"
-  joint_groups:
-    # - left_arm
-    - right_arm
-    # - left_hand
-    - right_hand
-```
-
-When changing the experiment config, also update the `input_features` and
-`output_features` shapes in the same YAML to match:
-
-| Experiment | `observation.state` shape | `action` shape | Camera entries |
-|------------|--------------------------|----------------|----------------|
-| Default (all) | `[28]` | `[28]` | 3 cameras |
-| Right-side only | `[14]` | `[14]` | 2 cameras (remove left wrist) |
-| Arms only | `[14]` | `[14]` | 3 cameras |
-
-**How the config propagates:**
-
-| Stage | Consumer | Mechanism |
-|-------|----------|-----------|
-| IL training | `train_act_grasp_policy.sh` | Exports `ACT_EXPERIMENT_CONFIG` env var |
-| IL eval | `ACTClosedloopPolicy` | Reads `experiment_config_path` from eval YAML |
-| RL training | `rlinf_ext` converters | `ACTExperimentConfig.from_env_or_default()` |
-| RL policy | `act_policy.py` | `ACTExperimentConfig.from_env_or_default()` |
-
-**Key methods on `ACTExperimentConfig`:**
-
-- `extract_state(body_87d, dex3_14d)` — selects configured joint groups from raw env observations
-- `scatter_to_sim(policy_action)` — places policy-dim actions at correct 43D sim positions
-- `rlinf_state_keys()` — returns RLinf state key names for configured groups
-- `rlinf_video_keys()` — returns RLinf video key to ACT feature key mapping
-
-### act_config.yaml
-
-> **Code:** [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml)
-
-Top-level training config passed to `lerobot.scripts.train`. All values can be
-overridden via CLI (`--key value`).
-
-#### Training Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `steps` | 100,000 | Total gradient updates |
-| `batch_size` | 64 | Samples per step |
-| `log_freq` | 250 | Steps between log entries |
-| `save_freq` | 25,000 | Steps between checkpoint saves |
-| `eval_freq` | 10,000 | Steps between eval runs |
-| `num_workers` | 4 | DataLoader workers |
-| `seed` | 1000 | Random seed |
-
-#### Policy Architecture
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `chunk_size` | 100 | Actions predicted per forward pass |
-| `n_obs_steps` | 1 | Observation history length |
-| `dim_model` | 512 | Transformer hidden dimension |
-| `n_heads` | 8 | Attention heads |
-| `dim_feedforward` | 3200 | FFN intermediate dimension |
-| `n_encoder_layers` | 4 | Transformer encoder depth |
-| `n_decoder_layers` | 1 | Transformer decoder depth |
-| `use_vae` | true | Enable CVAE (disable for deterministic ACT) |
-| `latent_dim` | 32 | VAE latent space dimension |
-| `n_vae_encoder_layers` | 4 | VAE encoder depth |
-| `kl_weight` | 10.0 | KL divergence loss weight |
-| `vision_backbone` | resnet18 | CNN backbone for image features |
-| `pretrained_backbone_weights` | ResNet18_Weights.IMAGENET1K_V1 | Backbone initialization |
-| `dropout` | 0.1 | Transformer dropout (default, not in config) |
-
-#### Optimizer
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `optimizer_lr` | 1e-5 | Learning rate for transformer heads |
-| `optimizer_lr_backbone` | 1e-5 | Learning rate for ResNet backbones |
-| `optimizer_weight_decay` | 1e-4 | AdamW weight decay |
-
-### CLI Override Examples
+### 3.3 IL training
+
+> **Code:** [`train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh),
+> [`act_config_inspire_ftp.yaml`](../../scripts/policy/act_config_inspire_ftp.yaml)
+
+`train_act_grasp_policy_inspire.sh` is a thin bash wrapper around
+`python -m lerobot.scripts.train`. It does four things LeRobot would not do
+itself:
+
+1. **Parses `--dataset_path` and `--resume_path`**, forwards everything else
+   as extra args to LeRobot.
+2. **Strips the `experiment:` section** from `act_config_inspire_ftp.yaml`
+   into a temp file (`$FILTERED_CONFIG`). LeRobot's `TrainPipelineConfig` is
+   a draccus dataclass that rejects unknown top-level keys, so the rheo-
+   specific `experiment:` block has to be hidden from it.
+3. **Exports `INSPIRE_FTP_EXPERIMENT_CONFIG=$CONFIG_PATH`** (the unfiltered
+   path) so downstream code (eval, RL converters, policy wrapper) can reload
+   the `experiment:` block via `InspireFTPExperimentConfig.from_env_or_default()`.
+4. **Auto-generates `episodes_stats.jsonl`** if missing — LeRobot v2.1 needs
+   per-episode normalization stats to build the dataloader.
+
+Then it invokes:
 
 ```bash
-# Quick sanity check (1000 steps, small batch)
-./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/grasp_policy/demo/lerobot \
-    --steps 1000 --batch_size 8 --log_freq 50
-
-# Full training with more frequent checkpoints
-./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/grasp_policy/demo/lerobot \
-    --save_freq 10000
-
-# Shorter action chunks (for short-horizon tasks)
-./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/grasp_policy/demo/lerobot \
-    --policy.chunk_size 50
-
-# Resume from checkpoint
-./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/grasp_policy/demo/lerobot \
-    --resume_path /workspaces/.../checkpoint_050000
+python -m lerobot.scripts.train \
+    --config_path "$FILTERED_CONFIG" \
+    --dataset.repo_id grasp_policy_inspire \
+    --dataset.root "$DATASET_PATH" \
+    --dataset.video_backend pyav \
+    --output_dir "$OUTPUT_DIR" \
+    [--resume $RESUME_PATH] \
+    "${EXTRA_ARGS[@]}"
 ```
+
+`--dataset.video_backend pyav` is required because the default `torchcodec`
+backend needs `libnvrtc.so.13`, which is not installed in the grasp Docker
+image.
+
+**Output directory:**
+
+```
+scripts/simulation/rl/results/act_grasp_policy_inspire/train_<timestamp>/
+    checkpoints/
+        <step>/
+            pretrained_model/        <- this is what --model_path points at
+            training_state.pt
+    config.yaml
+    train.log
+```
+
+### 3.4 IL evaluation — the plumbing
+
+> **Code:** [`eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py),
+> [`act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py),
+> [`inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py)
+
+This is the section you want if you are trying to understand how an ACT
+checkpoint actually drives the robot. The flow is:
+
+```
+env.step(prev_action)
+        |
+        v
+obs dict {
+    "policy": {
+        "robot_joint_state":         (1, 87)
+        "robot_inspire_joint_state": (1, 12)
+    },
+    "camera_images": {
+        "front_camera":              (1, 480, 640, 3)  uint8 on GPU
+    }
+}
+        |
+        v   [every chunk_size=50 steps, otherwise pop from buffer]
+        |
+policy.get_action_from_raw(obs)
+        |
+        +--> _extract_observations_from_raw(obs):
+        |       body_87  = obs["policy"]["robot_joint_state"]
+        |       hand_12  = obs["policy"]["robot_inspire_joint_state"]
+        |       state_26 = InspireFTPExperimentConfig.extract_state(body_87, hand_12)
+        |                  = cat([body[:, 15:22], body[:, 22:29],
+        |                         hand[:, 0:6],   hand[:, 6:12]], dim=-1)
+        |       img      = obs["camera_images"]["front_camera"]
+        |                  .float() / 255.0
+        |                  .permute(0, 3, 1, 2)                  -> (1, 3, 480, 640)
+        |       act_obs  = {
+        |           "observation.state":            state_26,
+        |           "observation.images.cam_room":  img,
+        |       }
+        |
+        +--> _forward_action_chunk(act_obs):
+        |       for i in range(num_envs):
+        |           single_obs = {k: v[i:i+1] for k, v in act_obs.items()}
+        |           chunk_i    = self.policy.select_action(single_obs)   # LeRobot ACT
+        |       policy_actions = stack(chunks)                            # (num_envs, 50, 26)
+        |       sim_actions    = exp_config.scatter_to_sim(policy_actions)
+        |                        # (num_envs, 50, 41) — zeros at non-scatter indices
+        |       -> truncate / pad to action_chunk_length=50
+        |
+        v
+numpy array (50, 41)
+        |
+        v   [pop one per env.step()]
+        v
+env.step(action_41)
+        |
+        v
+InspireFTPJointPositionAction.apply_actions()
+        |
+        +--> super().apply_actions()                  <-- sets 41 actuated joint targets
+        +--> compute 12 mimic targets from actuated
+        +--> set_joint_position_target(mimic_vals, joint_ids=mimic_art_ids)
+```
+
+Four details that are easy to miss and matter when debugging:
+
+1. **`get_action_from_raw()` vs `get_action()`.** The old evaluator
+   (`evaluate_episode()`) calls `process_observation()`, which splits the
+   observation into separate keys like `state.left_arm` and `video.room_view`
+   and then the policy wrapper reassembles them. `get_action_from_raw()` skips
+   that entirely — it reads `obs["policy"]` and `obs["camera_images"]`
+   directly. This is why `eval_act_inspire.py` can be ~230 lines instead of
+   threading through the GR00T-era infrastructure, and why its action stream
+   is easier to reason about under `--log_actions`.
+
+2. **Non-contiguous scatter indices.** `scatter_to_sim()` does not write the
+   26D policy output into positions 0..25 of a 41-long vector — it scatters
+   to specific indices that match the USD tree-traversal order with mimic
+   joints removed. See [Section 4](#4-joint--action-dimension-flow) for the
+   full table.
+
+3. **Camera key renaming.** The simulator calls the camera `front_camera`
+   (that is its key in `obs["camera_images"]`), but the ACT feature dict has
+   to use `observation.images.cam_room` because that is the key the
+   checkpoint was trained with. The mapping lives in
+   `InspireFTPExperimentConfig.cameras` (default: `{"front_camera":
+   "observation.images.cam_room"}`), sourced from the `experiment:` block of
+   `act_config_inspire_ftp.yaml`.
+
+4. **Experiment config load path at eval time.** `eval_act_inspire.py` builds
+   a small temporary policy YAML for `ACTClosedloopPolicy`, and writes
+   `experiment_config_path: <absolute path to act_config_inspire_ftp.yaml>`
+   into it. `ACTClosedloopPolicy.__init__` loads that YAML via
+   `InspireFTPExperimentConfig.from_yaml(...)`, which is how eval-time
+   joint-group and camera selection stays consistent with training-time
+   selection. If the path is missing, `from_env_or_default()` is used
+   instead, which reads `INSPIRE_FTP_EXPERIMENT_CONFIG` from the environment
+   or falls back to the defaults hard-coded in `inspire_ftp_experiment_config.py`.
+
+**CLI surface** of `eval_act_inspire.py`:
+
+| Flag | Default | Purpose |
+|-|-|-|
+| `--task` | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | Gym ID |
+| `--model_path` | (required unless `--test`) | Path to `pretrained_model` folder |
+| `--num_episodes` | 10 | |
+| `--max_steps` | 5000 | Per-episode step cap |
+| `--seed` | 4 | Env + policy seed |
+| `--success_stage` | 3 | Stage at which `check_success()` returns True |
+| `--object` | `tool_0` | Choose surgical tool USD (`tool_0`..`tool_4`) |
+| `--slot` | 4 | Tray slot index (0..5) — overrides scene + reset event |
+| `--action_chunk_size` | 50 | Actions executed per chunk before re-observing |
+| `--clamp_actions` | 0.0 | If > 0, `np.clip(chunk, -val, val)` |
+| `--log_actions` | off | Per-chunk min/max/per-dim stats printed to stdout |
+| `--save_video` | off | Writes a single-view MP4 via `_MultiViewConcatWriter` |
+| `--video_dir` | `./eval_videos` | |
+| `--test` | off | Use a dummy zero-action policy (no checkpoint needed) |
+
+**Results file:** `./eval_results/results_<timestamp>_act_inspire.txt`
+(relative to the cwd inside the container — which maps to
+`~/repos/i4h-workflows/workflows/rheo/eval_results/` on the host because
+`/workspaces/workflows/rheo` is the bind-mounted repo).
+
+### 3.5 RL post-training (scaffolded for Inspire)
+
+> **Code:** [`rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py)
+> (lines 51, 78–81, 560–705),
+> [`rlinf_ext/act_policy.py`](../../scripts/simulation/rl/rlinf_ext/act_policy.py),
+> [`config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml),
+> [`config/model/act_inspire_ftp.yaml`](../../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml)
+
+RL post-training uses RLinf PPO to refine the IL-trained ACT policy with
+environment rewards. For the Inspire FTP task, the RL scaffolding is
+**registered and wired up but not yet validated end-to-end** — the active
+day-to-day workflow is IL-only eval through `eval_act_inspire.py`.
+
+What the registration does (in `rlinf_ext/__init__.py:register()`):
+
+- Registers the Inspire FTP gym IDs with RLinf's env map:
+  - `Isaac-Grasp-Policy-G129-InspireFTP-Joint` → `IsaaclabGraspPolicyInspireEnv`
+  - `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` → same class
+- Registers ACT obs/action converters keyed `"act_inspire_ftp"`:
+  - `_convert_inspire_obs_to_act_format` — uses
+    `InspireFTPExperimentConfig.from_env_or_default()` to pick camera keys
+    and normalize `(B, H, W, C) uint8 → (B, C, H, W) float`
+  - `_convert_inspire_act_action_to_sim` — truncates the chunk and calls
+    `exp_config.scatter_to_sim_numpy()` to build the 41D sim action
+
+`IsaaclabGraspPolicyInspireEnv._wrap_obs()` (lines 593–607) is the piece
+that defines the 26D critic state used by RL: it concatenates
+`obs["policy"]["robot_joint_state"][:, 15:29]` (14D arm slice) with
+`obs["policy"]["robot_inspire_joint_state"]` (12D hand) to produce a
+`(B, 26)` tensor. This ordering matches what
+`InspireFTPExperimentConfig.extract_state()` produces for training, so the
+critic sees the same 26D state vector as the actor.
+
+The model wrapper (`ACTForRLActionPrediction` + `ValueHead`) is shared
+between the Dex3 and Inspire variants — it lives in `act_policy.py` and
+attaches a 3-layer MLP value head to the ACT transformer encoder features
+for critic estimation.
+
+Everything RL-side ultimately reads
+`INSPIRE_FTP_EXPERIMENT_CONFIG` via `from_env_or_default()`, so the same
+env-var trick used at training time keeps joint-group and camera selection
+consistent across all three stages (IL train → IL eval → RL).
 
 ---
 
-## 9. Task Definition
+## 4. Joint & Action Dimension Flow
 
-> **Code:** [`scripts/simulation/tasks/grasp_policy/`](../scripts/simulation/tasks/grasp_policy/)
+The G1 + Inspire FTP articulation has **53 joints** total:
 
-### Gym Variants
+| Group | Count | Notes |
+|-|-|-|
+| Body | 29 | legs + waist + arms (no hand) |
+| Hand, actuated | 12 | 6 per hand: thumb_yaw, thumb_pitch, index, middle, ring, pinky |
+| Hand, mimic | 12 | 6 per hand: finger _2 joints + thumb _3, thumb _4 |
 
-| Gym ID | Purpose | Block Placement |
-|--------|---------|----------------|
-| `Isaac-Grasp-Policy-G129-Dex3-Joint` | RL training | Random within +/-3cm |
-| `Isaac-Grasp-Policy-G129-Dex3-Joint-Eval` | RL evaluation | Deterministic per-env |
-| `Isaac-Grasp-Policy-G129-Dex3-Teleop` | VR demo recording | Fixed, extended episode |
+The **41D action space** is the 29 body joints + 12 actuated hand joints;
+the 12 mimic joints are driven separately inside
+`InspireFTPJointPositionAction.apply_actions()` (see [Section 5](#5-mimic-joint-enforcement)).
 
-### Scene Layout
+The **26D policy space** is a strict subset of the 41D action space:
 
-- **Robot:** G1 with Dex3 hands, standing position at (-1.85, 1.94, 0.81)
-- **Block:** 5cm cube, ~100g, initial position (-1.55, 1.90, 0.885)
-- **Bin/Target:** 15x15cm pad on table at (-1.55, 1.61, 0.835)
-- **Cameras:** Front (room view), left wrist, right wrist — all 480x640 RGB
+```
+                 IsaacLab env observations
+             robot_joint_state          (B, 87)   29 body joints x [pos|vel|torque]
+             robot_inspire_joint_state  (B, 12)   12 actuated hand joints
+                           |
+                           |  InspireFTPExperimentConfig.extract_state(body_87, hand_12)
+                           v
+                 Policy input state       (B, 26)
+                 [ left_arm(7) | right_arm(7) | left_hand(6) | right_hand(6) ]
+                           |
+                           |  ACT policy forward pass (CVAE, 50-step chunk)
+                           v
+                 Policy action chunk      (B, 50, 26)
+                           |
+                           |  InspireFTPExperimentConfig.scatter_to_sim(policy_action)
+                           v
+                 Sim action tensor        (B, 50, 41)
+                 [ zeros at non-scatter indices ]
+                           |
+                           |  env.step(action_41) -> InspireFTPJointPositionAction
+                           v
+                 Articulation target      (B, 53)
+                 [ 41 actuated + 12 mimic computed from actuated ]
+```
 
-### 3-Stage Sparse Rewards
+### Scatter table — `GROUP_SIM_INDICES`
 
-> **Code:** [`scripts/simulation/tasks/grasp_policy/mdp/rewards.py`](../scripts/simulation/tasks/grasp_policy/mdp/rewards.py)
+From [`inspire_ftp_experiment_config.py:68–73`](../../scripts/utils/inspire_ftp_experiment_config.py#L68-L73):
 
-The reward function uses a state machine with 3 stages. Each stage must be
-completed before the next one triggers.
+| Group | Obs source | Canonical order | 41D sim indices |
+|-|-|-|-|
+| `left_arm` | `body[15:22]` | shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll, wrist_pitch, wrist_yaw | `[11, 15, 19, 21, 23, 25, 27]` |
+| `right_arm` | `body[22:29]` | (same, right) | `[12, 16, 20, 22, 24, 26, 28]` |
+| `left_hand` | `hand[0:6]` | thumb_yaw, thumb_pitch, index, middle, ring, pinky | `[33, 39, 29, 30, 32, 31]` |
+| `right_hand` | `hand[6:12]` | (same, right) | `[38, 40, 34, 35, 37, 36]` |
+
+### Why the indices are non-contiguous
+
+The 41D action layout comes from the env's `actuated_joint_names`, which
+follows USD tree-traversal order on the full 53-joint articulation with the
+12 mimic joints removed. That interleaves body and arm joints (arms share
+shoulder pitch/roll/yaw chains with the rest of the body) and leaves gaps in
+the hand section where mimic joints used to be. The `GROUP_SIM_INDICES`
+table records the result of walking that ordering and writing down where
+each policy-dim joint actually lands.
+
+`scatter_to_sim()` itself is dead simple:
+
+```python
+def scatter_to_sim(self, policy_action):
+    sim = torch.zeros(*policy_action.shape[:-1], 41, ...)
+    sim[..., self.sim_scatter_indices] = policy_action
+    return sim
+```
+
+All non-scatter positions (legs, waist, the 29-body joints the policy does
+not control) are left as 0, which for a joint position controller means
+"target angle = 0 rad". In practice those joints are held near zero by the
+robot's default pose, so this matches the training data.
+
+---
+
+## 5. Mimic Joint Enforcement
+
+> **Code:** [`mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py)
+
+The Inspire FTP hand has 6 actuated joints per side, plus 6 mimic joints
+that in hardware are mechanically coupled to them via tendons. The sim
+recreates that coupling in software via a custom
+`InspireFTPJointPositionAction` that subclasses IsaacLab's
+`JointPositionAction`.
+
+### Mimic rules
+
+```python
+_MIMIC_RULES_PER_SIDE = [
+    ("{side}_index_2_joint",   "{side}_index_1_joint",  1.0843),
+    ("{side}_middle_2_joint",  "{side}_middle_1_joint", 1.0843),
+    ("{side}_ring_2_joint",    "{side}_ring_1_joint",   1.0843),
+    ("{side}_little_2_joint",  "{side}_little_1_joint", 1.0843),
+    # Thumb is a chain: _3 mimics _2, then _4 mimics _3.
+    ("{side}_thumb_3_joint",   "{side}_thumb_2_joint",  0.8024),
+    ("{side}_thumb_4_joint",   "{side}_thumb_3_joint",  0.9487),
+]
+```
+
+- The four fingers each have a single `_2` mimic joint that tracks its `_1`
+  parent at 1.0843x — the DIP follows the PIP with a slight amplification.
+- The thumb is a two-link chain: `thumb_3` tracks `thumb_2` at 0.8024x, and
+  `thumb_4` tracks `thumb_3` at 0.9487x. **Order matters** because the
+  second rule reads a value the first rule just computed.
+
+Both rules are replicated for `left` and `right` → 12 mimic joints total.
+
+### Apply order
+
+`apply_actions()`:
+
+1. Calls `super().apply_actions()` → sets position targets for all 41
+   joints in the action space.
+2. Walks `_mimic_parent_info` (built once in `__init__`) to compute each
+   mimic joint's target. Each entry tags the parent as either `"action"`
+   (pull from `self.processed_actions[:, parent_idx]`) or `"mimic"` (pull
+   from the already-computed mimic buffer, enabling the thumb chain).
+3. Calls `self._asset.set_joint_position_target(mimic_vals,
+   joint_ids=self._mimic_art_ids)` to write the mimic targets onto the
+   articulation in one go.
+
+### What a policy author needs to know
+
+- **The policy never sees mimic joints.** Both training data and inference
+  actions are 26D (or 41D in sim), covering only the actuated joints.
+- **The scatter does not write to mimic positions either.** `scatter_to_sim`
+  targets the 41D actuated action space; mimic joints are written separately
+  inside `apply_actions()`, not as part of the policy output.
+- **Tendon behavior is baked into the rewards.** Because mimic joints
+  respond deterministically to their parents, the IL policy implicitly
+  learns "good grip shapes" just by commanding the 6 actuated joints — it
+  does not need to reason about DIP or distal thumb joints directly.
+
+---
+
+## 6. Experiment Config Propagation
+
+A recurring pattern in the Inspire pipeline is that the `experiment:` block
+of `act_config_inspire_ftp.yaml` — specifically the `cameras:` and
+`joint_groups:` lists — is the **single source of truth** for which parts
+of the robot and scene the ACT policy consumes. That block has to reach four
+different consumers, and it does so through a combination of an env var and
+an explicit config path:
+
+```
+act_config_inspire_ftp.yaml
+    |
+    |--- experiment.cameras
+    |--- experiment.joint_groups
+    |
+    +---> (1) IL training (train_act_grasp_policy_inspire.sh)
+    |         - Strips experiment: into /tmp/act_config_inspire_XXXX.yaml
+    |         - Exports INSPIRE_FTP_EXPERIMENT_CONFIG=<original path>
+    |
+    +---> (2) IL eval (eval_act_inspire.py)
+    |         - Writes experiment_config_path: <original path>
+    |           into a temp policy YAML
+    |         - ACTClosedloopPolicy.__init__ loads via
+    |           InspireFTPExperimentConfig.from_yaml(exp_cfg_path)
+    |
+    +---> (3) RL obs/action converters (rlinf_ext)
+    |         - InspireFTPExperimentConfig.from_env_or_default()
+    |         - Reads INSPIRE_FTP_EXPERIMENT_CONFIG
+    |
+    +---> (4) RL policy wrapper (act_policy.py)
+              - Same from_env_or_default() call
+```
+
+The load path is:
+
+1. **If `experiment_config_path` is set in the policy YAML** (path 2):
+   `InspireFTPExperimentConfig.from_yaml(path)` is called directly.
+2. **Else** fall back to `from_env_or_default()` which checks
+   `INSPIRE_FTP_EXPERIMENT_CONFIG`; if that is unset, use the hard-coded
+   defaults in [`inspire_ftp_experiment_config.py:93–97`](../../scripts/utils/inspire_ftp_experiment_config.py#L93-L97)
+   (all 4 joint groups, front camera only → `observation.images.cam_room`).
+
+`from_env_or_default()` caches its result in a module-level variable, so
+the config is read once per process.
+
+This is the reason that, if you train with a custom subset of
+`joint_groups` (e.g. right-side only → 13D), you must make sure both
+(a) `INSPIRE_FTP_EXPERIMENT_CONFIG` and (b) the eval script's
+`experiment_config_path` still point at the same YAML you trained with —
+otherwise the state dimensions and scatter indices will not match the
+checkpoint.
+
+---
+
+## 7. RLinf Integration
+
+`RLINF_EXT_MODULE=rlinf_ext` tells RLinf at import time to load
+[`rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py)
+and call `register()`. For the Inspire FTP variant the registration
+installs three things:
+
+```
+register()
+   |
+   +-- Gym env class
+   |     Isaac-Grasp-Policy-G129-InspireFTP-Joint       -> IsaaclabGraspPolicyInspireEnv
+   |     Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval  -> IsaaclabGraspPolicyInspireEnv
+   |
+   +-- Obs converter
+   |     "act_inspire_ftp" -> _convert_inspire_obs_to_act_format
+   |
+   +-- Action converter
+         "act_inspire_ftp" -> _convert_inspire_act_action_to_sim
+```
+
+| Component | File | Role |
+|-|-|-|
+| Env class | `rlinf_ext/__init__.py:565-636` | Wraps `IsaaclabBaseEnv`; `_wrap_obs()` builds the 26D critic state and the front-camera image dict |
+| Obs converter | `rlinf_ext/__init__.py:653-681` | Takes the wrapped env obs, loads `InspireFTPExperimentConfig`, emits `{observation.state: (B,26), observation.images.cam_room: (B,3,H,W)}` |
+| Action converter | `rlinf_ext/__init__.py:684-705` | Takes the `(B, chunk, 26)` policy output, truncates to `chunk_size`, scatters to `(B, chunk, 41)` via `scatter_to_sim_numpy()` |
+| RL actor wrapper | `rlinf_ext/act_policy.py` | `ACTForRLActionPrediction` + `ValueHead` — shared between Dex3 and Inspire; RL-specific head on top of the ACT transformer encoder features |
+| PPO YAML | `rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml` | Algorithm, env, and actor/critic hyperparams |
+| Model YAML | `rlinf_ext/config/model/act_inspire_ftp.yaml` | Selects `obs_converter_type: act_inspire_ftp`, `add_value_head: true` |
+
+The 26D state in `_wrap_obs()` is built as
+`cat(body[:, 15:29], inspire_hand, dim=-1)`, giving the same layout the
+training-time `extract_state()` produces. This is what keeps IL-trained
+weights compatible with the RL actor/critic without any remapping.
+
+As of this writing the Inspire RL path is scaffolded but not yet validated
+end to end. Use `eval_act_inspire.py` for day-to-day IL evaluation; come
+back to the RL stack once the IL checkpoint is performing as expected.
+
+---
+
+## 8. Task Definition
+
+> **Code:** [`tasks/grasp_policy_inspire/`](../../scripts/simulation/tasks/grasp_policy_inspire/)
+
+### Gym IDs
+
+| Gym ID | Purpose | Env cfg |
+|-|-|-|
+| `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | IL + RL training, random block placement | `g1_grasp_policy_inspire_env_cfg.py` |
+| `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` | Deterministic per-env placement | same file |
+| `Isaac-Grasp-Policy-G129-InspireFTP-Teleop` | VR demo recording, 53-joint PinkIK+DexPilot retarget | `g1_grasp_policy_inspire_teleop_env_cfg.py` |
+
+### Scene layout
+
+- **Robot:** G1 29-DoF with Inspire FTP hands, base at `(-1.849, 1.94, 0.812)`
+- **Surgical tray:** static prop at `TRAY_POS = (-1.499, 2.034, 0.846)`,
+  rotated 90° CW via `TRAY_ROT = (0.707, 0, 0, -0.707)`
+- **Tools:** `SINUS_TOOL_USD_PATHS` maps `tool_0..tool_4` to their USD files;
+  `--object` on `eval_act_inspire.py` selects which one is the physics-
+  enabled grasp target. The selected tool is named `block` in the scene so
+  that shared reward/termination code (inherited from the Dex3 task via
+  `simulation.tasks.grasp_policy.mdp.*`) works unchanged.
+- **Tray slots:** 6 slots (`TRAY_SLOT_POSITIONS[0..5]`) defined by local
+  offsets from Xform markers baked into the tray USD.
+  `ACTIVE_SLOT_IDX = 4` by default; `--slot N` on the eval CLI overrides
+  both the initial block spawn and the reset event's slot position.
+- **Tool orientation:** `TOOL_ROT = (0.707, 0, 0, -0.707)` (matches the
+  tray rotation).
+- **Bin / target pad:** 15cm x 15cm x 0.5cm pad at `(-1.55, 1.61, 0.835)`
+- **Camera:** single `front_camera` at 480x640 RGB (no wrist cameras)
+
+### Observations
+
+```python
+class PolicyCfg(ObsGroup):
+    robot_joint_state         = ObsTerm(func=mdp.get_robot_body_joint_states)       # (B, 87)
+    robot_inspire_joint_state = ObsTerm(func=mdp.get_robot_inspire_joint_states)    # (B, 12)
+
+class CameraImagesCfg(ObsGroup):
+    front_camera = ObsTerm(func=base_mdp.image,
+        params={"sensor_cfg": SceneEntityCfg("front_camera"),
+                "data_type": "rgb", "normalize": False})
+```
+
+`concatenate_terms = False` on both groups, so each term is accessible by
+its own key in the observation dict.
+
+### Actions
+
+```python
+joint_pos = mdp.InspireFTPJointPositionActionCfg(
+    asset_name="robot",
+    joint_names=actuated_joint_names,   # 41 entries
+    scale=1.0,
+    use_default_offset=False,
+    offset=offset_dict,                 # {-0.3 on left/right_elbow_joint}
+    preserve_order=True,
+)
+```
+
+- `scale=1.0` means the action dimension is "target joint angle in rad",
+  no rescaling.
+- `offset` only biases the two elbows.
+- **There is no clamping anywhere in the action pipeline.** If a policy
+  outputs a value outside the robot's joint limits, the PD controller on
+  that joint will apply large corrective torques. This is why
+  `eval_act_inspire.py` exposes `--log_actions` (to inspect per-chunk action
+  stats) and `--clamp_actions VAL` (to `np.clip(chunk, -VAL, VAL)` as a
+  diagnostic).
+
+### Rewards and success
+
+The Inspire FTP task reuses the reward/termination MDP from the Dex3 grasp
+task (`scripts/simulation/tasks/grasp_policy/mdp/`). The success signal is
+a 3-stage state machine:
 
 | Stage | Transition | Condition | Reward |
-|-------|-----------|-----------|--------|
-| 0 -> 1 | **Grasp** | Block lifted >5cm above table | +1.0 |
-| 1 -> 2 | **Transport** | Block positioned over bin bounds (x/y) | +1.0 |
-| 2 -> 3 | **Place** | Block inside bin (z < rim, z > floor, x/y in bounds) | +1.0 |
+|-|-|-|-|
+| 0 → 1 | Lift | Tool z > table + 5cm | +1.0 |
+| 1 → 2 | Transport | Tool x,y inside bin bounds | +1.0 |
+| 2 → 3 | Place | Tool x,y inside bin AND below rim AND above floor | +1.0 |
 
-Total maximum reward per episode: **3.0**
+`check_success(env, success_stage=3)` in `examples/utils.py` reads
+`env._task_stage` and returns True when it reaches 3. That is the condition
+`eval_act_inspire.py` uses to end an episode as "SUCCESS".
 
-### Termination Conditions
+### Terminations
 
-> **Code:** [`scripts/simulation/tasks/grasp_policy/mdp/terminations.py`](../scripts/simulation/tasks/grasp_policy/mdp/terminations.py)
+[`grasp_policy_inspire/mdp/terminations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py)
+is a thin re-export of the Dex3 versions:
 
-| Condition | Trigger |
-|-----------|---------|
-| `time_out` | Episode length exceeded |
-| `success` | Block reaches stage 3 |
-| `object_drop` | Block falls below 0.5m threshold |
+- `time_out` — episode length exceeded (episode_length_s = 200.0 s →
+  ~10000 sim steps at 50 Hz)
+- `task_success_termination(success_stage=3)`
+- `object_drop_termination(drop_height_threshold=0.5)`
+
+---
+
+## 9. Docker
+
+The Inspire FTP pipeline uses the same container as the Dex3 grasp
+workflow. There is no `-inspire` build flag — variant selection is entirely
+runtime, via Python configs.
+
+| | Value |
+|-|-|
+| Dockerfile | [`docker/Dockerfile.grasp`](../../docker/Dockerfile.grasp) |
+| Run script | [`docker/run_docker_grasp.sh`](../../docker/run_docker_grasp.sh) |
+| LeRobot | Always installed (pinned commit) |
+| GR00T | Not installed |
+| Prompt | `[GRASP]` |
+
+### Mounts
+
+| Host | Container | Purpose |
+|-|-|-|
+| `~/datasets` | `/datasets` | Recorded HDF5 + converted LeRobot datasets |
+| `~/models` | `/models` | Trained checkpoints |
+| `~/eval` | `/eval` | Evaluation output (if you write there) |
+| `i4h-workflows/` | `/workspaces` | Live source mount — edits on the host apply immediately |
+
+### Video decoding
+
+The training launcher passes `--dataset.video_backend pyav` because the
+default `torchcodec` backend needs `libnvrtc.so.13`, which is not present
+in the grasp image. `pyav` uses CPU FFmpeg decoding and works without
+additional CUDA libs.
+
+### Typical one-liners
+
+```bash
+# Smoke test eval with dummy zero-action policy (no checkpoint needed)
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py \
+    --test --max_steps 200 --enable_cameras
+
+# Real eval with an IL-trained Inspire checkpoint + action diagnostics
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py \
+    --model_path /workspaces/workflows/rheo/scripts/simulation/rl/results/\
+act_grasp_policy_inspire/train_<timestamp>/checkpoints/<step>/pretrained_model \
+    --num_episodes 3 --max_steps 5000 --slot 4 --enable_cameras \
+    --log_actions --save_video
+
+# Train ACT on an existing Inspire LeRobot dataset
+./docker/run_docker_grasp.sh \
+    bash scripts/policy/train_act_grasp_policy_inspire.sh \
+        --dataset_path /datasets/grasp_policy_inspire_lerobot
+```
 
 ---
 
 ## 10. Key Files Reference
 
-| Component | File | Description |
-|-----------|------|-------------|
-| **Task registration** | [`scripts/simulation/tasks/grasp_policy/__init__.py`](../scripts/simulation/tasks/grasp_policy/__init__.py) | Gym ID registration (Joint, Joint-Eval, Teleop) |
-| **Task env config** | [`scripts/simulation/tasks/grasp_policy/g1_grasp_policy_env_cfg.py`](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_env_cfg.py) | Scene, robot, block, bin configuration |
-| **MDP: observations** | [`scripts/simulation/tasks/grasp_policy/mdp/observations.py`](../scripts/simulation/tasks/grasp_policy/mdp/observations.py) | 87D body + 14D hands + 3 cameras |
-| **MDP: rewards** | [`scripts/simulation/tasks/grasp_policy/mdp/rewards.py`](../scripts/simulation/tasks/grasp_policy/mdp/rewards.py) | 3-stage sparse rewards |
-| **MDP: terminations** | [`scripts/simulation/tasks/grasp_policy/mdp/terminations.py`](../scripts/simulation/tasks/grasp_policy/mdp/terminations.py) | Success, timeout, object drop |
-| **Demo recording** | [`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py) | Policy-agnostic HDF5 recording |
-| **Demo recording wrapper** | [`scripts/simulation/record_demos_grasp_policy.sh`](../scripts/simulation/record_demos_grasp_policy.sh) | Convenience wrapper with grasp_policy defaults |
-| **Data conversion** | [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | HDF5 to LeRobot v2.1 (parquet + MP4) |
-| **Dataset config** | [`scripts/config/g1_grasp_policy_dataset.yaml`](../scripts/config/g1_grasp_policy_dataset.yaml) | HDF5-to-LeRobot camera mappings |
-| **Field mapping** | [`scripts/utils/assemble_trocar_lerobot_fields.py`](../scripts/utils/assemble_trocar_lerobot_fields.py) | 28D joint extraction logic |
-| **Experiment config** | [`scripts/utils/act_experiment_config.py`](../scripts/utils/act_experiment_config.py) | Config-driven camera + joint group selection |
-| **IL training config** | [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml) | ACT architecture + training hyperparams + experiment config |
-| **IL training launcher** | [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh) | Bash wrapper around `lerobot.scripts.train` |
-| **IL eval entry point** | [`scripts/simulation/examples/eval_grasp_policy.py`](../scripts/simulation/examples/eval_grasp_policy.py) | Unified evaluator (`--policy_type gr00t\|act\|test`) |
-| **ACT inference wrapper** | [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACTClosedloopPolicy (28D->43D, action chunking) |
-| **ACT eval config** | [`scripts/config/g1_act_closedloop_grasp_policy.yaml`](../scripts/config/g1_act_closedloop_grasp_policy.yaml) | ACT inference YAML (model path, chunk length) |
-| **Base policy** | [`scripts/simulation/base_closedloop_policy.py`](../scripts/simulation/base_closedloop_policy.py) | Action chunking base class (not currently inherited) |
-| **Obs processor** | [`scripts/simulation/obs_processor.py`](../scripts/simulation/obs_processor.py) | Model-agnostic observation extraction |
-| **Joint conversion** | [`scripts/utils/joint_conversion.py`](../scripts/utils/joint_conversion.py) | 43-DOF remapping (GR00T only) |
-| **RL ACT wrapper** | [`scripts/simulation/rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACTForRLActionPrediction + ValueHead |
-| **RL registration** | [`scripts/simulation/rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py) | Obs/action converter + model factory registration |
-| **RL training launcher** | [`scripts/simulation/rl/train_act_grasp_policy.sh`](../scripts/simulation/rl/train_act_grasp_policy.sh) | RLinf PPO training script |
-| **RL PPO config** | [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml) | PPO + env + model config |
-| **RL model config** | [`scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml) | ACT model config for RLinf |
-| **Docker: ACT image** | [`docker/Dockerfile.grasp`](../docker/Dockerfile.grasp) | Grasp-policy Docker image (LeRobot, no GR00T) |
-| **Docker: run script** | [`docker/run_docker_grasp.sh`](../docker/run_docker_grasp.sh) | ACT Docker launcher |
-| **Teleop: hand tracking** | [`scripts/teleop_devices/handtracking.py`](../scripts/teleop_devices/handtracking.py) | AVP OpenXR hand tracking retargeting |
+### Task
+
+| File | Description |
+|-|-|
+| [`scripts/simulation/tasks/grasp_policy_inspire/__init__.py`](../../scripts/simulation/tasks/grasp_policy_inspire/__init__.py) | Gym ID registration (Joint, Joint-Eval, Teleop) |
+| [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | Scene, robot, tray, tool, bin, observation and action config |
+| [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | 53-joint teleop env with PinkIK wrist + DexPilot hand retarget |
+| [`scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py) | `get_robot_body_joint_states` (87D), `get_robot_inspire_joint_states` (12D) |
+| [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | `InspireFTPJointPositionAction` + mimic rules |
+| [`scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py) | Re-exports `object_drop_termination` and `task_success_termination` |
+
+### Data
+
+| File | Description |
+|-|-|
+| [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | HDF5 → LeRobot v2.1; the `rheo_26d_state_action` flag triggers the Inspire branch |
+| [`scripts/config/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/g1_grasp_policy_inspire_dataset.yaml) | Inspire-specific dataset conversion config |
+
+### Experiment + training
+
+| File | Description |
+|-|-|
+| [`scripts/utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py) | `InspireFTPExperimentConfig` dataclass — joint groups, cameras, `extract_state()`, `scatter_to_sim()`, `from_env_or_default()` |
+| [`scripts/policy/act_config_inspire_ftp.yaml`](../../scripts/policy/act_config_inspire_ftp.yaml) | Single source of truth: experiment block + ACT architecture + training hyperparams |
+| [`scripts/policy/train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh) | Training launcher (strips experiment block, exports env var, calls LeRobot) |
+
+### Eval
+
+| File | Description |
+|-|-|
+| [`scripts/simulation/examples/eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py) | Primary ACT-on-Inspire evaluation script |
+| [`scripts/simulation/act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py) | `ACTClosedloopPolicy` — loads the checkpoint, dispatches on `hand_type="inspire_ftp"`, exposes `get_action_from_raw()` |
+| [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../../scripts/simulation/examples/eval_grasp_policy_inspire.py) | Legacy unified evaluator (still works, harder to debug) |
+| [`scripts/simulation/examples/utils.py`](../../scripts/simulation/examples/utils.py) | `check_success()`, `set_viewport_camera()`, `_MultiViewConcatWriter` (reused by `eval_act_inspire.py`) |
+
+### RL
+
+| File | Description |
+|-|-|
+| [`scripts/simulation/rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py) | `register()` — Inspire gym IDs, env class, obs/action converters |
+| [`scripts/simulation/rl/rlinf_ext/act_policy.py`](../../scripts/simulation/rl/rlinf_ext/act_policy.py) | `ACTForRLActionPrediction` + `ValueHead` (shared with Dex3) |
+| [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | PPO + env + model YAML |
+| [`scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml`](../../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml) | Selects `obs_converter_type: act_inspire_ftp` |
+
+### Docker
+
+| File | Description |
+|-|-|
+| [`docker/Dockerfile.grasp`](../../docker/Dockerfile.grasp) | Grasp image (LeRobot, no GR00T) |
+| [`docker/run_docker_grasp.sh`](../../docker/run_docker_grasp.sh) | Launcher; same image for Dex3 and Inspire |

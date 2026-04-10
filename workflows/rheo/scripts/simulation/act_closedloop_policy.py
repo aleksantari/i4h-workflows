@@ -228,6 +228,25 @@ class ACTClosedloopPolicy(PolicyBase):
         # Return first env's chunk as numpy (evaluate_episode handles multi-env via its own loop)
         return {"actions": sim_actions[0].cpu().numpy()}
 
+    def get_action_from_raw(self, observation: dict[str, Any]) -> np.ndarray:
+        """Get action chunk directly from raw IsaacLab env observations.
+
+        Bypasses ``process_observation()`` entirely — reads joint state and
+        camera images directly from the env observation dict via
+        ``_extract_observations_from_raw()``.
+
+        Args:
+            observation: Raw observation dict from ``env.step()`` or ``env.reset()``.
+                Must contain ``observation["policy"]["robot_joint_state"]``,
+                hand state key, and ``observation["camera_images"]``.
+
+        Returns:
+            numpy array of shape ``(chunk_size, sim_action_dim)`` (single env).
+        """
+        act_obs = self._extract_observations_from_raw(observation)
+        sim_actions = self._forward_action_chunk(act_obs)
+        return sim_actions[0].cpu().numpy()
+
     @torch.no_grad()
     def _forward_action_chunk(self, act_obs: dict[str, torch.Tensor]) -> torch.Tensor:
         """Run ACT forward pass to get a chunk of actions.
