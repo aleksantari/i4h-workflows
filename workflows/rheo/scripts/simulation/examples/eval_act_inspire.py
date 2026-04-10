@@ -60,7 +60,7 @@ parser.add_argument(
     "--object", type=str, default="tool_0",
     choices=["tool_0", "tool_1", "tool_2", "tool_3", "tool_4"],
 )
-parser.add_argument("--slot", type=int, default=4, choices=range(6))
+parser.add_argument("--slot", type=int, default=1, choices=range(6))
 parser.add_argument(
     "--action_chunk_size", type=int, default=50,
     help="actions to execute per chunk before re-observing (default: 50, matching ACT chunk_size)",

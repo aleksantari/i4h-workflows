@@ -294,7 +294,7 @@ def convert_g1_state_action_to_lerobot_26d(
     else:
         # Teleop recording (38D PinkIK) or unknown width:
         # action = next-step observed joint positions.
-        # Elbow offset is already baked into the observed positions.
-        action = full_26d[1:]  # (T-1, 26)
+        # Out-of-place add avoids aliasing full_26d (state is a view of it).
+        action = full_26d[1:] + STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA
 
     return state, action
