@@ -258,14 +258,17 @@ class ACTClosedloopPolicy(PolicyBase):
             action_chunk: Shape (num_envs, chunk_size, sim_action_dim)
         """
 
-        # ACT forward: returns (B, chunk_size, action_dim) or processes per-env
-        # LeRobot ACT select_action returns (chunk_size, action_dim) for single env
+        # LeRobot ACT predict_action_chunk returns (1, chunk_size, action_dim).
+        # select_action only pops one step from an internal queue, which would
+        # collapse each chunk to a single repeated action.
         chunks = []
         for i in range(self.num_envs):
             single_obs = {k: v[i : i + 1] for k, v in act_obs.items()}
-            action = self.policy.select_action(single_obs)  # (chunk_size, action_dim)
+            action = self.policy.predict_action_chunk(single_obs)
             if isinstance(action, np.ndarray):
                 action = torch.from_numpy(action)
+            if action.ndim == 3:
+                action = action.squeeze(0)  # (chunk_size, action_dim)
             chunks.append(action)
 
         # Stack: (num_envs, chunk_size, policy_dim)
