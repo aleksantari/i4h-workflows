@@ -49,7 +49,7 @@ fps: 30
 data_path: "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
 video_path: "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
 
-modality_template_path: "scripts/simulation/tasks/grasp_policy/modality_grasp_policy.json"
+modality_template_path: "scripts/simulation/tasks/grasp_policy/modality_grasp_policy_dex3.json"
 modality_fname: "modality.json"
 episodes_fname: "episodes.jsonl"
 tasks_fname: "tasks.jsonl"

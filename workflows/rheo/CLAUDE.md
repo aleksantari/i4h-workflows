@@ -28,7 +28,7 @@ Everything runs inside Docker. Never run simulation scripts on the host. There a
 ./docker/run_docker.sh -g1.5 python -u scripts/simulation/examples/eval_assemble_trocar.py ...
 
 # GR00T N1.5 Dex3 grasp (original hands, not Inspire)
-./docker/run_docker.sh -g1.5 python scripts/simulation/examples/eval_grasp_policy.py --policy_type act ...
+./docker/run_docker.sh -g1.5 python scripts/simulation/examples/eval_grasp_policy_dex3.py --policy_type act ...
 ```
 
 `run_docker.sh` key flags: `-g1.5` / `-g1.6` (GR00T version), `-u <gpu>` (select GPU), `-N` (new container), `-r` (rebuild), `-R` (rebuild no cache), `-d`/`-m`/`-e` (override dataset/model/eval mount dirs).
@@ -44,7 +44,7 @@ Host mounts: `$HOME/datasets` → `/datasets`, `$HOME/models` → `/models`, `$H
 | Track | Use case | GR00T | Entry point | Env definition |
 |-------|----------|-------|-------------|----------------|
 | **IsaacLab-Arena** | Locomanipulation (tray pick-and-place, cart push) | N1.6 (`-g1.6`) | `policy_runner.py` | `scripts/simulation/environments/` |
-| **IsaacLab** | Precision manipulation (trocar assembly, grasp policy) | N1.5 (`-g1.5`) | `eval_assemble_trocar.py`, `eval_grasp_policy.py` | `scripts/simulation/tasks/` |
+| **IsaacLab** | Precision manipulation (trocar assembly, grasp policy) | N1.5 (`-g1.5`) | `eval_assemble_trocar.py`, `eval_grasp_policy_dex3.py`, `eval_grasp_policy_inspire.py` | `scripts/simulation/tasks/` |
 
 Arena environments are registered via `register_and_patch.py` into an `ExampleEnvironments` dict before the sim starts. IsaacLab-track environments use standard `gymnasium.register()` with gym IDs like `Isaac-Assemble-Trocar-G129-Dex3-Joint` or `Isaac-Grasp-Policy-G129-Dex3-Joint`.
 
@@ -57,7 +57,7 @@ Arena environments are registered via `register_and_patch.py` into an `ExampleEn
 
 Both extend `BaseClosedloopPolicy`, which manages per-env action chunk state (current chunk, index, exhaustion tracking). Subclasses implement `_load_model()` and `_get_action_chunk()`.
 
-`eval_grasp_policy.py` supports both via `--policy_type` (gr00t, act, test).
+`eval_grasp_policy_dex3.py` supports both via `--policy_type` (gr00t, act, test). The Inspire FTP variant has its own entry points (`eval_grasp_policy_inspire.py`, `eval_act_inspire.py`).
 
 ## Code Organization
 
@@ -65,11 +65,13 @@ Both extend `BaseClosedloopPolicy`, which manages per-env action chunk state (cu
 scripts/
 ├── config/                        # Policy YAML configs (model path, joint mappings, camera, action horizon)
 ├── policy/
-│   ├── gr00t_config.py            # UnitreeG1SimDataConfig — modality definitions for GR00T
-│   ├── gr00t_locomanip_config.py  # Locomanip-specific modality config
-│   ├── apply_gr00t_rl_patch.py    # Context manager: git-apply RL patch during eval
-│   ├── act_config.yaml            # LeRobot ACT training config (chunk_size=100, CVAE, kl_weight=10)
-│   └── train_act_grasp_policy.sh  # LeRobot ACT training launcher (supports resume, Hydra overrides)
+│   ├── gr00t_config.py                  # UnitreeG1SimDataConfig — modality definitions for GR00T
+│   ├── gr00t_locomanip_config.py        # Locomanip-specific modality config
+│   ├── apply_gr00t_rl_patch.py          # Context manager: git-apply RL patch during eval
+│   ├── act_config_dex3.yaml             # LeRobot ACT training config — Dex3 grasp (chunk=100, CVAE, kl_weight=10)
+│   ├── act_config_inspire_ftp.yaml      # LeRobot ACT training config — Inspire FTP grasp
+│   ├── train_act_grasp_policy_dex3.sh   # LeRobot ACT training launcher (Dex3)
+│   └── train_act_grasp_policy_inspire.sh # LeRobot ACT training launcher (Inspire FTP)
 ├── simulation/
 │   ├── base_closedloop_policy.py  # Abstract base: shared action chunking for GR00T + ACT
 │   ├── gr00t_closedloop_policy.py # GR00T policy wrapper (43 DOF, action_horizon=16)
@@ -81,12 +83,15 @@ scripts/
 │   ├── environments/              # Arena-track env definitions (ExampleEnvironmentBase subclasses)
 │   ├── tasks/
 │   │   ├── assemble_trocar/       # Trocar assembly task (gym registration, env cfg, mdp/, config/)
-│   │   └── grasp_policy/          # Block grasp & place task (3 gym variants: Joint, Joint-Eval, Teleop)
+│   │   ├── grasp_policy/          # Dex3 block-grasp task + shared mdp (rewards/events/terminations used by both Dex3 and Inspire)
+│   │   └── grasp_policy_inspire/  # Inspire FTP block-grasp task (re-exports shared mdp from grasp_policy/)
 │   ├── examples/                  # Runnable entry points
-│   │   ├── policy_runner.py       # GR00T N1.6 Arena evaluation
-│   │   ├── eval_assemble_trocar.py # GR00T N1.5 trocar evaluation (--rl_ckpt flag)
-│   │   ├── eval_grasp_policy.py   # Unified grasp evaluator (--policy_type gr00t|act|test)
-│   │   └── triggered_policy_runner.py # HTTP-triggered for VLM agents
+│   │   ├── policy_runner.py             # GR00T N1.6 Arena evaluation
+│   │   ├── eval_assemble_trocar.py      # GR00T N1.5 trocar evaluation (--rl_ckpt flag)
+│   │   ├── eval_grasp_policy_dex3.py    # Dex3 grasp evaluator (--policy_type gr00t|act|test)
+│   │   ├── eval_grasp_policy_inspire.py # Inspire FTP grasp evaluator (GR00T/ACT)
+│   │   ├── eval_act_inspire.py          # Inspire FTP ACT-only healthcheck/eval
+│   │   └── triggered_policy_runner.py   # HTTP-triggered for VLM agents
 │   ├── assets/                    # USD path constants + Arena asset/background library registration
 │   ├── embodiments/               # Patched G1 robot embodiment
 │   └── rl/
@@ -94,7 +99,7 @@ scripts/
 │       │   ├── act_policy.py      # ACT wrapper for RLinf RL post-training (ValueHead for critic)
 │       │   └── config/            # RLinf YAML configs (env, PPO hyperparams, model architecture)
 │       ├── train_gr00t_assemble_trocar.sh  # GR00T RL training launcher
-│       └── train_act_grasp_policy.sh       # ACT RL training launcher
+│       └── train_act_grasp_policy_dex3.sh  # ACT RL training launcher (Dex3)
 ├── utils/
 │   ├── joint_conversion.py        # Policy-to-sim joint remapping (43 DOF)
 │   ├── policy_tasks.py            # TensorRT DiT wrapper, success-hold wrapper
@@ -174,6 +179,8 @@ Tests run inside Docker. Conditional decorators in `tests/helpers.py`:
 
 **GR00T path:** Data collection (`record_demos.py`) → Annotation (`annotate_demos.py`) → Synthetic generation (`generate_dataset.py` / Cosmos Transfer 2.5) → HDF5→LeRobot conversion (`convert_hdf5_to_lerobot.py`) → Fine-tuning (GR00T SFT) → RL post-training (`train_gr00t_assemble_trocar.sh`) → Evaluation (`eval_assemble_trocar.py` / `policy_runner.py`) → Deployment (WebRTC + VLM agents via `triggered_policy_runner.py`)
 
-**ACT path:** VR teleoperation (AVP) → Record HDF5 (`record_demos.py`) → HDF5→LeRobot conversion → ACT IL training (`train_act_grasp_policy.sh`) → RL post-training (`train_act_grasp_policy.sh` via RLinf) → Evaluation (`eval_grasp_policy.py`)
+**ACT path (Dex3):** VR teleoperation (AVP) → Record HDF5 (`record_demos.py`) → HDF5→LeRobot conversion → ACT IL training (`train_act_grasp_policy_dex3.sh`) → RL post-training (`rl/train_act_grasp_policy_dex3.sh` via RLinf) → Evaluation (`eval_grasp_policy_dex3.py`)
+
+**ACT path (Inspire FTP):** VR teleoperation (AVP) → Record HDF5 → HDF5→LeRobot → ACT IL training (`train_act_grasp_policy_inspire.sh`) → Evaluation (`eval_act_inspire.py` / `eval_grasp_policy_inspire.py`)
 
 See `docs/grasp_policy_guide.md` for the complete ACT pipeline walkthrough.

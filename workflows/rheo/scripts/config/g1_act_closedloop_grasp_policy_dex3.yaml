@@ -33,5 +33,5 @@ sim_action_dim: 43     # Full robot: legs(12) + waist(3) + arms(14) + hands(14)
 target_image_size: [480, 640, 3]
 
 # Experiment config — defines which cameras and joint groups to use.
-# Points to the act_config.yaml that was used for training so eval matches.
-experiment_config_path: "../policy/act_config.yaml"
+# Points to the act_config_dex3.yaml that was used for training so eval matches.
+experiment_config_path: "../policy/act_config_dex3.yaml"

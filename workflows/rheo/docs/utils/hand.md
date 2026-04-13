@@ -267,7 +267,7 @@ Index  Joint
 > [`scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py`](../scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py)
 > lines 39–83 (action joint list).
 > Also
-> [`scripts/simulation/tasks/grasp_policy/g1_grasp_policy_env_cfg.py`](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_env_cfg.py)
+> [`scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py`](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py)
 > lines 41–85.
 
 **Note:** The 43D order above is the **env config / action space** order. The raw
@@ -618,7 +618,7 @@ downstream code (IL eval, RL converters, RL policy) doesn't hardcode dimensions.
 ### How It Works
 
 ```yaml
-# In act_config.yaml
+# In act_config_dex3.yaml
 experiment:
   cameras:
     front_camera: "observation.images.cam_room"
@@ -650,10 +650,10 @@ and the range mappings must change.**
 
 ```python
 # IL eval: from YAML path
-exp = ACTExperimentConfig.from_yaml("scripts/policy/act_config.yaml")
+exp = ACTExperimentConfig.from_yaml("scripts/policy/act_config_dex3.yaml")
 
 # RL training: from env var (set by launcher script)
-# export ACT_EXPERIMENT_CONFIG=scripts/policy/act_config.yaml
+# export ACT_EXPERIMENT_CONFIG=scripts/policy/act_config_dex3.yaml
 exp = ACTExperimentConfig.from_env_or_default()
 ```
 
@@ -690,8 +690,8 @@ tasks remain untouched.
 | `act_experiment_config.py` | `GROUP_SIZE` cannot be a single constant (arm=7, hand=6). Must support per-group sizing or define new group ranges for Inspire FTP hand. |
 | `act_closedloop_policy.py` | `sim_action_dim` = 41 (not 43). Scatter indices change. |
 | `obs_processor.py` | Hand observation is 12D (not 14D). `state_26d` replaces `state_28d`. |
-| `act_config.yaml` | New experiment section: 1 camera, hand groups with 6 DOF each. |
-| `g1_act_closedloop_grasp_policy.yaml` | `policy_action_dim: 26`, `sim_action_dim: 41`. |
+| `act_config_dex3.yaml` | New experiment section: 1 camera, hand groups with 6 DOF each. |
+| `g1_act_closedloop_grasp_policy_dex3.yaml` | `policy_action_dim: 26`, `sim_action_dim: 41`. |
 
 ### Mimic joint handling (simulation concern)
 

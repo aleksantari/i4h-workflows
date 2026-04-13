@@ -27,7 +27,7 @@ from isaaclab.utils import configclass
 from isaaclab_arena_g1.g1_env.mdp import g1_events as g1_events_mdp
 from isaaclab_arena_g1.g1_env.mdp.actions.g1_decoupled_wbc_pink_action import G1DecoupledWBCPinkAction
 from isaaclab_arena_g1.g1_env.mdp.actions.g1_decoupled_wbc_pink_action_cfg import G1DecoupledWBCPinkActionCfg
-from simulation.tasks.grasp_policy.g1_grasp_policy_env_cfg import G1GraspPolicyEnvCfg
+from simulation.tasks.grasp_policy.g1_grasp_policy_dex3_env_cfg import G1GraspPolicyEnvCfg
 from teleop_devices.handtracking import HandtrackingTeleopDevice
 from teleop_devices.motion_controllers import MotionControllersTeleopDevice
 

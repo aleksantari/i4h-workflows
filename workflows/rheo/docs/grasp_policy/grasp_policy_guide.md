@@ -78,7 +78,7 @@ The grasp_policy task registers a dedicated teleop environment
 > **Code:** Task registration in
 > [`scripts/simulation/tasks/grasp_policy/__init__.py`](../scripts/simulation/tasks/grasp_policy/__init__.py).
 > Teleop environment config in
-> [`scripts/simulation/tasks/grasp_policy/g1_grasp_policy_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_teleop_env_cfg.py).
+> [`scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_teleop_env_cfg.py).
 
 ### How It Works
 
@@ -272,11 +272,11 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 > Conversion script:
 > [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py).
 > Dataset config:
-> [`scripts/config/g1_grasp_policy_dataset.yaml`](../scripts/config/g1_grasp_policy_dataset.yaml).
+> [`scripts/config/g1_grasp_policy__dex3_dataset.yaml`](../scripts/config/g1_grasp_policy__dex3_dataset.yaml).
 > Field mappings (28D extraction):
 > [`scripts/utils/assemble_trocar_lerobot_fields.py`](../scripts/utils/assemble_trocar_lerobot_fields.py).
 > Modality definition:
-> [`scripts/simulation/tasks/grasp_policy/modality_grasp_policy.json`](../scripts/simulation/tasks/grasp_policy/modality_grasp_policy.json).
+> [`scripts/simulation/tasks/grasp_policy/modality_grasp_policy_dex3.json`](../scripts/simulation/tasks/grasp_policy/modality_grasp_policy_dex3.json).
 
 ### 28D Canonical Joint Order
 
@@ -344,22 +344,22 @@ pipeline.
 
 > **Code:**
 > Training launcher:
-> [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh).
+> [`scripts/policy/train_act_grasp_policy_dex3.sh`](../scripts/policy/train_act_grasp_policy_dex3.sh).
 > Training config:
-> [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml).
+> [`scripts/policy/act_config_dex3.yaml`](../scripts/policy/act_config_dex3.yaml).
 
 ### Quick Start
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    bash scripts/policy/train_act_grasp_policy.sh \
+    bash scripts/policy/train_act_grasp_policy_dex3.sh \
     --dataset_path /datasets/grasp_policy_lerobot
 ```
 
 ### Training Configuration
 
 Key parameters from
-[`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml):
+[`scripts/policy/act_config_dex3.yaml`](../scripts/policy/act_config_dex3.yaml):
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
@@ -386,17 +386,17 @@ Key parameters from
 
 ```bash
 # Smaller model for faster iteration
-bash scripts/policy/train_act_grasp_policy.sh \
+bash scripts/policy/train_act_grasp_policy_dex3.sh \
     --dataset_path /datasets/grasp_policy_lerobot \
     policy.dim_model=256 policy.n_heads=4 training.batch_size=32
 
 # Shorter training run
-bash scripts/policy/train_act_grasp_policy.sh \
+bash scripts/policy/train_act_grasp_policy_dex3.sh \
     --dataset_path /datasets/grasp_policy_lerobot \
     training.offline_steps=50000
 
 # Resume from checkpoint
-bash scripts/policy/train_act_grasp_policy.sh \
+bash scripts/policy/train_act_grasp_policy_dex3.sh \
     --dataset_path /datasets/grasp_policy_lerobot \
     --resume_path /models/act_grasp_policy/checkpoint_50000
 ```
@@ -506,13 +506,13 @@ Fine-tune the IL-trained ACT checkpoint with PPO reinforcement learning in simul
 
 > **Code:**
 > RL launcher:
-> [`scripts/simulation/rl/train_act_grasp_policy.sh`](../scripts/simulation/rl/train_act_grasp_policy.sh).
+> [`scripts/simulation/rl/train_act_grasp_policy_dex3.sh`](../scripts/simulation/rl/train_act_grasp_policy_dex3.sh).
 > Top-level config:
-> [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml).
+> [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml).
 > Model config:
 > [`scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_dex3.yaml).
 > Env config:
-> [`scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy.yaml).
+> [`scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_dex3.yaml).
 > RLinf ACT wrapper:
 > [`scripts/simulation/rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py).
 > Extension registration:
@@ -542,14 +542,14 @@ registers:
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    bash scripts/simulation/rl/train_act_grasp_policy.sh train \
+    bash scripts/simulation/rl/train_act_grasp_policy_dex3.sh train \
     --model_path /models/act_grasp_policy
 ```
 
 ### PPO Configuration
 
 Key parameters from the
-[top-level config](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml):
+[top-level config](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml):
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
@@ -573,17 +573,17 @@ lift --> transport --> place.
 
 ```bash
 # Fewer environments (lower VRAM)
-bash scripts/simulation/rl/train_act_grasp_policy.sh train \
+bash scripts/simulation/rl/train_act_grasp_policy_dex3.sh train \
     --model_path /models/act_grasp_policy \
     env.train.total_num_envs=16 env.eval.total_num_envs=4
 
 # Longer training
-bash scripts/simulation/rl/train_act_grasp_policy.sh train \
+bash scripts/simulation/rl/train_act_grasp_policy_dex3.sh train \
     --model_path /models/act_grasp_policy \
     runner.max_epochs=2000
 
 # Resume from RL checkpoint
-bash scripts/simulation/rl/train_act_grasp_policy.sh train \
+bash scripts/simulation/rl/train_act_grasp_policy_dex3.sh train \
     --model_path /models/act_grasp_policy \
     runner.resume_dir=/path/to/rl_checkpoint
 ```
@@ -613,11 +613,11 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 
 > **Code:**
 > Evaluation script:
-> [`scripts/simulation/examples/eval_grasp_policy.py`](../scripts/simulation/examples/eval_grasp_policy.py).
+> [`scripts/simulation/examples/eval_grasp_policy_dex3.py`](../scripts/simulation/examples/eval_grasp_policy_dex3.py).
 > ACT policy wrapper:
 > [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py).
 > Policy config:
-> [`scripts/config/g1_act_closedloop_grasp_policy.yaml`](../scripts/config/g1_act_closedloop_grasp_policy.yaml).
+> [`scripts/config/g1_act_closedloop_grasp_policy_dex3.yaml`](../scripts/config/g1_act_closedloop_grasp_policy_dex3.yaml).
 > Shared base class:
 > [`scripts/simulation/base_closedloop_policy.py`](../scripts/simulation/base_closedloop_policy.py).
 > Observation processor:
@@ -627,7 +627,7 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy.py \
+    python scripts/simulation/examples/eval_grasp_policy_dex3.py \
     --policy_type act \
     --model_path /models/act_grasp_policy \
     --num_episodes 10 \
@@ -638,7 +638,7 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy.py \
+    python scripts/simulation/examples/eval_grasp_policy_dex3.py \
     --policy_type act \
     --model_path /path/to/rl_checkpoint \
     --num_episodes 20 \
@@ -649,14 +649,14 @@ Evaluate trained ACT checkpoints (IL or RL) in simulation.
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy.py \
+    python scripts/simulation/examples/eval_grasp_policy_dex3.py \
     --policy_type gr00t \
     --model_path /models/gr00t_grasp_policy \
     --num_episodes 10
 
 # GR00T RL checkpoint (requires --rl_ckpt flag)
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy.py \
+    python scripts/simulation/examples/eval_grasp_policy_dex3.py \
     --policy_type gr00t \
     --model_path /path/to/gr00t_rl_ckpt \
     --rl_ckpt \
@@ -669,7 +669,7 @@ Verify the eval pipeline works without a trained model:
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy.py --test
+    python scripts/simulation/examples/eval_grasp_policy_dex3.py --test
 ```
 
 ### CLI Arguments
@@ -759,15 +759,15 @@ eval_videos/<timestamp>_act_<model>_*.mp4        # Videos (if --save_video)
 | **Data Config** | [`scripts/config/g1_grasp_policy_dataset.yaml`](../scripts/config/g1_grasp_policy_dataset.yaml) | HDF5-to-LeRobot config |
 | **Data Conversion** | [`scripts/utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | HDF5-to-LeRobot converter |
 | **Field Mapping** | [`scripts/utils/assemble_trocar_lerobot_fields.py`](../scripts/utils/assemble_trocar_lerobot_fields.py) | 28D joint extraction |
-| **IL Config** | [`scripts/policy/act_config.yaml`](../scripts/policy/act_config.yaml) | ACT training hyperparams |
-| **IL Launcher** | [`scripts/policy/train_act_grasp_policy.sh`](../scripts/policy/train_act_grasp_policy.sh) | ACT IL training script |
-| **RL Launcher** | [`scripts/simulation/rl/train_act_grasp_policy.sh`](../scripts/simulation/rl/train_act_grasp_policy.sh) | ACT RL training script |
-| **RL Config** | [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml) | PPO + env config |
+| **IL Config** | [`scripts/policy/act_config_dex3.yaml`](../scripts/policy/act_config_dex3.yaml) | ACT training hyperparams |
+| **IL Launcher** | [`scripts/policy/train_act_grasp_policy_dex3.sh`](../scripts/policy/train_act_grasp_policy_dex3.sh) | ACT IL training script |
+| **RL Launcher** | [`scripts/simulation/rl/train_act_grasp_policy_dex3.sh`](../scripts/simulation/rl/train_act_grasp_policy_dex3.sh) | ACT RL training script |
+| **RL Config** | [`scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml) | PPO + env config |
 | **RL Model** | [`scripts/simulation/rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACTForRLActionPrediction wrapper |
 | **RL Extension** | [`scripts/simulation/rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py) | Model/env/converter registration |
-| **Eval Script** | [`scripts/simulation/examples/eval_grasp_policy.py`](../scripts/simulation/examples/eval_grasp_policy.py) | Unified eval entry point |
+| **Eval Script** | [`scripts/simulation/examples/eval_grasp_policy_dex3.py`](../scripts/simulation/examples/eval_grasp_policy_dex3.py) | Unified eval entry point |
 | **Eval Policy** | [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACT closed-loop wrapper |
-| **Eval Config** | [`scripts/config/g1_act_closedloop_grasp_policy.yaml`](../scripts/config/g1_act_closedloop_grasp_policy.yaml) | ACT inference config |
+| **Eval Config** | [`scripts/config/g1_act_closedloop_grasp_policy_dex3.yaml`](../scripts/config/g1_act_closedloop_grasp_policy_dex3.yaml) | ACT inference config |
 | **Base Policy** | [`scripts/simulation/base_closedloop_policy.py`](../scripts/simulation/base_closedloop_policy.py) | Action chunking base class |
 | **Obs Processor** | [`scripts/simulation/obs_processor.py`](../scripts/simulation/obs_processor.py) | Model-agnostic obs extraction |
 

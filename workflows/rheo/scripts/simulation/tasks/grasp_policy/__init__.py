@@ -15,13 +15,13 @@
 
 import gymnasium as gym
 
-from . import g1_grasp_policy_env_cfg, g1_grasp_policy_teleop_env_cfg
+from . import g1_grasp_policy_dex3_env_cfg, g1_grasp_policy_dex3_teleop_env_cfg
 
 # RL training environment (random block placement)
 gym.register(
     id="Isaac-Grasp-Policy-G129-Dex3-Joint",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    kwargs={"env_cfg_entry_point": g1_grasp_policy_env_cfg.G1GraspPolicyEnvCfg},
+    kwargs={"env_cfg_entry_point": g1_grasp_policy_dex3_env_cfg.G1GraspPolicyEnvCfg},
     disable_env_checker=True,
 )
 
@@ -29,7 +29,7 @@ gym.register(
 gym.register(
     id="Isaac-Grasp-Policy-G129-Dex3-Joint-Eval",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    kwargs={"env_cfg_entry_point": g1_grasp_policy_env_cfg.G1GraspPolicyEvalEnvCfg},
+    kwargs={"env_cfg_entry_point": g1_grasp_policy_dex3_env_cfg.G1GraspPolicyEvalEnvCfg},
     disable_env_checker=True,
 )
 
@@ -37,6 +37,6 @@ gym.register(
 gym.register(
     id="Isaac-Grasp-Policy-G129-Dex3-Teleop",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    kwargs={"env_cfg_entry_point": g1_grasp_policy_teleop_env_cfg.G1GraspPolicyTeleopEnvCfg},
+    kwargs={"env_cfg_entry_point": g1_grasp_policy_dex3_teleop_env_cfg.G1GraspPolicyTeleopEnvCfg},
     disable_env_checker=True,
 )

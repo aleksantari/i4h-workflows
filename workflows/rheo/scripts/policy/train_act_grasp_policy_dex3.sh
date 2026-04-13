@@ -15,29 +15,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ACT IL Training on grasp_policy task
-# Usage: bash train_act_grasp_policy.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
+# ACT IL Training on grasp_policy task (Dex3 variant)
+# Usage: bash train_act_grasp_policy_dex3.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
 #
 # This script trains an ACT (Action Chunking Transformer) policy using LeRobot's
-# native training pipeline on demonstration data from the grasp_policy task.
+# native training pipeline on demonstration data from the Dex3 grasp_policy task.
 #
 # Examples:
 #   # Train with default settings
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot
+#   bash train_act_grasp_policy_dex3.sh --dataset_path /datasets/grasp_policy_dex3_lerobot
 #
 #   # Train with custom batch size and steps
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot \
+#   bash train_act_grasp_policy_dex3.sh --dataset_path /datasets/grasp_policy_dex3_lerobot \
 #       --steps 50000 --batch_size 32
 #
 #   # Resume from checkpoint
-#   bash train_act_grasp_policy.sh --dataset_path /datasets/grasp_policy_lerobot \
-#       --resume_path /models/act_grasp_policy/checkpoint_50000
+#   bash train_act_grasp_policy_dex3.sh --dataset_path /datasets/grasp_policy_dex3_lerobot \
+#       --resume_path /models/act_grasp_policy_dex3/checkpoint_50000
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="/workspaces"
-CONFIG_PATH="${SCRIPT_DIR}/act_config.yaml"
+CONFIG_PATH="${SCRIPT_DIR}/act_config_dex3.yaml"
 
 # Parse arguments
 DATASET_PATH=""
@@ -86,7 +86,7 @@ fi
 
 # Setup logging directory (only create parent — LeRobot requires output_dir to NOT exist)
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy/train_${TIMESTAMP}"
+OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy_dex3/train_${TIMESTAMP}"
 mkdir -p "$(dirname "${OUTPUT_DIR}")"
 
 # Strip the custom 'experiment:' section — LeRobot's TrainPipelineConfig
@@ -106,7 +106,7 @@ with open('${FILTERED_CONFIG}', 'w') as f:
 # dataset.root = local path on disk, dataset.repo_id = simple identifier (not a path)
 CMD_ARGS=(
     --config_path "${FILTERED_CONFIG}"
-    --dataset.repo_id grasp_policy
+    --dataset.repo_id grasp_policy_dex3
     --dataset.root "${DATASET_PATH}"
     --dataset.video_backend pyav
     --output_dir "${OUTPUT_DIR}"
@@ -183,7 +183,7 @@ print(f'Generated episodes_stats.jsonl for {num_episodes} episodes')
 fi
 
 echo "========================================"
-echo "ACT IL Training: grasp_policy"
+echo "ACT IL Training: grasp_policy (Dex3)"
 echo "========================================"
 echo "Dataset: ${DATASET_PATH}"
 echo "Output: ${OUTPUT_DIR}"

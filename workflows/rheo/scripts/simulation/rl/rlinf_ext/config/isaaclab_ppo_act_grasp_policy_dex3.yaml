@@ -1,6 +1,6 @@
 defaults:
-  - env/isaaclab_grasp_policy@env.train
-  - env/isaaclab_grasp_policy@env.eval
+  - env/isaaclab_grasp_policy_dex3@env.train
+  - env/isaaclab_grasp_policy_dex3@env.eval
   - model/act_dex3@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
@@ -22,7 +22,7 @@ runner:
   logger:
     log_path: "../results"
     project_name: rlinf
-    experiment_name: "act_grasp_policy"
+    experiment_name: "act_grasp_policy_dex3"
     logger_backends: ["tensorboard"]
 
   max_epochs: 1000

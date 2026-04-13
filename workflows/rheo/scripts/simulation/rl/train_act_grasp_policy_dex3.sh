@@ -15,8 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ACT RL Post-training / Evaluation on Grasp-Policy task
-# Usage: bash train_act_grasp_policy.sh [MODE] [OPTIONS] [HYDRA_OVERRIDES...]
+# ACT RL Post-training / Evaluation on Grasp-Policy task (Dex3 variant)
+# Usage: bash train_act_grasp_policy_dex3.sh [MODE] [OPTIONS] [HYDRA_OVERRIDES...]
 #
 # Modes:
 #   train (default)  - Run RL post-training
@@ -24,14 +24,14 @@
 #
 # Examples:
 #   # Training (requires --model_path)
-#   bash train_act_grasp_policy.sh train --model_path /models/act_grasp_policy
+#   bash train_act_grasp_policy_dex3.sh train --model_path /models/act_grasp_policy_dex3
 #
 #   # Training with custom env scale
-#   bash train_act_grasp_policy.sh train --model_path /models/act_grasp_policy \
+#   bash train_act_grasp_policy_dex3.sh train --model_path /models/act_grasp_policy_dex3 \
 #       env.train.total_num_envs=32 env.eval.total_num_envs=4
 #
 #   # Evaluation of ACT-RL checkpoint
-#   bash train_act_grasp_policy.sh eval --model_path /path/to/rl_ckpt
+#   bash train_act_grasp_policy_dex3.sh eval --model_path /path/to/rl_ckpt
 
 set -e
 
@@ -39,7 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="/workspaces"
 RLINF_PATH="${WORKSPACE_ROOT}/third_party/RLinf"
 CONFIG_PATH="${WORKSPACE_ROOT}/workflows/rheo/scripts/simulation/rl/rlinf_ext/config"
-CONFIG_NAME="isaaclab_ppo_act_grasp_policy"
+CONFIG_NAME="isaaclab_ppo_act_grasp_policy_dex3"
 
 # Default mode
 MODE="train"
@@ -119,7 +119,7 @@ fi
 
 # Setup logging directory with timestamp
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-LOG_DIR="${SCRIPT_DIR}/results/act_grasp_policy/${MODE}_${TIMESTAMP}"
+LOG_DIR="${SCRIPT_DIR}/results/act_grasp_policy_dex3/${MODE}_${TIMESTAMP}"
 LOG_FILE="${LOG_DIR}/${MODE}.log"
 mkdir -p "${LOG_DIR}"
 
@@ -127,7 +127,7 @@ mkdir -p "${LOG_DIR}"
 HYDRA_OVERRIDES+=("runner.logger.log_path=${LOG_DIR}")
 
 echo "========================================"
-echo "ACT RL ${MODE_DISPLAY}: Grasp-Policy"
+echo "ACT RL ${MODE_DISPLAY}: Grasp-Policy (Dex3)"
 echo "========================================"
 echo "Mode: ${MODE}"
 echo "Model Path: ${MODEL_PATH}"

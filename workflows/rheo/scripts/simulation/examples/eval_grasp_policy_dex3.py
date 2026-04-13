@@ -14,19 +14,19 @@
 # limitations under the License.
 
 """
-Evaluate a trained policy (GR00T or ACT) on the grasp_policy task.
+Evaluate a trained policy (GR00T or ACT) on the Dex3 grasp_policy task.
 
 Supports both GR00T and ACT closed-loop policies via --policy_type flag.
 
 Usage:
     # GR00T evaluation
-    python eval_grasp_policy.py --policy_type gr00t --model_path /models/gr00t_ckpt
+    python eval_grasp_policy_dex3.py --policy_type gr00t --model_path /models/gr00t_ckpt
 
     # ACT evaluation
-    python eval_grasp_policy.py --policy_type act --model_path /models/act_grasp_policy
+    python eval_grasp_policy_dex3.py --policy_type act --model_path /models/act_grasp_policy_dex3
 
     # Test mode (dummy policy, no checkpoint needed)
-    python eval_grasp_policy.py --test
+    python eval_grasp_policy_dex3.py --test
 """
 
 import argparse

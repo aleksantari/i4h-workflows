@@ -527,7 +527,7 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 | **Teleop action dim** | 38 (PinkIK) | 23 (WBC+PINK) |
 | **Teleop hand control** | Full dex-retargeting (DexPilot IK) | Binary gripper (pinch) |
 | **Action class** | `InspireFTPJointPositionActionCfg` | `JointPositionActionCfg` |
-| **Eval script** | `eval_grasp_policy.py` (shared) | `eval_grasp_policy.py` (shared) |
+| **Eval script** | `eval_grasp_policy_inspire.py` / `eval_act_inspire.py` | `eval_grasp_policy_dex3.py` |
 | **Reward/termination/events** | Shared (`grasp_policy/mdp/`) | Same files |
 
 ---

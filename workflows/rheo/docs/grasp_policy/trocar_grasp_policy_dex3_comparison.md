@@ -178,9 +178,9 @@ Both use `convert_hdf5_to_lerobot.py` with the `use_rheo_converter: true` path a
 
 | Field | Assemble Trocar | Grasp Policy |
 |-------|----------------|--------------|
-| Config file | `g1_assemble_trocar_dataset.yaml` | `g1_grasp_policy_dataset.yaml` |
+| Config file | `g1_assemble_trocar_dataset.yaml` | `g1_grasp_policy__dex3_dataset.yaml` |
 | Language instruction | "install trocar from box" | "pick up block and place in bin" |
-| Modality template | `modality_assemble_trocar.json` | `modality_grasp_policy.json` |
+| Modality template | `modality_assemble_trocar.json` | `modality_grasp_policy_dex3.json` |
 
 The modality JSON files are **identical in structure** (same 28D state/action grouping, same camera keys). Only the language annotation differs.
 
@@ -237,7 +237,7 @@ The modality JSON files are **identical in structure** (same 28D state/action gr
 |-----------|-------|
 | Model | ACT (Action Chunking Transformer, CVAE) |
 | Framework | LeRobot training pipeline |
-| Config | `act_config.yaml` |
+| Config | `act_config_dex3.yaml` |
 | Chunk size | 100 steps |
 | Observation steps | 1 |
 | Offline steps | 100,000 |
@@ -293,8 +293,8 @@ Both use **RLinf PPO** with chunk-level reward/logprob/entropy computation. Both
 
 | Parameter | Value |
 |-----------|-------|
-| Script | `train_act_grasp_policy.sh` (in `rl/`) |
-| Config | `isaaclab_ppo_act_grasp_policy.yaml` |
+| Script | `train_act_grasp_policy_dex3.sh` (in `rl/`) |
+| Config | `isaaclab_ppo_act_grasp_policy_dex3.yaml` |
 | Model | ACT with `ValueHead` (MLP: latent -> 256 -> 1) |
 | Env wrapper | `IsaaclabGraspPolicyEnv` |
 | Train envs | 64 |
@@ -332,7 +332,7 @@ Both use **RLinf PPO** with chunk-level reward/logprob/entropy computation. Both
 
 ### Grasp Policy
 
-- **Script**: `eval_grasp_policy.py`
+- **Script**: `eval_grasp_policy_dex3.py`
 - **Policy wrapper**: `ACTClosedloopPolicy` (in `act_closedloop_policy.py`) or `CustomGr00tClosedloopPolicy`
 - **Policy types**: `--policy_type {gr00t, act, test}`
 - **RL checkpoint flag**: Not needed for ACT
@@ -425,14 +425,14 @@ AVP Hand Tracking              ACT IL (LeRobot)     RLinf PPO
   [generate_dataset.py] (TODO)      |                    |
      |                              |                    |
   convert_hdf5_to_lerobot.py -----> |                    |
-  (28D state/action)           train_act_grasp_policy.sh |
-                               (lerobot.scripts.train)   |
-                                    |                    |
-                               ACT ckpt -------> train_act_grasp_policy.sh (rl/)
-                                                         |
-                                                    RL ckpt
-                                                         |
-                                              eval_grasp_policy.py (--policy_type act)
+  (28D state/action)           train_act_grasp_policy_dex3.sh |
+                               (lerobot.scripts.train)        |
+                                    |                         |
+                               ACT ckpt -------> rl/train_act_grasp_policy_dex3.sh
+                                                              |
+                                                         RL ckpt
+                                                              |
+                                              eval_grasp_policy_dex3.py (--policy_type act)
 ```
 
 Steps marked `[TODO]` have generic tooling available but haven't been configured for grasp_policy yet.

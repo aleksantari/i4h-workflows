@@ -33,9 +33,9 @@
 |----------|-----------|-------|
 | **Dex3 grasp task** | `tasks/grasp_policy/` (full MDP: env_cfg, teleop_cfg, observations, rewards, events, terminations) | Mar 28 |
 | **Inspire FTP task** | `tasks/grasp_policy_inspire/` (full MDP + `mimic_action.py` + `config/robot_config.py`) | Apr 2 |
-| **Eval scripts** | `examples/eval_grasp_policy.py`, `examples/eval_grasp_policy_inspire.py` | Mar 28, Apr 2 |
+| **Eval scripts** | `examples/eval_grasp_policy_dex3.py`, `examples/eval_grasp_policy_inspire.py`, `examples/eval_act_inspire.py` | Mar 28, Apr 2 |
 | **Policy infra** | `base_closedloop_policy.py`, `act_closedloop_policy.py`, `obs_processor.py` | Mar 28 |
-| **ACT training** | `policy/act_config.yaml`, `policy/act_config_inspire_ftp.yaml`, `policy/train_act_grasp_policy.sh` | Mar 28-Apr 3 |
+| **ACT training** | `policy/act_config_dex3.yaml`, `policy/act_config_inspire_ftp.yaml`, `policy/train_act_grasp_policy_dex3.sh`, `policy/train_act_grasp_policy_inspire.sh` | Mar 28-Apr 3 |
 | **Recording** | `record_demos.py` (unified), `replay_demos_isaaclab.py` | Mar 31 |
 | **Hand tracking** | `teleop_devices/handtracking.py` (AVP + DexPilot IK) | Mar 27 |
 | **Docker grasp** | `Dockerfile.grasp`, `run_docker_grasp.sh` | Apr 2 |
@@ -45,11 +45,11 @@
 | **Dex3 utils** | `utils/act_experiment_config.py`, `utils/assemble_trocar_lerobot_fields.py`, `utils/extended_dataset_config.py` | Mar 28 |
 | **Dataset conversion** | `utils/convert_hdf5_to_lerobot.py` | Mar 31 |
 | **Inspire configs** | `config/g1_grasp_policy_inspire_dataset.yaml` | Apr 2 |
-| **Dex3 configs** | `config/g1_act_closedloop_grasp_policy.yaml`, `config/g1_grasp_policy_dataset.yaml` | Mar 28 |
+| **Dex3 configs** | `config/g1_act_closedloop_grasp_policy_dex3.yaml`, `config/g1_grasp_policy__dex3_dataset.yaml` | Mar 28 |
 | **RLinf Inspire** | `rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`, `rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`, `rl/rlinf_ext/config/model/act_inspire_ftp.yaml` | Apr 4 |
-| **RLinf Dex3** | `rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy.yaml`, `rl/rlinf_ext/config/env/isaaclab_grasp_policy.yaml`, `rl/rlinf_ext/config/model/act_dex3.yaml` | Mar 28 |
+| **RLinf Dex3** | `rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_dex3.yaml`, `rl/rlinf_ext/config/env/isaaclab_grasp_policy_dex3.yaml`, `rl/rlinf_ext/config/model/act_dex3.yaml` | Mar 28 |
 | **RLinf ACT wrapper** | `rl/rlinf_ext/act_policy.py` (ACT + ValueHead for RL critic) | Apr 4 |
-| **RL training** | `rl/train_act_grasp_policy.sh` | Apr 4 |
+| **RL training** | `rl/train_act_grasp_policy_dex3.sh` | Apr 4 |
 | **Datasets** | `datasets/grasp_policy/`, `datasets/inspire_ftp/`, `datasets/inspire_ftp_new/` | Mar 31-Apr 5 |
 | **Docs** | `docs/grasp_policy/` (5 guides), `docs/utils/avp_teleoperation.md`, `docs/utils/hand.md` | Apr 2-5 |
 
@@ -108,7 +108,7 @@ grasp_policy_inspire/ owns independently:
 
 #### MEDIUM - Eval Script Duplication
 
-- **What**: `eval_grasp_policy.py` (284 lines) and `eval_grasp_policy_inspire.py` (283 lines) share approximately 90% identical code.
+- **What**: `eval_grasp_policy_dex3.py` (284 lines) and `eval_grasp_policy_inspire.py` (283 lines) share approximately 90% identical code.
 - **Risk**: Fixing a bug in eval logic requires updating both files.
 - **Recommendation**: Extract the shared eval loop, video recording, and results reporting into `examples/utils.py` (which already exists). Each eval script becomes a thin wrapper (approximately 50 lines) with task-specific argument defaults and policy loading.
 
@@ -159,7 +159,7 @@ grasp_policy_inspire/ owns independently:
 
 ## 5. Actionable Recommendations (Priority Order)
 
-1. **Add tests for grasp tasks** -- A `test_eval_grasp_policy.py` that runs `--test` mode (dummy policy smoketest) would catch regressions early. Follows the existing `test_integration_eval_assemble_trocar.py` pattern. Both Dex3 and Inspire should have one.
+1. **Add tests for grasp tasks** -- A `test_eval_grasp_policy_dex3.py` (+ matching `_inspire.py`) that runs `--test` mode (dummy policy smoketest) would catch regressions early. Follows the existing `test_integration_eval_assemble_trocar.py` pattern.
 
 2. **Break the trocar import dependency** -- Copy `CameraBaseCfg`, `CameraPresets`, `G1RobotPresets`, and `get_robot_body_joint_states` into `grasp_policy/` modules (approximately 50 lines). Our tasks become fully independent of trocar internals.
 

@@ -19,7 +19,7 @@ Single source of truth for which cameras and joint groups the ACT pipeline uses.
 All downstream consumers (IL eval, RL obs/action converters, RL policy wrapper)
 import from here instead of hardcoding camera maps and joint slices.
 
-The ``experiment:`` section in ``act_config.yaml`` defines the selection.  The
+The ``experiment:`` section in ``act_config_dex3.yaml`` defines the selection.  The
 default (all 3 cameras, all 4 joint groups = 28 DOF) reproduces the original
 hardcoded behaviour exactly.
 """

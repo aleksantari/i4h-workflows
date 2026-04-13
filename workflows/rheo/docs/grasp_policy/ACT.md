@@ -14,8 +14,8 @@ in the rheo workflow. For step-by-step usage instructions, see
 > 26D policy → 41D sim action, surgical tool pickup). An earlier revision of
 > this doc targeted the original Dex3-hand block-grasping task. The Dex3
 > codepath still exists (see [`act_experiment_config.py`](../../scripts/utils/act_experiment_config.py),
-> [`act_config.yaml`](../../scripts/policy/act_config.yaml),
-> [`train_act_grasp_policy.sh`](../../scripts/policy/train_act_grasp_policy.sh)),
+> [`act_config_dex3.yaml`](../../scripts/policy/act_config_dex3.yaml),
+> [`train_act_grasp_policy_dex3.sh`](../../scripts/policy/train_act_grasp_policy_dex3.sh)),
 > but it is not the active focus and is not documented here.
 
 ---

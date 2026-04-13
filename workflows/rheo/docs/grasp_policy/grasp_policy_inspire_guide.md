@@ -538,7 +538,7 @@ Train an ACT policy on the converted LeRobot dataset.
 ### Key Differences from Dex3 Config
 
 The Inspire FTP config (`act_config_inspire_ftp.yaml`) differs from the Dex3 config
-(`act_config.yaml`) in:
+(`act_config_dex3.yaml`) in:
 
 - **`experiment.cameras`**: Front camera only (no wrist cameras)
 - **`experiment.joint_groups`**: Hand groups have 6 DOF (not 7)
