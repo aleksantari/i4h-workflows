@@ -79,7 +79,12 @@ import gymnasium as gym  # noqa: E402
 import isaaclab.sim as sim_utils  # noqa: E402
 import torch  # noqa: E402
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg  # noqa: E402
-from simulation.examples.utils import _MultiViewConcatWriter, check_success, set_viewport_camera  # noqa: E402
+from simulation.examples.utils import (  # noqa: E402
+    _MultiViewConcatWriter,
+    _apply_cfg_default_pose,
+    check_success,
+    set_viewport_camera,
+)
 from simulation.tasks import grasp_policy_inspire  # noqa: F401
 
 
@@ -191,6 +196,14 @@ def main():
         print(f"{'=' * 60}")
 
         obs, _ = env.reset()
+        # reset_scene_to_default writes joint state but NOT joint targets,
+        # so PD targets from the previous episode persist. Force defaults,
+        # settle physics, and refresh the observation buffer.
+        _apply_cfg_default_pose(env, settle_steps=20, allow_sim_steps=True)
+        if hasattr(env, "get_observations"):
+            obs = env.get_observations()
+        elif hasattr(env, "_get_observations"):
+            obs = env._get_observations()
         policy.reset()
         action_buffer = []
         total_reward = 0.0

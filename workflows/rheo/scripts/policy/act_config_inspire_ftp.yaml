@@ -79,7 +79,7 @@ policy:
   use_vae: true
   latent_dim: 32
   n_vae_encoder_layers: 2
-  kl_weight: 10.0
+  kl_weight: 1
 
   # Input features (26D: left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6))
   input_features:
