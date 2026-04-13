@@ -403,6 +403,14 @@ class G1GraspPolicyInspireEnvCfg(ManagerBasedRLEnvCfg):
 
 @configclass
 class G1GraspPolicyInspireEvalEnvCfg(G1GraspPolicyInspireEnvCfg):
-    """Eval variant — deterministic block placement per env index."""
+    """Eval variant — deterministic block placement (no XY / yaw noise).
 
-    pass
+    Inherits everything from the RL config but zeros the reset noise so
+    checkpoint comparisons see the exact same initial block pose on every
+    episode. Used by RLinf eval rollouts and (optionally) the IL eval script.
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.events.reset_block_position.params["xy_noise"] = (0.0, 0.0)
+        self.events.reset_block_position.params["yaw_noise_deg"] = (0.0, 0.0)
