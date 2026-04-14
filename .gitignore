@@ -151,6 +151,9 @@ venv.bak/
 # Robot assets (URDF, meshes)
 workflows/rheo/assets/
 
+# Training results (checkpoints, logs, optimizer state)
+**/rl/results/
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -212,6 +215,8 @@ wandb/
 **/output/*
 **/outputs/*
 **/videos/*
+**/eval_results/*
+**/eval_videos/*
 **/runs/*
 **/logs/*
 **/recordings/*

@@ -633,6 +633,8 @@ The RLinf extension module has full Inspire FTP support:
 - ACT obs/action converters (`act_inspire_ftp`) for 26D policy <-> 41D sim mapping
 - Gym IDs registered: `Isaac-Grasp-Policy-G129-InspireFTP-Joint` and `-Joint-Eval`
 
+> **Note (2026-04-13):** `-Joint-Eval` is now truly deterministic — `G1GraspPolicyInspireEvalEnvCfg.__post_init__` zeros `xy_noise` and `yaw_noise_deg` on `reset_block_position`, so every episode sees the identical block pose. Previously it was a `pass` stub that inherited the RL noise. `eval_act_inspire.py` still defaults to `-Joint`; future work: add a `--deterministic` flag (or switch the default) so the IL eval can select `-Joint-Eval` for checkpoint sweeps where you want variance to come from (tool, slot) grids instead of reset noise.
+
 > **Code:**
 > [`scripts/simulation/rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py)
 > — Inspire env wrapper (lines 565-636), ACT converters (lines 644-705).

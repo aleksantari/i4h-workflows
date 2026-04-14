@@ -107,10 +107,33 @@ joint_pos = mdp.InspireFTPJointPositionActionCfg(
   reaches the articulation. Source:
   [env_cfg.py:112-115](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115).
   This is the **−0.3 side** of the elbow offset chain.
-- **Mimic joints** (12 passive) are driven inside `apply_actions()` in
-  [`mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py):
-  finger `_2` = `1.0843×` proximal (`_1`), thumb chain uses `0.8024` and
-  `0.9487` multipliers. You never command these — the env owns them.
+- **Mimic joints (12 passive)** are driven inside
+  [`InspireFTPJointPositionAction.apply_actions()`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
+  They are **not part of the 41D action** — the action manager commands only
+  the 12 actuated hand joints (`*_{index,middle,ring,little}_1_joint`,
+  `*_thumb_1_joint`, `*_thumb_2_joint`), and mimic targets are derived from
+  those as a second phase inside `apply_actions()`.
+
+  Multipliers (from the real Inspire FTP URDF `<mimic>` tags):
+
+  | Mimic joint | Parent | Multiplier |
+  |---|---|---|
+  | `*_{index,middle,ring,little}_2_joint` | `*_{…}_1_joint` | `1.0843` |
+  | `*_thumb_3_joint` | `*_thumb_2_joint` | `0.8024` |
+  | `*_thumb_4_joint` | `*_thumb_3_joint` *(itself a mimic)* | `0.9487` |
+
+  **`MIMIC_RULES` list order is load-bearing** for the thumb chain: `thumb_3`
+  must be computed before `thumb_4` because `thumb_4`'s parent is itself a
+  mimic joint, not an action-tensor entry. The action class handles this by
+  tagging each rule as `"action"` or `"mimic"` source in `_mimic_parent_info`.
+  Reordering `_MIMIC_RULES_PER_SIDE` alphabetically silently zeros the distal
+  thumb segment.
+
+  **Do not bypass `InspireFTPJointPositionAction`.** If you write joint
+  targets directly to the articulation (e.g. a debug script that calls
+  `robot.set_joint_position_target` against `_MIMIC_JOINT_NAMES` by hand),
+  you lose mimic enforcement and grasps collapse. Same "don't bypass the
+  action manager" rule as the elbow offset, for a different reason.
 
 ### Observation space — `obs["policy"]`
 
