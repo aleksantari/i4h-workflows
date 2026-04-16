@@ -40,9 +40,11 @@ from tqdm import tqdm
 from utils.assemble_trocar_lerobot_fields import STATE_28_NAMES_ENV_ORDER, convert_g1_state_action_to_lerobot_28d
 from utils.extended_dataset_config import ExtendedDatasetConfig
 from utils.inspire_ftp_lerobot_fields import (
+    STATE_13_LEFT_NAMES_ENV_ORDER,
     STATE_13_NAMES_ENV_ORDER,
     STATE_26_NAMES_ENV_ORDER,
     convert_g1_state_action_to_lerobot_13d,
+    convert_g1_state_action_to_lerobot_13d_left,
     convert_g1_state_action_to_lerobot_26d,
 )
 
@@ -62,11 +64,19 @@ def convert_trajectory_to_df_rheo(
     action_key = getattr(config, "rheo_action_key", "processed_actions")
     action_full = np.array(trajectory[action_key]).astype(np.float64)
 
+    use_13d_left = getattr(config, "rheo_13d_left_state_action", False)
     use_13d = getattr(config, "rheo_13d_state_action", False)
     use_26d = getattr(config, "rheo_26d_state_action", False)
     use_28d = getattr(config, "rheo_28d_state_action", False)
 
-    if use_13d:
+    if use_13d_left:
+        state_inspire = np.array(obs["robot_inspire_joint_state"])  # (T, 12)
+        state, action = convert_g1_state_action_to_lerobot_13d_left(
+            state_body=state_body,
+            state_inspire=state_inspire,
+            action_full=action_full,
+        )
+    elif use_13d:
         state_inspire = np.array(obs["robot_inspire_joint_state"])  # (T, 12)
         state, action = convert_g1_state_action_to_lerobot_13d(
             state_body=state_body,
@@ -165,7 +175,10 @@ def generate_info_rheo(
             elif dof == len(STATE_26_NAMES_ENV_ORDER):
                 features[key]["names"] = list(STATE_26_NAMES_ENV_ORDER)
             elif dof == len(STATE_13_NAMES_ENV_ORDER):
-                features[key]["names"] = list(STATE_13_NAMES_ENV_ORDER)
+                if getattr(config, "rheo_13d_left_state_action", False):
+                    features[key]["names"] = list(STATE_13_LEFT_NAMES_ENV_ORDER)
+                else:
+                    features[key]["names"] = list(STATE_13_NAMES_ENV_ORDER)
             else:
                 features[key]["names"] = [f"dim_{i}" for i in range(dof)]
     info_template["features"] = features

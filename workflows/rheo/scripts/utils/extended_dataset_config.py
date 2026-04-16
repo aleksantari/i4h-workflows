@@ -80,6 +80,15 @@ class ExtendedDatasetConfig(Gr00tDatasetConfig):
             )
         },
     )
+    rheo_13d_left_state_action: bool = field(
+        default=False,
+        metadata={
+            "description": (
+                "If True (with use_rheo_converter), output 13-D state/action: "
+                "left_arm(7)+left_hand(6) [Inspire FTP, left arm only]."
+            )
+        },
+    )
     rheo_camera_mappings_obs: dict[str, str] = field(
         default=None,
         metadata={

@@ -99,6 +99,13 @@ parser.add_argument(
     choices=range(6),
     help="Tray slot index 0-5 for tool spawn (default: 4).",
 )
+parser.add_argument(
+    "--arm",
+    type=str,
+    default="both",
+    choices=["left", "right", "both"],
+    help="Which arm(s) to control during teleop. Non-controlled arm is locked at idle pose (default: both).",
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -319,6 +326,37 @@ def process_success_condition(env: gym.Env, success_term: object | None, success
     return success_step_count, False
 
 
+# 38D hand joint indices per hand. The USD ordering interleaves left/right,
+# so a contiguous slice like [14:26] crosses hand boundaries. These explicit
+# index lists match the USD articulation order from joint_names[29:].
+_LEFT_HAND_38D_IDX = [14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 34, 36]
+_RIGHT_HAND_38D_IDX = [19, 20, 21, 22, 23, 29, 30, 31, 32, 33, 35, 37]
+
+
+def _read_frozen_wrist_fk(env, arm: str) -> torch.Tensor | None:
+    """Read the actual FK wrist pose for the arm that should be frozen.
+
+    Returns a 7D tensor [pos(3), quat(4)] in world frame, or None if arm=="both".
+    Must be called after env.reset() so the robot is at its default joint state.
+    """
+    if arm == "both":
+        return None
+    robot = env.scene["robot"]
+    # Ensure FK is computed from the current joint state
+    env.sim.step(render=False)
+    env.scene.update(dt=env.physics_dt)
+    body_names = list(robot.data.body_names)
+    if arm == "right":
+        # Freeze LEFT arm — read left wrist FK
+        idx = body_names.index("left_wrist_yaw_link")
+    else:
+        # Freeze RIGHT arm — read right wrist FK
+        idx = body_names.index("right_wrist_yaw_link")
+    pos = robot.data.body_pos_w[0, idx].clone()
+    quat = robot.data.body_quat_w[0, idx].clone()
+    return torch.cat([pos, quat])
+
+
 def handle_reset(
     env: gym.Env, success_step_count: int, instruction_display: InstructionDisplay, label_text: str
 ) -> int:
@@ -373,6 +411,7 @@ def run_simulation_loop(
     env.sim.reset()
     env.reset()
     teleop_interface.reset()
+    frozen_arm_wrist_target = _read_frozen_wrist_fk(env, args_cli.arm)
 
     label_text = f"Recorded {current_recorded_demo_count} successful demonstrations."
     instruction_display = setup_ui(label_text, env)
@@ -383,6 +422,22 @@ def run_simulation_loop(
         while simulation_app.is_running():
             # Get teleop command
             action = teleop_interface.advance()
+            # Lock frozen arm for single-arm teleop. Uses exact FK wrist pose
+            # (not the approximate idle_action values) to prevent drift, and
+            # explicit per-hand index lists because the USD ordering interleaves
+            # left/right hand joints (contiguous slices cross hand boundaries).
+            if args_cli.arm != "both" and frozen_arm_wrist_target is not None:
+                idle = env_cfg.idle_action
+                if args_cli.arm == "right":
+                    # Freeze left arm
+                    action[0:7] = frozen_arm_wrist_target
+                    for i in _LEFT_HAND_38D_IDX:
+                        action[i] = idle[i]
+                elif args_cli.arm == "left":
+                    # Freeze right arm
+                    action[7:14] = frozen_arm_wrist_target
+                    for i in _RIGHT_HAND_38D_IDX:
+                        action[i] = idle[i]
             # Zero-pad if teleop device outputs fewer dims than the action space
             expected_dim = env.action_space.shape[-1]
             if action.shape[0] < expected_dim:
@@ -431,6 +486,7 @@ def run_simulation_loop(
             # Handle reset if requested
             if should_reset_recording_instance:
                 success_step_count = handle_reset(env, success_step_count, instruction_display, label_text)
+                frozen_arm_wrist_target = _read_frozen_wrist_fk(env, args_cli.arm)
                 should_reset_recording_instance = False
 
             # Check if simulation is stopped

@@ -256,6 +256,75 @@ def convert_g1_state_action_to_lerobot_13d(
     return state, action
 
 
+# ---------------------------------------------------------------------------
+# 13-D left-arm-only subset (left_arm[7] + left_hand[6])
+# ---------------------------------------------------------------------------
+
+STATE_13_LEFT_NAMES_ENV_ORDER = [
+    # Left arm (7)
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    # Left hand — 6 actuated (Inspire FTP)
+    "L_thumb_proximal_yaw_joint",
+    "L_thumb_proximal_pitch_joint",
+    "L_index_proximal_joint",
+    "L_middle_proximal_joint",
+    "L_ring_proximal_joint",
+    "L_pinky_proximal_joint",
+]
+
+# Elbow offset for 13-D left: left elbow is at index 3 in the 13-D vector.
+STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA = np.zeros(13, dtype=np.float64)
+STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA[3] = 0.3  # left_elbow_joint
+
+# Index maps from 53-D and 41-D recorded actions into canonical left-arm 13-D order.
+ACTION_HDF5_TO_ENV_13_LEFT = [
+    _recorded_action_name_to_idx_53[name] for name in STATE_13_LEFT_NAMES_ENV_ORDER
+]
+ACTION_HDF5_TO_ENV_13_LEFT_FROM_41 = [
+    _recorded_action_name_to_idx_41[name] for name in STATE_13_LEFT_NAMES_ENV_ORDER
+]
+
+
+def _extract_13d_left(state_body: np.ndarray, state_inspire: np.ndarray) -> np.ndarray:
+    """Extract canonical 13-D vector (left arm + left hand) from body (87D) and hand (12D)."""
+    parts = [
+        state_body[:, STATE_26_BODY_COL_LEFT_ARM],
+        state_inspire[:, STATE_26_INSPIRE_COL_LEFT_HAND],
+    ]
+    return np.concatenate(parts, axis=1).astype(np.float64)
+
+
+def convert_g1_state_action_to_lerobot_13d_left(
+    state_body: np.ndarray,
+    state_inspire: np.ndarray,
+    action_full: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert Inspire FTP HDF5 obs/action arrays into canonical 13-D (left arm + hand).
+
+    Same logic as the right-arm 13-D variant but extracts left_arm and left_hand.
+    """
+    full_13d = _extract_13d_left(state_body, state_inspire)  # (T, 13)
+    state = full_13d[:-1]  # (T-1, 13)
+
+    if action_full is not None and action_full.shape[1] == 53:
+        action = action_full[:-1, ACTION_HDF5_TO_ENV_13_LEFT].astype(np.float64)
+        action += STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA
+    elif action_full is not None and action_full.shape[1] == 41:
+        action = action_full[:-1, ACTION_HDF5_TO_ENV_13_LEFT_FROM_41].astype(np.float64)
+        action += STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA
+    else:
+        # Teleop recording (38D PinkIK): action = next-step observed joint positions.
+        action = full_13d[1:] + STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA
+
+    return state, action
+
+
 def _extract_26d(state_body: np.ndarray, state_inspire: np.ndarray) -> np.ndarray:
     """Extract canonical 26-D vector from body (87D) and hand (12D) observations."""
     parts = [
