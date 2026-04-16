@@ -255,13 +255,32 @@ hand pose to the 24 Inspire FTP finger joints via Nucleus hand-only URDFs.
 PinkIK solves inverse kinematics for the 14 arm joints from the wrist pose targets.
 The 24 hand joint targets are passed through directly.
 
+### Single-Arm Teleoperation
+
+The `--arm` flag selects which arm(s) to control during teleop. The non-controlled
+arm is locked at its initial pose using FK wrist readings (read once after each
+reset, held constant throughout the episode). The non-controlled hand joints are
+held at the idle pose.
+
+| `--arm` value | Controlled | Locked |
+|---------------|-----------|--------|
+| `both` (default) | Both arms + both hands | Nothing |
+| `right` | Right arm + right hand | Left arm + left hand |
+| `left` | Left arm + left hand | Right arm + right hand |
+
+> **Implementation detail:** Hand joint indices in the 38D action are interleaved
+> L/R in USD articulation order — they are NOT contiguous per hand. The masking
+> uses explicit per-hand index lists (`_LEFT_HAND_38D_IDX`, `_RIGHT_HAND_38D_IDX`)
+> in `record_demos.py`. See the plan in the conversation history for the full
+> index table.
+
 ### Launching XR Teleoperation
 
 ```bash
 # Stop any external CloudXR container first
 docker stop cloudxr-runtime 2>/dev/null
 
-# Launch with AVP hand tracking + built-in CloudXR
+# Launch with AVP hand tracking + built-in CloudXR (dual-arm, default)
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -270,6 +289,19 @@ docker stop cloudxr-runtime 2>/dev/null
     --enable_cameras \
     --device cuda:0 \
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
+    --num_demos 10 \
+    --xr
+
+# Single right arm only (left arm locked)
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio \
+    --enable_cameras \
+    --device cuda:0 \
+    --arm right \
+    --dataset_file ./datasets/inspire_right_arm/demo.hdf5 \
     --num_demos 10 \
     --xr
 ```
@@ -298,7 +330,7 @@ modifications needed.
 ### Quick Start
 
 ```bash
-# Record 10 demos with AVP hand tracking (tool_0 in slot 4 by default)
+# Record 10 demos with AVP hand tracking — dual arm (default)
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/record_demos.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
@@ -309,11 +341,31 @@ modifications needed.
     --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
     --num_demos 10 \
     --xr
+
+# Record 10 demos — right arm only (left arm locked at idle)
+./docker/run_docker_grasp.sh \
+    python scripts/simulation/record_demos.py \
+    --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
+    --teleop_device handtracking \
+    --enable_pinocchio \
+    --enable_cameras \
+    --device cuda:0 \
+    --arm right \
+    --dataset_file ./datasets/inspire_right_arm/demo.hdf5 \
+    --num_demos 10 \
+    --xr
 ```
 
 > **Important:** The `--enable_cameras` flag is required. Without it,
 > `remove_camera_configs()` strips the front camera from the scene but leaves
 > the observation term, causing a `front_camera does not exist` error.
+
+> **Single-arm recording note:** The HDF5 always records the **full** body state
+> (87D + 12D) and all available cameras regardless of `--arm`. The non-controlled
+> arm will show constant joint values in the recording. The `--arm` flag only
+> affects which arm responds to hand tracking during teleop — it does not change
+> the observation or recording format. This means the same HDF5 can be converted
+> to either 26D (dual-arm) or 13D (single-arm) LeRobot format after the fact.
 
 ### Tool and Slot Selection During Recording
 
@@ -443,14 +495,42 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 
 ### Running the Conversion
 
+**Dual-arm (26D) — default:**
+
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
     --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
 ```
 
-The dataset config (`g1_grasp_policy_inspire_dataset.yaml`) points to
-`datasets/inspire_ftp/test.hdf5` by default. Key settings:
+**Single-arm (13D) — right arm only:**
+
+```bash
+./docker/run_docker_grasp.sh \
+    python scripts/utils/convert_hdf5_to_lerobot.py \
+    --config scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml
+```
+
+**Single-arm (13D) — left arm only:**
+
+```bash
+./docker/run_docker_grasp.sh \
+    python scripts/utils/convert_hdf5_to_lerobot.py \
+    --config scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml
+```
+
+Three dataset configs are available:
+
+| Config | Policy dim | Flag | Camera(s) | `data_root` |
+|--------|-----------|------|-----------|-------------|
+| `g1_grasp_policy_inspire_dataset.yaml` | 26D | `rheo_26d_state_action` | front | `datasets/inspire_ftp` |
+| `g1_grasp_policy_inspire_dataset_right_arm.yaml` | 13D | `rheo_13d_state_action` | front | `datasets/inspire_right_arm` |
+| `g1_grasp_policy_inspire_dataset_left_arm.yaml` | 13D | `rheo_13d_left_state_action` | front | `datasets/inspire_left_arm` |
+
+The 13D configs extract only the controlled arm (7 joints) + hand (6 joints) from
+the full-body HDF5 recording. The same HDF5 file can be converted with any of the
+three configs — the `--arm` flag used during recording does not constrain which
+conversion config you use. Key settings (example for 26D):
 
 ```yaml
 use_rheo_converter: true
@@ -789,8 +869,10 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | File | Description |
 |------|-------------|
 | [`utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
-| [`utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion |
+| [`utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
 | [`utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
+| [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
+| [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |
 | [`utils/inspect_inspire_ftp_joints.py`](../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
 
 ### ACT Training

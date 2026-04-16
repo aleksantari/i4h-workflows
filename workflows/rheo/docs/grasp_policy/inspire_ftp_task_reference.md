@@ -241,6 +241,24 @@ Right wrist: pos=(-1.7005, 2.1438, 1.0952), quat=(0.707, 0, 0, 0.707)
 Hand joints: all 0.0 (open)
 ```
 
+**Single-arm masking (`--arm left|right`):**
+
+When `record_demos.py` is launched with `--arm right` or `--arm left`, the
+non-controlled arm is locked each step by overwriting its wrist pose and hand
+joints in the 38D action before `env.step()`:
+
+- **Wrist pose (7D):** Read once via FK (`robot.data.body_pos_w` /
+  `body_quat_w` on the `*_wrist_yaw_link`) after each `env.reset()`, held
+  constant for the episode. This avoids drift from the approximate positions in
+  the `idle_action` tensor.
+- **Hand joints:** Set to `idle_action` values using explicit per-hand index
+  lists (`_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX`). The indices are
+  **not contiguous** because the USD articulation order interleaves left and
+  right hand joints.
+
+The full-body state (87D + 12D) is still recorded — only the teleop command is
+masked, not the observations.
+
 **Teleop overrides vs RL:**
 - Episode length: **300 s** (vs 20 s)
 - Render interval: **2** (vs 4, smoother XR visuals)
@@ -409,10 +427,12 @@ retargeter output aligns with PinkIK's expected joint order.
 
 ---
 
-## 10. Data Pipeline (26D Policy Format)
+## 10. Data Pipeline (26D / 13D Policy Format)
 
 **Files:** `utils/inspire_ftp_lerobot_fields.py`, `utils/convert_hdf5_to_lerobot.py`,
-`config/g1_grasp_policy_inspire_dataset.yaml`
+`config/g1_grasp_policy_inspire_dataset.yaml`,
+`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`,
+`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`
 
 ### Canonical 26D Joint Order (`STATE_26_NAMES_ENV_ORDER`)
 
@@ -478,14 +498,57 @@ The env config applies a -0.3 offset to elbow joints. When extracting actions fr
 to get raw joint targets. For observation-derived actions, the offset is already
 baked into the observed positions.
 
-### Conversion Command
+### 13D Single-Arm Variants
 
-```bash
-/isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
+For single-arm policies, the converter extracts only one arm + hand from the
+full-body HDF5 recording. Two 13D variants are available:
+
+**Right arm (13D):** `rheo_13d_state_action: true`
+
+| Idx | Joint Name | Group |
+|-----|-----------|-------|
+| 0-6 | `right_shoulder_pitch/roll/yaw`, `right_elbow`, `right_wrist_roll/pitch/yaw` | Right arm |
+| 7-12 | `R_thumb_proximal_yaw/pitch`, `R_index/middle/ring/pinky_proximal` | Right hand |
+
+**Left arm (13D):** `rheo_13d_left_state_action: true`
+
+| Idx | Joint Name | Group |
+|-----|-----------|-------|
+| 0-6 | `left_shoulder_pitch/roll/yaw`, `left_elbow`, `left_wrist_roll/pitch/yaw` | Left arm |
+| 7-12 | `L_thumb_proximal_yaw/pitch`, `L_index/middle/ring/pinky_proximal` | Left hand |
+
+State extraction follows the same pattern as 26D but takes only one side:
+
+```
+# Right 13D
+state_13d = [body[22:29], inspire[6:12]]
+             right_arm    right_hand
+
+# Left 13D
+state_13d = [body[15:22], inspire[0:6]]
+             left_arm     left_hand
 ```
 
-**Output:** LeRobot dataset with (T-1) rows x 26D state/action + front camera video.
+Action derivation and elbow offset (+0.3) apply identically — the elbow is at
+index 3 in both 13D variants.
+
+### Conversion Commands
+
+```bash
+# 26D dual-arm (default)
+/isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
+    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
+
+# 13D right arm
+/isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
+    --config scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml
+
+# 13D left arm
+/isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
+    --config scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml
+```
+
+**Output:** LeRobot dataset with (T-1) rows x 26D or 13D state/action + front camera video.
 
 ---
 
@@ -598,10 +661,12 @@ All paths relative to `scripts/`.
 
 | File | Role |
 |------|------|
-| `utils/inspire_ftp_lerobot_fields.py` | 26D state/action conversion logic (handles 53D, 41D, 38D) |
+| `utils/inspire_ftp_lerobot_fields.py` | 26D and 13D state/action conversion logic (handles 53D, 41D, 38D) |
 | `utils/inspire_ftp_experiment_config.py` | 26D joint groups, scatter_to_sim (41D), state extraction |
 | `utils/convert_hdf5_to_lerobot.py` | HDF5 -> LeRobot dataset converter |
-| `config/g1_grasp_policy_inspire_dataset.yaml` | Dataset conversion config |
+| `config/g1_grasp_policy_inspire_dataset.yaml` | 26D dual-arm dataset conversion config |
+| `config/g1_grasp_policy_inspire_dataset_right_arm.yaml` | 13D right-arm dataset conversion config |
+| `config/g1_grasp_policy_inspire_dataset_left_arm.yaml` | 13D left-arm dataset conversion config |
 
 ### Scene Assets
 

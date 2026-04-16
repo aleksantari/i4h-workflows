@@ -22,19 +22,23 @@ all.
 ```
 AVP hand skeleton (52 bone poses)  →  UnitreeG1RetargeterCfg (DexPilot, 38D)
       →  env.step (Teleop variant, PinkIK solves wrist IK + hand passthrough)
-      →  record_demos.py HDF5
-          obs:     robot_joint_state  (T, 87)   body pos/vel/torque
-                   robot_inspire_joint_state  (T, 12)   hand pos
+      →  record_demos.py HDF5        [--arm left|right masks non-controlled arm]
+          obs:     robot_joint_state  (T, 87)   body pos/vel/torque  (always full)
+                   robot_inspire_joint_state  (T, 12)   hand pos     (always full)
                    front_camera images
           action:  processed_actions  (T, 38)   PinkIK wrist+hand command
       →  convert_hdf5_to_lerobot.py  →  LeRobot parquet
-          observation.state  (T, 26)   14 arm + 12 hand positions
-          action             (T, 26)   next-step observed positions + (+0.3 elbow)
+          26D path (--config g1_grasp_policy_inspire_dataset.yaml):
+            observation.state  (T, 26)   14 arm + 12 hand positions
+            action             (T, 26)   next-step observed positions + (+0.3 elbow)
+          13D path (--config g1_grasp_policy_inspire_dataset_{left,right}_arm.yaml):
+            observation.state  (T, 13)   7 arm + 6 hand positions (single arm)
+            action             (T, 13)   next-step observed positions + (+0.3 elbow)
           observation.images.cam_room  (mp4, 50 fps, 480×640)
           meta/episodes_stats.jsonl    mean/std normalization stats
       →  train_act_grasp_policy_inspire.sh  →  ACT checkpoint
-          input:   observation.state (26) + cam_room image
-          output:  50-step action chunks, each 26D
+          input:   observation.state (26 or 13) + cam_room image
+          output:  50-step action chunks, each 26D or 13D
       →  ACTClosedloopPolicy  →  scatter 26D → 41D sim action
       →  env.step (Joint variant, 41D joint positions with -0.3 elbow offset)
 ```
@@ -47,10 +51,12 @@ Short list of facts that must never drift. If any of these turns out to be
 violated in practice, something is broken.
 
 - Frame rate is **50 Hz** everywhere (sim, recording, video, training).
-- Canonical policy dim is **26** (never 28 — that's the Dex3 path).
+- Canonical policy dim is **26** for dual-arm or **13** for single-arm
+  (never 28 — that's the Dex3 path).
 - Sim action dim is **41** for Inspire FTP (never 43 — that's Dex3).
 - Elbow offset is **+0.3 in parquet**, **−0.3 in env `offset_dict`**. Exactly
   one compensation on each side of the chain — never both, never neither.
+  For 13D, the elbow is at index **3** (same relative position within the arm).
 - Parquet `state[t]` is the joint position at frame t. Parquet `action[t]` is
   the **next-step** joint position (`state[t+1]`) plus the elbow offset.
 - Camera is **front only** (no wrist cams on Inspire FTP).
@@ -293,6 +299,23 @@ HDF5 with these keys for the Inspire FTP Teleop variant:
 You cannot "just read" actions from HDF5 for teleop recordings — the
 converter has to derive actions a different way (see below).
 
+**Single-arm recording (`--arm left|right`):** The HDF5 always stores the
+**full** 87D + 12D observations regardless of `--arm`. The non-controlled arm
+will show constant joint values in the recording. Only the 38D
+`processed_actions` are masked (non-controlled wrist overwritten with FK pose,
+non-controlled hand joints zeroed). Since the converter derives actions from
+next-step *observations* (not from `processed_actions`), the 13D extraction
+works correctly on these recordings — the non-controlled arm's constant
+values are simply not selected.
+
+The FK wrist pose for the locked arm is read once from
+`robot.data.body_pos_w` / `body_quat_w` after each `env.reset()` and held
+constant for the episode, avoiding drift from the approximate values in
+`idle_action`. Hand joint masking uses explicit per-hand index lists
+(`_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX`) because the USD articulation
+order **interleaves** left and right hand joints — contiguous slices cross
+hand boundaries.
+
 ### HDF5 → LeRobot conversion
 
 Entry point:
@@ -347,6 +370,50 @@ it.
 actions are handled by `ACTION_HDF5_TO_ENV_26` /
 `ACTION_HDF5_TO_ENV_26_FROM_41` index tables. These exist for legacy
 recordings; current AVP teleop always hits the 38-D path.
+
+### 13D single-arm conversion
+
+For single-arm policies, two 13D extraction functions mirror the 26D logic
+but select only one arm + hand:
+
+| Config flag | Function | Extracts |
+|---|---|---|
+| `rheo_13d_state_action` | `convert_g1_state_action_to_lerobot_13d()` | right_arm(7) + right_hand(6) |
+| `rheo_13d_left_state_action` | `convert_g1_state_action_to_lerobot_13d_left()` | left_arm(7) + left_hand(6) |
+
+**13D layout** (same for both sides, just different source columns):
+
+| Slice | Joints |
+|---|---|
+| 0-6 | arm (shoulder pitch/roll/yaw, elbow, wrist roll/pitch/yaw) |
+| 7-12 | hand (thumb yaw/pitch, index, middle, ring, pinky proximal) |
+
+State is built by slicing one side of the raw obs:
+
+```python
+# Right 13D
+state[:, 0:7]  = obs.robot_joint_state[:, 22:29]   # right arm
+state[:, 7:13] = obs.robot_inspire_joint_state[:, 6:12]  # right hand
+
+# Left 13D
+state[:, 0:7]  = obs.robot_joint_state[:, 15:22]   # left arm
+state[:, 7:13] = obs.robot_inspire_joint_state[:, 0:6]   # left hand
+```
+
+Action derivation is identical to 26D: `action[t] = state[t+1] + delta`,
+where delta is `+0.3` at index 3 (elbow). The elbow offset delta vectors
+are `STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA` (right) and
+`STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA` (left).
+
+**Dataset configs:**
+- Right arm: `scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml`
+- Left arm: `scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml`
+
+Both use `data_root` pointing to arm-specific directories
+(`datasets/inspire_right_arm`, `datasets/inspire_left_arm`). The same HDF5
+recording can be converted with any of the three configs (26D, 13D right,
+13D left) — the `--arm` flag used during teleop does not constrain which
+conversion config is applicable.
 
 ### LeRobot dataset layout
 
@@ -489,6 +556,8 @@ write joint targets directly, you must apply the `-0.3` yourself.
 | Extreme action values (`|a| > 3`) warning in eval | L3 normalization | `meta/episodes_stats.jsonl` may be stale relative to the checkpoint. Regenerate parquet → retrain. |
 | Hand fingers move but mimic finger segments don't | L1 mimic | Confirm action is going through `InspireFTPJointPositionActionCfg`, not a raw articulation write — mimic is applied in `apply_actions()`. |
 | Video is fine in playback but policy sees black frames | L3 image path | Check `_extract_observations_from_raw()` — `obs["camera_images"]["front_camera"]` must be uint8 HWC before the wrapper divides by 255. |
+| Non-controlled arm drifts during single-arm teleop | L1 teleop masking | FK wrist pose may not be reading correctly after reset. Check `_read_frozen_wrist_fk()` — verify `body_names.index("*_wrist_yaw_link")` resolves and `body_pos_w` / `body_quat_w` are populated. |
+| Only proximal finger joints move in single-arm teleop | L1 teleop masking | Hand index lists are likely using contiguous slices instead of interleaved indices. Verify `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` match the USD joint order in `env_cfg.py:53-110`. |
 
 ---
 
