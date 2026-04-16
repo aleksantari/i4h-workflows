@@ -98,7 +98,7 @@ class TeleopActionsCfg:
     """38D PinkIK action: arm IK (14D wrist poses) + direct hand joint targets (24D)."""
 
     pink_ik_cfg: ActionTermCfg = PinkInverseKinematicsActionCfg(
-        pink_controlled_joint_names=[
+        pink_controlled_joint_names=[ # what ik solves for
             ".*_shoulder_pitch_joint",
             ".*_shoulder_roll_joint",
             ".*_shoulder_yaw_joint",
@@ -107,7 +107,7 @@ class TeleopActionsCfg:
             ".*_wrist_roll_joint",
             ".*_wrist_pitch_joint",
         ],
-        hand_joint_names=HAND_JOINT_NAMES,
+        hand_joint_names=HAND_JOINT_NAMES, # hand joints are just passed through so they are bundled into one 38D action 
         target_eef_link_names={
             "left_wrist": "left_wrist_yaw_link",
             "right_wrist": "right_wrist_yaw_link",

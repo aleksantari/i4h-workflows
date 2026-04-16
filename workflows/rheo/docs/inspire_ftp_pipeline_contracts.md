@@ -20,8 +20,9 @@ all.
 ## Pipeline at a glance
 
 ```
-VR hand pose  →  handtracking retargeter (16D)  →  PinkIK + DexPilot (38D)
-      →  env.step (Teleop variant, 38D PinkIK action)  →  record_demos.py HDF5
+AVP hand skeleton (52 bone poses)  →  UnitreeG1RetargeterCfg (DexPilot, 38D)
+      →  env.step (Teleop variant, PinkIK solves wrist IK + hand passthrough)
+      →  record_demos.py HDF5
           obs:     robot_joint_state  (T, 87)   body pos/vel/torque
                    robot_inspire_joint_state  (T, 12)   hand pos
                    front_camera images
@@ -237,20 +238,44 @@ Stages advance **forward only** — no regressions. Success termination is
 
 ### AVP → teleop action (38D)
 
-[`handtracking.py`](../scripts/teleop_devices/handtracking.py) produces a
-**16D** vector: `[L_gripper(1) | R_gripper(1) | L_wrist(7) | R_wrist(7)]`.
-Grippers are binary (0/1) from a pinch-distance hysteresis; wrists are
-absolute 7D poses (xyz + quat) in the robot frame.
+The Inspire FTP Teleop env cfg
+([`g1_grasp_policy_inspire_teleop_env_cfg.py:228-243`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L228-L243))
+registers its own `"handtracking"` device directly with a
+`UnitreeG1RetargeterCfg`. When `record_demos.py --teleop_device handtracking`
+runs, it finds this key in `env_cfg.teleop_devices.devices` and uses it —
+**`handtracking.py` is NOT in the Inspire FTP pipeline**. That file provides a
+fallback retargeter (`G1HandtrackingGripperRetargeterCfg`) for Arena-track
+tasks (trocar, locomanip) that use binary gripper control; the Inspire task
+bypasses it entirely because it needs full per-finger dexterity.
 
-The Teleop env cfg pipes this through `UnitreeG1RetargeterCfg`:
+`UnitreeG1RetargeterCfg` reads the full AVP hand skeleton (52 OpenXR
+skeletal joints, 2 hands × 26 bone poses each) and produces **38D**:
 
-- PinkIK solves wrist IK → 14D wrist commands
-- DexPilot retargets the gripper signal → 24D hand joint targets
+- **Wrist extraction**: reads each hand's wrist bone pose → 7D Cartesian
+  (position + quaternion) per hand = 14D
+- **DexPilot**: takes all finger bone poses and solves an optimization to find
+  the 24 robot hand joint angles (12 per hand) that best approximate the
+  observed human hand shape, given the robot hand's kinematic model
 
-The concatenation is the **38D PinkIK command**:
+The retargeter config at
+[`teleop_env_cfg.py:232-237`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L232-L237)
+bridges the two sides: `num_open_xr_hand_joints=52` tells the retargeter how
+many skeletal poses to expect from AVP, and `hand_joint_names` (24 entries in
+Nucleus-style naming) tells it which robot joints to produce values for.
+DexPilot loads a hand-only URDF internally and runs the optimization each frame.
+
+The retargeter output is the **38D teleop command**:
 `[L_wrist_pos(3) | L_wrist_quat(4) | R_wrist_pos(3) | R_wrist_quat(4) | hand_joints(24)]`.
+
+**PinkIK is a separate, downstream step** — it lives in `TeleopActionsCfg`
+([`teleop_env_cfg.py:100-162`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L100-L162)),
+not in the retargeter. It takes the 14D Cartesian wrist poses and solves
+inverse kinematics → 14D arm joint angles (7 per arm). The 24D hand joints
+pass through unchanged. The result is what actually commands the articulation.
+
 This is what the Teleop gym variant steps with, and what `record_demos.py`
-writes to HDF5 as `processed_actions`.
+writes to HDF5 as `processed_actions` (the 38D pre-IK form, not the
+post-IK joint angles).
 
 ### HDF5 recording format
 
