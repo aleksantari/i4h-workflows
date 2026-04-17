@@ -200,7 +200,7 @@ is available.
 | Hand obs key | `robot_dex3_joint_state` (14D) | new inspire obs (12D) | Must extract 6 actuated per hand |
 | Body state | (B, 87) = 29×3 | (B, 87) = 29×3 | Unchanged (body is identical) |
 | Sim action dim | 43 | 41 | Or 53 if mimic joints are in articulation |
-| Cameras | 3 (front + 2 wrist) | 1 (front only) | No wrist camera links on Inspire |
+| Cameras | 3 (front + 2 wrist) | 3 (front + 2 wrist) | Inspire uses the `g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant |
 | `GROUP_SIZE` in experiment config | 7 | varies (arm=7, hand=6) | **Cannot use single constant** |
 
 **Key architectural impact:** The current `ACTExperimentConfig` assumes every joint
@@ -593,10 +593,12 @@ for actuator tuning and joint defaults:
 | Left wrist | `/World/envs/env_.*/Robot/left_hand_camera_base_link/left_wrist_camera` | `left_hand_camera_base_link` |
 | Right wrist | `/World/envs/env_.*/Robot/right_hand_camera_base_link/right_wrist_camera` | `right_hand_camera_base_link` |
 
-### Inspire FTP: 1 camera (front only)
+### Inspire FTP: 3 cameras (front + 2 wrist)
 
-The Inspire FTP URDF has no wrist camera links (`left_hand_camera_base_link` /
-`right_hand_camera_base_link` do not exist). Only the front camera is available:
+With the `g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant, Inspire FTP has the
+same camera layout as Dex3: `left_hand_camera_base_link` /
+`right_hand_camera_base_link` mount links are present, plus the head-mounted
+front camera:
 
 ```
 Prim path:  /World/envs/env_.*/Robot/d435_link/front_cam
@@ -675,12 +677,12 @@ tasks remain untouched.
 | USD model (converted from URDF) | Inspire FTP robot for IsaacLab |
 | `assets/assets.py` | Add `UNITREE_G1_29DOF_INSPIRE_FTP_USD` constant |
 | `tasks/<new_task>/config/robot_config.py` | Inspire FTP joint defaults, actuator params (6 DOF/hand) |
-| `tasks/<new_task>/config/camera_config.py` | Front camera only (no wrist cameras) |
+| `tasks/<new_task>/config/camera_config.py` | Front + left/right wrist cameras (see `CameraPresets.left_inspire_wrist_camera` / `right_inspire_wrist_camera`) |
 | `tasks/<new_task>/mdp/observations.py` | New hand joint extraction (12 actuated indices from full articulation) |
 | `tasks/<new_task>/g1_<task>_env_cfg.py` | 41D joint_names list, new scene, rewards, terminations |
 | `tasks/<new_task>/__init__.py` | Gym registration |
 | New LeRobot field mapping module | 26D canonical joint names, inspire joint indices |
-| New dataset config YAML | 26D state/action, front camera only |
+| New dataset config YAML | 26D state/action, 3 cameras (front + left/right wrist) |
 | New eval script | Entry point for the new task |
 
 ### Existing files that need adaptation (copies, not edits)
@@ -711,7 +713,7 @@ The mimic joints exist in the articulation but are not policy-controlled.
 Changing the robot embodiment means all data collection starts fresh:
 
 1. Collect teleoperation demos with the Inspire FTP hand
-2. Convert HDF5 → LeRobot (with new 26D field mappings, front camera only)
+2. Convert HDF5 → LeRobot (with new 26D field mappings, 3 cameras)
 3. Train ACT IL from scratch
 4. RL post-training with new reward functions
 

@@ -28,11 +28,10 @@ from isaaclab.actuators import IdealPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
-# Local USD converted from our URDF (includes d435_link camera mount).
-# Generate with: python scripts/utils/convert_inspire_ftp_urdf_to_usd.py
+# Local USD converted from our URDF (includes d435_link front camera + wrist camera mount links).
 _ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "assets")
 UNITREE_G1_29DOF_INSPIRE_FTP_USD = os.path.abspath(
-    os.path.join(_ASSETS_DIR, "robots", "g1-29dof-inspire-ftp-usd", "g1_29dof_inspire_ftp.usd")
+    os.path.join(_ASSETS_DIR, "robots", "g1-29dof-inspire-ftp-usd-wrist_cam", "g1_29dof_inspire_ftp.usd")
 )
 
 # Default joint positions (body same as Dex3 task, hands at zero).

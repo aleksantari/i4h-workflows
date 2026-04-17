@@ -12,6 +12,8 @@
         "right_hand": {"start": 20, "end": 26}
     },
     "video": {
-        "room_view": "observation.images.cam_room"
+        "room_view": "observation.images.cam_room",
+        "left_wrist_view": "observation.images.cam_left_wrist",
+        "right_wrist_view": "observation.images.cam_right_wrist"
     }
 }

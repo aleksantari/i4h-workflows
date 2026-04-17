@@ -104,8 +104,9 @@ Architecture values below are for the Inspire FTP configuration, taken from
 | Joint state | `(B, 26)` | `left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6)` |
 | Front camera | `(B, 3, 480, 640)` | `front_camera` (RGB), mapped to ACT feature key `observation.images.cam_room` |
 
-There are **no wrist cameras** — the Inspire FTP setup uses a single head-mounted
-front camera. (The Dex3 variant used three cameras; the Inspire variant does not.)
+The env provides 3 cameras (front + left/right wrist) identical to Dex3. The
+default ACT config consumes only the front camera; wrist cameras are available
+in the dataset and can be added to `input_features` when training with wrist vision.
 
 ### Output
 
@@ -635,7 +636,7 @@ The load path is:
 2. **Else** fall back to `from_env_or_default()` which checks
    `INSPIRE_FTP_EXPERIMENT_CONFIG`; if that is unset, use the hard-coded
    defaults in [`inspire_ftp_experiment_config.py:93–97`](../../scripts/utils/inspire_ftp_experiment_config.py#L93-L97)
-   (all 4 joint groups, front camera only → `observation.images.cam_room`).
+   (all 4 joint groups, front camera by default → `observation.images.cam_room`).
 
 `from_env_or_default()` caches its result in a module-level variable, so
 the config is read once per process.
@@ -719,7 +720,7 @@ back to the RL stack once the IL checkpoint is performing as expected.
 - **Tool orientation:** `TOOL_ROT = (0.707, 0, 0, -0.707)` (matches the
   tray rotation).
 - **Bin / target pad:** 15cm x 15cm x 0.5cm pad at `(-1.55, 1.61, 0.835)`
-- **Camera:** single `front_camera` at 480x640 RGB (no wrist cameras)
+- **Cameras:** `front_camera` + `left_wrist_camera` + `right_wrist_camera` at 480x640 RGB
 
 ### Observations
 

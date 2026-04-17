@@ -201,11 +201,17 @@ automatically — the policy only needs to output the 12 actuated joint targets.
 > **Code:**
 > [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
 
-### Single Camera
+### Cameras
 
-The Inspire FTP robot has no wrist camera mount links, so only the front camera
-(`d435_link`) is used. This simplifies the vision pipeline but means the policy has
-less spatial information compared to the 3-camera Dex3 setup.
+Three cameras are mounted on the robot, matching the Dex3 setup:
+- `front_camera` on `d435_link` (head-mounted, room view)
+- `left_wrist_camera` on `left_hand_camera_base_link`
+- `right_wrist_camera` on `right_hand_camera_base_link`
+
+All three are published in `ObservationsCfg.CameraImagesCfg` and recorded into the
+HDF5. Wrist camera mount links live in the `g1-29dof-inspire-ftp-usd-wrist_cam/`
+USD variant; presets are `CameraPresets.left_inspire_wrist_camera` /
+`right_inspire_wrist_camera` in `camera_config.py`.
 
 ### Teleop: PinkIK with Per-Finger Dex-Retargeting
 
@@ -426,9 +432,9 @@ The recorded HDF5 will contain:
 | `processed_actions` | (T, 38) | PinkIK teleop actions (not 41D joint space) |
 | `robot_joint_state` | (T, 87) | Full body state (29 joints x 3) |
 | `robot_inspire_joint_state` | (T, 12) | Actuated hand joints only |
-| `front_camera` | (T, 480, 640, 3) | Front camera RGB (single camera) |
-
-> **Note:** No wrist camera images are recorded (Inspire FTP has no wrist mount links).
+| `front_camera` | (T, 480, 640, 3) | Front camera RGB |
+| `left_wrist_camera` | (T, 480, 640, 3) | Left wrist camera RGB |
+| `right_wrist_camera` | (T, 480, 640, 3) | Right wrist camera RGB |
 
 > **Recommendation:** Record 20-50 high-quality demonstrations. With auto-success
 > detection, only successful grasps are saved automatically.
@@ -537,7 +543,9 @@ use_rheo_converter: true
 rheo_action_key: "processed_actions"
 rheo_26d_state_action: true       # Triggers 26D Inspire extraction
 rheo_camera_mappings_obs:
-  front_camera: "observation.images.cam_room"   # Single camera (no wrist cams)
+  front_camera: "observation.images.cam_room"
+  left_wrist_camera: "observation.images.cam_left_wrist"
+  right_wrist_camera: "observation.images.cam_right_wrist"
 ```
 
 ### How Actions Are Derived
@@ -620,11 +628,12 @@ Train an ACT policy on the converted LeRobot dataset.
 The Inspire FTP config (`act_config_inspire_ftp.yaml`) differs from the Dex3 config
 (`act_config_dex3.yaml`) in:
 
-- **`experiment.cameras`**: Front camera only (no wrist cameras)
+- **`experiment.cameras`**: Currently front only (dataset also has both wrist
+  cameras; wire them in when training with wrist vision)
 - **`experiment.joint_groups`**: Hand groups have 6 DOF (not 7)
 - **`input_features.observation.state.shape`**: [26] (not [28])
 - **`output_features.action.shape`**: [26] (not [28])
-- **`input_features`**: No wrist camera features
+- **`input_features`**: Currently no wrist camera features (can be added)
 
 All other hyperparameters (chunk_size=100, dim_model=512, kl_weight=10, etc.)
 remain the same as Dex3.
@@ -804,7 +813,7 @@ By default, `tool_0` is loaded in tray slot 4. Use `--object` and `--slot` to ov
 
 The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
 `hand_type: inspire_ftp`. The `ACTClosedloopPolicy` wrapper detects Inspire FTP and
-loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera only).
+loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by default).
 
 ### CLI Arguments
 
@@ -919,7 +928,7 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera on
 | `ValueError: 'L_index_proximal_joint' is not in list` | Retargeter uses Nucleus-style joint names. Ensure `RETARGETER_HAND_JOINT_NAMES` (Nucleus naming) is passed to the retargeter, not `HAND_JOINT_NAMES` (URDF naming). |
 | `front_camera does not exist` | Pass `--enable_cameras` to all scripts (`eval_grasp_policy_inspire.py`, `record_demos.py`, `replay_demos_isaaclab.py`). Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
 | `tool_N/tool_N.usd not found` | Run the mesh converter first: `./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py`. The .obj files must be converted to .usd before the scene can load them. |
-| Only 1 camera image in dataset | Expected — Inspire FTP has front camera only (no wrist cameras). |
+| Only 1 camera image in dataset | The dual-arm YAML (`g1_grasp_policy_inspire_dataset.yaml`) must map all three cameras under `rheo_camera_mappings_obs`. If only `front_camera` is mapped, wrist streams are skipped. |
 | Mimic joints not moving | Verify `InspireFTPJointPositionAction` is used in env cfg (not plain `JointPositionAction`). Check mimic rules in `mimic_action.py`. |
 | USD warnings about `d435_link/visuals` unresolved | Cosmetic — sensor links in the URDF don't have visual meshes. Does not affect sim behavior. |
 

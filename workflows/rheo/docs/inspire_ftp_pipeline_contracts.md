@@ -59,7 +59,7 @@ violated in practice, something is broken.
   For 13D, the elbow is at index **3** (same relative position within the arm).
 - Parquet `state[t]` is the joint position at frame t. Parquet `action[t]` is
   the **next-step** joint position (`state[t+1]`) plus the elbow offset.
-- Camera is **front only** (no wrist cams on Inspire FTP).
+- Cameras: **3 cameras** (`front_camera` + `left_wrist_camera` + `right_wrist_camera`), matching Dex3. Wrist mount links live in the `g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant.
 - Normalization stats are **frozen at conversion time** in
   `meta/episodes_stats.jsonl`. Regenerating the parquet regenerates the
   stats; retraining uses the new stats automatically.
@@ -180,12 +180,14 @@ Indices 0–5 are the left hand, 6–11 are the right hand.
 
 **`obs["camera_images"]`:**
 
-Single key `front_camera`, RGB, unnormalized. Configured via
-`CameraPresets.g1_front_camera(focal_length=10.5)` at
-[env_cfg.py:191](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L191).
-**No wrist cameras** on Inspire FTP (the 5-finger hand has no wrist-mount
-link); this is why `act_config_inspire_ftp.yaml` only declares
-`observation.images.cam_room`.
+Three keys — `front_camera`, `left_wrist_camera`, `right_wrist_camera` — all
+RGB, unnormalized. Configured via `CameraPresets.g1_front_camera(focal_length=10.5)`,
+`CameraPresets.left_inspire_wrist_camera(focal_length=12.0)`, and
+`CameraPresets.right_inspire_wrist_camera(focal_length=12.0)` in
+[env_cfg.py](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
+`act_config_inspire_ftp.yaml` currently declares only `observation.images.cam_room`;
+the wrist cameras exist in the dataset and can be added to ACT `input_features`
+when training with wrist vision.
 
 ### Frame rate & control
 

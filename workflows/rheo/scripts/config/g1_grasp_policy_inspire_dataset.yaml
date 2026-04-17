@@ -24,12 +24,14 @@ task_index: 0
 hdf5_name: "single_arm.hdf5"
 
 # Inspire FTP HDF5: obs/robot_joint_state (87D), obs/robot_inspire_joint_state (12D),
-# obs/front_camera, processed_actions (53D)
+# obs/front_camera, obs/left_wrist_camera, obs/right_wrist_camera, processed_actions (53D)
 use_rheo_converter: true
 rheo_action_key: "processed_actions"
 rheo_26d_state_action: true
 rheo_camera_mappings_obs:
   front_camera: "observation.images.cam_room"
+  left_wrist_camera: "observation.images.cam_left_wrist"
+  right_wrist_camera: "observation.images.cam_right_wrist"
 
 # Gr00t-LeRobot datafield names
 state_name_lerobot: "observation.state"

@@ -21,7 +21,7 @@ with Inspire FTP 5-finger hands.
 Key differences from the Dex3 variant:
 - 41D action space (29 body + 12 actuated hand) with mimic enforcement
 - 12D hand observation (6 actuated per hand)
-- Front camera only (no wrist cameras)
+- 3 cameras (front + left wrist + right wrist), matching Dex3
 - Policy dim: 26D (14 arm + 12 actuated hand)
 """
 
@@ -187,8 +187,10 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
         init_pos=(-1.84919, 1.94, 0.81168), init_rot=(1.0, 0, 0, 0.0)
     )
 
-    # Front camera only (Inspire FTP has no wrist camera mount links)
+    # Cameras
     front_camera = CameraPresets.g1_front_camera(focal_length=10.5)
+    left_wrist_camera = CameraPresets.left_inspire_wrist_camera(focal_length=12.0)
+    right_wrist_camera = CameraPresets.right_inspire_wrist_camera(focal_length=12.0)
 
     # Background scene (surgical room with table)
     scene = AssetBaseCfg(
@@ -266,7 +268,7 @@ class ActionsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation groups: body state + hand state + front camera."""
+    """Observation groups: body state + hand state + front camera + wrist cameras."""
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -282,6 +284,14 @@ class ObservationsCfg:
         front_camera = ObsTerm(
             func=base_mdp.image,
             params={"sensor_cfg": SceneEntityCfg("front_camera"), "data_type": "rgb", "normalize": False},
+        )
+        left_wrist_camera = ObsTerm(
+            func=base_mdp.image,
+            params={"sensor_cfg": SceneEntityCfg("left_wrist_camera"), "data_type": "rgb", "normalize": False},
+        )
+        right_wrist_camera = ObsTerm(
+            func=base_mdp.image,
+            params={"sensor_cfg": SceneEntityCfg("right_wrist_camera"), "data_type": "rgb", "normalize": False},
         )
 
         def __post_init__(self):

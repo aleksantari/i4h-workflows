@@ -19,7 +19,8 @@
 # Parallel to act_config_dex3.yaml but for the Inspire FTP hand:
 #   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
 #   - 41D sim action space (29 body + 12 actuated hand, mimic joints driven internally)
-#   - 1 camera (front only — no wrist cameras on Inspire FTP setup)
+#   - ACT currently consumes 1 camera (front only); dataset also contains
+#     left/right wrist cameras — wire them into input_features when needed.
 
 # ---------------------------------------------------------------------------
 # Experiment: cameras and joint groups.

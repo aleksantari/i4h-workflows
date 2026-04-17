@@ -46,8 +46,8 @@ Three gym variants exist:
 | **Teleoperation** | `Isaac-Grasp-Policy-G129-InspireFTP-Teleop` | 38D | 300 s | PinkIK + AVP hand tracking |
 
 Key differences from the Dex3 variant: 41D actions (vs 43D), 12D hand observation (vs 14D),
-front camera only (vs 3 cameras), 26D policy dim (vs 28D). The 12 mimic hand joints are
-driven internally by the action class — they are not part of the action space.
+26D policy dim (vs 28D). Cameras match Dex3 (front + left/right wrist). The 12 mimic hand
+joints are driven internally by the action class — they are not part of the action space.
 
 ---
 
@@ -110,7 +110,10 @@ Both the eval script (`eval_grasp_policy_inspire.py`) and the recording script
 (`record_demos.py`) support `--object <name>` (default: `tool_0`) to select the tool
 and `--slot N` (default: 4) to choose the tray slot (0-5).
 
-No wrist cameras are available on the Inspire FTP hand (no camera mount links in the USD).
+Wrist cameras live on `left_hand_camera_base_link` / `right_hand_camera_base_link` in
+the `g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant (the same mount link layout as
+Dex3). Camera presets: `CameraPresets.left_inspire_wrist_camera` /
+`right_inspire_wrist_camera` in [`camera_config.py`](../../scripts/simulation/tasks/assemble_trocar/config/camera_config.py).
 
 ---
 
@@ -333,10 +336,16 @@ Left arm positions are at indices **15-21**, right arm at **22-28**.
 Mimic joints are **not observed** -- they are derived from actuated joints
 during action processing (see mimic rules in Section 4a).
 
-### 5c. Camera
+### 5c. Cameras
 
-Single front camera at 640x480 RGB (float32, not normalized).
-No wrist cameras (Inspire FTP USD has no wrist camera mount links).
+Three cameras at 480x640 RGB (float32, not normalized), matching Dex3:
+- `front_camera` on `d435_link` (head-mounted, room view)
+- `left_wrist_camera` on `left_hand_camera_base_link`
+- `right_wrist_camera` on `right_hand_camera_base_link`
+
+All three are published under `ObservationsCfg.CameraImagesCfg` and recorded to HDF5
+by `record_demos.py`. Mount links are provided by the
+`g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant.
 
 ---
 

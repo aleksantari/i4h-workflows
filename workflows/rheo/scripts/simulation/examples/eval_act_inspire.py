@@ -255,7 +255,7 @@ def main():
             else:
                 total_reward += float(reward)
 
-            # Video recording (front camera only)
+            # Video recording (front camera view)
             if args_cli.save_video and video_writer is not None:
                 env.sim.render()
                 overlay = f"Ep {ep + 1}/{args_cli.num_episodes}  Step {step}"
