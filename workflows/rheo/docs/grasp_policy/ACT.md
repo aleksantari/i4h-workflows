@@ -267,15 +267,17 @@ python -m lerobot.scripts.train \
     --config_path "$FILTERED_CONFIG" \
     --dataset.repo_id grasp_policy_inspire \
     --dataset.root "$DATASET_PATH" \
-    --dataset.video_backend pyav \
+    --dataset.video_backend torchcodec \
     --output_dir "$OUTPUT_DIR" \
     [--resume $RESUME_PATH] \
     "${EXTRA_ARGS[@]}"
 ```
 
-`--dataset.video_backend pyav` is required because the default `torchcodec`
-backend needs `libnvrtc.so.13`, which is not installed in the grasp Docker
-image.
+`torchcodec` is the default (GPU-accelerated NVDEC decode on the 5090).
+`Dockerfile.grasp` pins `torchcodec==0.7.0` so it links against the
+`libnvrtc.so.12` that ships with our torch 2.8 / CUDA 12.8 stack. Pass
+`--video_backend pyav` to the launcher to fall back to CPU FFmpeg decode
+if torchcodec breaks after a future dep bump.
 
 **Output directory:**
 
@@ -814,10 +816,15 @@ runtime, via Python configs.
 
 ### Video decoding
 
-The training launcher passes `--dataset.video_backend pyav` because the
-default `torchcodec` backend needs `libnvrtc.so.13`, which is not present
-in the grasp image. `pyav` uses CPU FFmpeg decoding and works without
-additional CUDA libs.
+The training launcher uses `--dataset.video_backend torchcodec` by
+default, which routes video decode through NVDEC on the 5090.
+`Dockerfile.grasp` pins `torchcodec==0.7.0` to match our torch 2.8 /
+CUDA 12.8 stack — the default wheel (`torchcodec==0.11`, shipped for
+torch 2.11 / CUDA 13) would fail to load with
+`OSError: libnvrtc.so.13: cannot open shared object file`.
+
+Pass `--video_backend pyav` to the launcher as an escape hatch if
+torchcodec breaks after a dep bump; pyav falls back to CPU FFmpeg.
 
 ### Typical one-liners
 
