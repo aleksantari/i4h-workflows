@@ -124,6 +124,11 @@ class ACTClosedloopPolicy(PolicyBase):
 
         self.policy_action_dim = self.exp_config.policy_dim
 
+        # Optional base action for single-arm scatter — populated via
+        # set_default_action() so non-commanded joints hold the env init pose
+        # instead of drifting to zero-angle posture.
+        self._base_action: torch.Tensor | None = None
+
         # Load ACT policy
         self.policy = self._load_policy()
 
@@ -135,6 +140,20 @@ class ACTClosedloopPolicy(PolicyBase):
         )
         self.env_requires_new_action_chunk = torch.ones(num_envs, dtype=torch.bool, device=device)
         self.current_action_index = torch.zeros(num_envs, dtype=torch.int64, device=device)
+
+    def set_default_action(self, base_action: "torch.Tensor | None") -> None:
+        """Set the base 41-D action used for non-commanded joints during scatter.
+
+        For Inspire FTP single-arm eval, pass the env init pose (read from
+        ``robot.data.default_joint_pos`` at the action term's joint ids) so
+        the non-controlled arm / hand / waist hold their reset posture
+        instead of being driven to zero-angle targets. Pass ``None`` to
+        restore the default zero-fill behavior.
+        """
+        if base_action is None:
+            self._base_action = None
+            return
+        self._base_action = base_action.detach().to(device=self.device).float()
 
     def _load_policy(self):
         """Load ACT policy from LeRobot checkpoint."""
@@ -274,8 +293,13 @@ class ACTClosedloopPolicy(PolicyBase):
         # Stack: (num_envs, chunk_size, policy_dim)
         policy_actions = torch.stack(chunks, dim=0).to(self.device)
 
-        # Scatter policy_dim → sim_action_dim at correct sim joint positions
-        sim_actions = self.exp_config.scatter_to_sim(policy_actions)
+        # Scatter policy_dim → sim_action_dim at correct sim joint positions.
+        # If set_default_action() has been called (single-arm Inspire FTP eval),
+        # non-commanded joints hold that base pose instead of being driven to 0.
+        scatter_kwargs = {}
+        if self._base_action is not None and hasattr(self.exp_config, "scatter_to_sim") and self.sim_action_dim == 41:
+            scatter_kwargs["base_action"] = self._base_action
+        sim_actions = self.exp_config.scatter_to_sim(policy_actions, **scatter_kwargs)
 
         # Truncate or pad to action_chunk_length
         chunk_len = sim_actions.shape[1]

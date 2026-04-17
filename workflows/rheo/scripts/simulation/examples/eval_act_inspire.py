@@ -47,7 +47,7 @@ parser = argparse.ArgumentParser(description="ACT Evaluation — Inspire FTP Gra
 parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint")
 parser.add_argument("--model_path", type=str, default=None, help="path to ACT checkpoint")
 parser.add_argument("--num_episodes", type=int, default=10)
-parser.add_argument("--max_steps", type=int, default=5000)
+parser.add_argument("--max_steps", type=int, default=1000)
 parser.add_argument("--seed", type=int, default=4)
 parser.add_argument("--save_video", action="store_true")
 parser.add_argument("--video_dir", type=str, default="./eval_videos")
@@ -68,6 +68,10 @@ parser.add_argument(
 parser.add_argument("--clamp_actions", type=float, default=0.0,
                     help="clamp action values to [-val, val] (0 = no clamping)")
 parser.add_argument("--log_actions", action="store_true", help="log per-chunk action statistics")
+parser.add_argument(
+    "--arm", type=str, default="dual", choices=["dual", "left", "right"],
+    help="which ACT config to load — dual-arm (26D) or single-arm (13D, left or right)",
+)
 
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -117,7 +121,7 @@ def main():
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         )
-    if args_cli.slot != 4:
+    if args_cli.slot != 1:
         slot_pos = TRAY_SLOT_POSITIONS[args_cli.slot]
         env_cfg.scene.block.init_state.pos = slot_pos
         env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
@@ -148,9 +152,15 @@ def main():
         import yaml
         from simulation.act_closedloop_policy import ACTClosedloopPolicy
 
-        # Resolve experiment config for policy_action_dim
-        _act_cfg_path = Path(_SCRIPTS_DIR) / "policy" / "act_config_inspire_ftp.yaml"
-        _exp_policy_dim = 26
+        # Resolve experiment config for policy_action_dim.
+        # --arm selects dual-arm (26D) vs single-arm (13D) training recipe.
+        _arm_to_yaml = {
+            "dual": "act_config_inspire_ftp.yaml",
+            "left": "act_config_inspire_ftp_left_arm.yaml",
+            "right": "act_config_inspire_ftp_right_arm.yaml",
+        }
+        _act_cfg_path = Path(_SCRIPTS_DIR) / "policy" / _arm_to_yaml[args_cli.arm]
+        _exp_policy_dim = 26 if args_cli.arm == "dual" else 13
         _exp_cfg_rel = None
         if _act_cfg_path.exists():
             with open(_act_cfg_path) as f:
@@ -204,6 +214,23 @@ def main():
             obs = env.get_observations()
         elif hasattr(env, "_get_observations"):
             obs = env._get_observations()
+
+        # Single-arm eval: hold non-commanded joints at env init pose so the
+        # uncontrolled arm / hand / waist don't drift to zero-angle posture.
+        #
+        # The action term applies `target = scale * raw + offset` per joint,
+        # so hold_41d must be in RAW action space: subtract the term's offset
+        # (and divide by scale) so that once the term re-applies them, each
+        # joint lands at its default_joint_pos. Elbows carry -0.3 in the
+        # env's offset_dict — without this subtraction they'd be double-
+        # offset and the non-controlled forearm would droop past the init.
+        if args_cli.arm != "dual" and hasattr(policy, "set_default_action"):
+            robot = env.scene["robot"]
+            action_term = env.action_manager.get_term("joint_pos")
+            hold_41d = robot.data.default_joint_pos[:, action_term._joint_ids].clone()
+            hold_41d = (hold_41d - action_term._offset) / action_term._scale
+            policy.set_default_action(hold_41d)
+
         policy.reset()
         action_buffer = []
         total_reward = 0.0

@@ -77,6 +77,10 @@ SIM_ACTION_DIM = 41  # 29 body + 12 actuated hand
 VALID_GROUPS = list(GROUP_SIM_INDICES.keys())
 
 # Mapping from sim camera key -> RLinf video key.
+# Extension point: to enable RL post-training with wrist cameras, add
+# "left_wrist_camera": "video.left_wrist_view" and
+# "right_wrist_camera": "video.right_wrist_view" here (IL via LeRobot ignores
+# this map; it reads input_features directly).
 _SIM_TO_RLINF_VIDEO: dict[str, str] = {
     "front_camera": "video.room_view",
 }
@@ -194,35 +198,54 @@ class InspireFTPExperimentConfig:
                 parts.append(inspire_12d[:, s:e])
         return torch.cat(parts, dim=-1)
 
-    def scatter_to_sim(self, policy_action: Any) -> Any:
+    def scatter_to_sim(self, policy_action: Any, base_action: Any = None) -> Any:
         """Place policy-dim actions at the correct 41-D sim positions.
 
         Args:
             policy_action: Tensor of shape ``(..., policy_dim)``.
+            base_action: Optional tensor of shape ``(..., 41)`` or
+                ``(num_envs, 41)`` used as the base for non-commanded joints.
+                If ``None``, non-commanded joints get zeros (drives them to
+                zero-angle posture). For single-arm eval, pass the env init
+                pose so the non-controlled arm/hand holds its reset posture.
 
         Returns:
-            Tensor of shape ``(..., 41)`` with zeros elsewhere.
+            Tensor of shape ``(..., 41)``.
             Mimic joints are not part of the 41-D action space — they are
             driven by InspireFTPJointPositionAction.apply_actions().
         """
         import torch
 
         leading = policy_action.shape[:-1]
-        sim = torch.zeros(
-            *leading, SIM_ACTION_DIM, dtype=policy_action.dtype, device=policy_action.device
-        )
+        if base_action is None:
+            sim = torch.zeros(
+                *leading, SIM_ACTION_DIM, dtype=policy_action.dtype, device=policy_action.device
+            )
+        else:
+            # base_action is (num_envs, 41); broadcast to match leading dims
+            # (typically (num_envs, chunk_size, 41)).
+            base = base_action.to(dtype=policy_action.dtype, device=policy_action.device)
+            while base.ndim < policy_action.ndim:
+                base = base.unsqueeze(-2)
+            sim = base.expand(*leading, SIM_ACTION_DIM).clone()
         idx = torch.tensor(
             self.sim_scatter_indices, device=policy_action.device
         )
         sim[..., idx] = policy_action
         return sim
 
-    def scatter_to_sim_numpy(self, policy_action: Any) -> Any:
+    def scatter_to_sim_numpy(self, policy_action: Any, base_action: Any = None) -> Any:
         """Numpy version of :meth:`scatter_to_sim`."""
         import numpy as np
 
         leading = policy_action.shape[:-1]
-        sim = np.zeros((*leading, SIM_ACTION_DIM), dtype=policy_action.dtype)
+        if base_action is None:
+            sim = np.zeros((*leading, SIM_ACTION_DIM), dtype=policy_action.dtype)
+        else:
+            base = np.asarray(base_action, dtype=policy_action.dtype)
+            while base.ndim < policy_action.ndim:
+                base = base[..., np.newaxis, :] if base.ndim == policy_action.ndim - 1 else base[np.newaxis, ...]
+            sim = np.broadcast_to(base, (*leading, SIM_ACTION_DIM)).copy()
         sim[..., self.sim_scatter_indices] = policy_action
         return sim
 

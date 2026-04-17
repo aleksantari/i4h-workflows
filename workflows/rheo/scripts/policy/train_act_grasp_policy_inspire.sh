@@ -19,13 +19,21 @@
 # Usage: bash train_act_grasp_policy_inspire.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
 #
 # Parallel to train_act_grasp_policy_dex3.sh but for the Inspire FTP hand:
-#   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
-#   - Uses act_config_inspire_ftp.yaml
+#   - 26D dual-arm policy or 13D single-arm policy (selected via --arm)
+#   - Uses act_config_inspire_ftp{,_left_arm,_right_arm}.yaml
 #   - Sets INSPIRE_FTP_EXPERIMENT_CONFIG env var
 #
 # Examples:
-#   # Train with default settings
+#   # Dual-arm training (default, 26D)
 #   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot
+#
+#   # Right-arm-only training (13D, front + right wrist)
+#   bash train_act_grasp_policy_inspire.sh --arm right \
+#       --dataset_path /datasets/grasp_policy_inspire_right_arm_lerobot
+#
+#   # Left-arm-only training
+#   bash train_act_grasp_policy_inspire.sh --arm left \
+#       --dataset_path /datasets/grasp_policy_inspire_left_arm_lerobot
 #
 #   # Train with custom batch size and steps
 #   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot \
@@ -39,15 +47,21 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="/workspaces"
-CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp.yaml"
 
 # Parse arguments
+ARM="dual"
 DATASET_PATH=""
 RESUME_PATH=""
+SMOKETEST=false
+VIDEO_BACKEND="torchcodec"
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --arm)
+            ARM="$2"
+            shift 2
+            ;;
         --dataset_path)
             DATASET_PATH="$2"
             shift 2
@@ -56,13 +70,23 @@ while [[ $# -gt 0 ]]; do
             RESUME_PATH="$2"
             shift 2
             ;;
+        --smoketest)
+            SMOKETEST=true
+            shift
+            ;;
+        --video_backend)
+            VIDEO_BACKEND="$2"
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: $0 --dataset_path PATH [OPTIONS] [EXTRA_ARGS...]"
+            echo "Usage: $0 --dataset_path PATH [--arm dual|left|right] [--smoketest] [OPTIONS] [EXTRA_ARGS...]"
             echo ""
             echo "Options:"
-            echo "  --dataset_path PATH    Path to LeRobot-format dataset (required)"
-            echo "  --resume_path PATH     Path to checkpoint to resume from"
-            echo "  --help, -h             Show this help message"
+            echo "  --arm {dual,left,right}  Which arm config to use (default: dual)"
+            echo "  --dataset_path PATH      Path to LeRobot-format dataset (required)"
+            echo "  --resume_path PATH       Path to checkpoint to resume from"
+            echo "  --smoketest              Use single-episode memorization smoketest config (right arm only)"
+            echo "  --help, -h               Show this help message"
             echo ""
             echo "Extra args (passed directly to lerobot.scripts.train):"
             echo "  --steps 50000"
@@ -79,6 +103,41 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Select config based on --arm
+case "$ARM" in
+    dual)
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp.yaml"
+        RUN_TAG="dual"
+        ;;
+    left)
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_left_arm.yaml"
+        RUN_TAG="left_arm"
+        ;;
+    right)
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_right_arm.yaml"
+        RUN_TAG="right_arm"
+        ;;
+    *)
+        echo "Error: --arm must be one of: dual, left, right (got: $ARM)"
+        exit 1
+        ;;
+esac
+
+# Smoketest overrides the config to a memorization-oriented variant.
+# Currently only wired for --arm right.
+if [[ "$SMOKETEST" == "true" ]]; then
+    case "$ARM" in
+        right)
+            CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_right_arm_smoketest.yaml"
+            ;;
+        *)
+            echo "Error: --smoketest currently only supports --arm right (got: $ARM)"
+            exit 1
+            ;;
+    esac
+    RUN_TAG="${RUN_TAG}_smoketest"
+fi
+
 # Validate dataset path
 if [[ -z "$DATASET_PATH" ]]; then
     echo "Error: --dataset_path is required"
@@ -88,7 +147,7 @@ fi
 
 # Setup logging directory (only create parent — LeRobot requires output_dir to NOT exist)
 TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy_inspire/train_${TIMESTAMP}"
+OUTPUT_DIR="${SCRIPT_DIR}/../simulation/rl/results/act_grasp_policy_inspire/${RUN_TAG}_${TIMESTAMP}"
 mkdir -p "$(dirname "${OUTPUT_DIR}")"
 
 # Strip the custom 'experiment:' section — LeRobot's TrainPipelineConfig
@@ -107,9 +166,9 @@ with open('${FILTERED_CONFIG}', 'w') as f:
 # Build command args
 CMD_ARGS=(
     --config_path "${FILTERED_CONFIG}"
-    --dataset.repo_id grasp_policy_inspire
+    --dataset.repo_id "grasp_policy_inspire_${RUN_TAG}"
     --dataset.root "${DATASET_PATH}"
-    --dataset.video_backend pyav
+    --dataset.video_backend "${VIDEO_BACKEND}"
     --output_dir "${OUTPUT_DIR}"
 )
 

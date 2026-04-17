@@ -13,39 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# LeRobot ACT training configuration for Inspire FTP grasp_policy task
+# LeRobot ACT training configuration for Inspire FTP grasp_policy task —
+# left-arm-only variant.
 # Usage: python -m lerobot.scripts.train --config_path <this_file>
 #
-# Parallel to act_config_dex3.yaml but for the Inspire FTP hand:
-#   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
-#   - 41D sim action space (29 body + 12 actuated hand, mimic joints driven internally)
+# Paired with scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml
+# (the 13D single-arm LeRobot dataset).
+#   - 13D policy space (left_arm 7 + left_hand 6)
+#   - 41D sim action space (scatter_to_sim places the 13 values at the left-
+#     arm / left-hand indices; all other joints stay at zero)
+#   - 2 cameras: front + left wrist
 
 # ---------------------------------------------------------------------------
-# Experiment: which cameras and joint groups to use.
-# Default below is the dual-arm 26-DOF, 3-camera configuration (front + both
-# wrist cams). To experiment, comment out cameras or joint groups and update
-# input_features / output_features shapes to match.
-#
-# Hand groups have 6 DOF (Inspire FTP) instead of 7 (Dex3).
-#
-# Example — right side only (2 cameras, 13 DOF):
-#   cameras:
-#     front_camera: "observation.images.cam_room"
-#     right_wrist_camera: "observation.images.cam_right_wrist"
-#   joint_groups: [right_arm, right_hand]
-#   (also set observation.state shape to [13], action shape to [13],
-#    and remove observation.images.cam_left_wrist from input_features)
+# Experiment: cameras and joint groups for left-arm-only training.
 # ---------------------------------------------------------------------------
 experiment:
   cameras:
     front_camera: "observation.images.cam_room"
     left_wrist_camera: "observation.images.cam_left_wrist"
-    right_wrist_camera: "observation.images.cam_right_wrist"
   joint_groups:
     - left_arm    # 7 DOF, body positions 15-21
-    - right_arm   # 7 DOF, body positions 22-28
-    - left_hand   # 6 DOF, inspire positions 0-5  (actuated only, no mimic)
-    - right_hand  # 6 DOF, inspire positions 6-11 (actuated only, no mimic)
+    - left_hand   # 6 DOF, inspire positions 0-5 (actuated only, no mimic)
 
 seed: 1000
 
@@ -94,24 +82,21 @@ policy:
   n_vae_encoder_layers: 2
   kl_weight: 1
 
-  # Input features (26D: left_arm(7) + right_arm(7) + left_hand(6) + right_hand(6))
+  # Input features (13D state/action: left_arm(7) + left_hand(6))
   input_features:
     observation.state:
       type: STATE
-      shape: [26]
+      shape: [13]
     observation.images.cam_room:
       type: VISUAL
       shape: [3, 480, 640]
     observation.images.cam_left_wrist:
       type: VISUAL
       shape: [3, 480, 640]
-    observation.images.cam_right_wrist:
-      type: VISUAL
-      shape: [3, 480, 640]
   output_features:
     action:
       type: ACTION
-      shape: [26]
+      shape: [13]
 
   # Normalization (keyed by FeatureType, computed from dataset stats)
   normalization_mapping:
