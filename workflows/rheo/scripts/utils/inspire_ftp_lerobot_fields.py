@@ -251,7 +251,8 @@ def convert_g1_state_action_to_lerobot_13d(
         action = action_full[:-1, ACTION_HDF5_TO_ENV_13_FROM_41].astype(np.float64)
         action += STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA
     else:
-        action = full_13d[1:]  # (T-1, 13)
+        # Teleop recording (38D PinkIK): action = next-step observed joint positions.
+        action = full_13d[1:] + STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA
 
     return state, action
 

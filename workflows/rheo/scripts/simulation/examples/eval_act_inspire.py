@@ -121,10 +121,9 @@ def main():
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         )
-    if args_cli.slot != 1:
-        slot_pos = TRAY_SLOT_POSITIONS[args_cli.slot]
-        env_cfg.scene.block.init_state.pos = slot_pos
-        env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+    slot_pos = TRAY_SLOT_POSITIONS[args_cli.slot]
+    env_cfg.scene.block.init_state.pos = slot_pos
+    env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
 
     print(f"  Tool: {args_cli.object}  |  Slot: {args_cli.slot}")
 

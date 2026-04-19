@@ -25,16 +25,18 @@ Usage:
 import argparse
 import multiprocessing as mp
 import shutil
+import traceback
 from pathlib import Path
 
+import av
 import h5py
 import numpy as np
 from isaaclab_arena_gr00t.data_utils.convert_hdf5_to_lerobot import (
     convert_trajectory_to_df,
     generate_info,
     get_video_metadata,
-    write_video_job,
 )
+from isaaclab_arena_gr00t.data_utils.image_conversion import resize_frames_with_padding
 from isaaclab_arena_gr00t.data_utils.io_utils import create_config_from_yaml, dump_json, dump_jsonl, load_json
 from tqdm import tqdm
 from utils.assemble_trocar_lerobot_fields import STATE_28_NAMES_ENV_ORDER, convert_g1_state_action_to_lerobot_28d
@@ -185,6 +187,54 @@ def generate_info_rheo(
     return info_template
 
 
+def write_video_job_av(queue: mp.Queue, error_queue: mp.Queue, config: ExtendedDatasetConfig) -> None:
+    """h264 video encoder worker — PyAV replacement for torchvision.io.write_video.
+
+    The upstream IsaacLab-Arena worker uses torchvision.io.write_video, which
+    is deprecated in torchvision 0.22+ and scheduled for removal in 0.24.
+    Torchcodec 0.7 (pinned to match torch 2.8 / CUDA 12.8) has no VideoEncoder
+    yet, so we go direct to PyAV — the same backend LeRobot's own
+    encode_video_frames uses.
+    """
+    while True:
+        job = queue.get()
+        if job is None:
+            break
+        try:
+            video_path, frames, fps, video_type = job
+            if video_type != "image":
+                continue
+
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            assert frames.shape[1:] == config.original_image_size, (
+                f"frames.shape[1:] {frames.shape[1:]} != config.original_image_size "
+                f"{config.original_image_size}"
+            )
+            if config.target_image_size != config.original_image_size:
+                frames = resize_frames_with_padding(
+                    frames, target_image_size=config.target_image_size, bgr_conversion=False, pad_img=True
+                )
+
+            _, h, w, _ = frames.shape
+            with av.open(str(video_path), "w") as output:
+                stream = output.add_stream("h264", rate=int(fps))
+                stream.width = w
+                stream.height = h
+                stream.pix_fmt = "yuv420p"
+
+                for i in range(frames.shape[0]):
+                    av_frame = av.VideoFrame.from_ndarray(frames[i], format="rgb24")
+                    for packet in stream.encode(av_frame):
+                        output.mux(packet)
+                for packet in stream.encode():
+                    output.mux(packet)
+
+        except Exception as e:
+            error_msg = f"Error creating video {video_path}: {e}\n{traceback.format_exc()}"
+            print(error_msg)
+            error_queue.put(error_msg)
+
+
 def convert_hdf5_to_lerobot_multivideos(config: ExtendedDatasetConfig):
     """Convert HDF5 to LeRobot format with multi-video support."""
 
@@ -196,7 +246,7 @@ def convert_hdf5_to_lerobot_multivideos(config: ExtendedDatasetConfig):
 
     workers = []
     for _ in range(num_workers):
-        worker = mp.Process(target=write_video_job, args=(queue, error_queue, config))
+        worker = mp.Process(target=write_video_job_av, args=(queue, error_queue, config))
         worker.start()
         workers.append(worker)
 

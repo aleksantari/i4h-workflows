@@ -17,9 +17,44 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+import av
 import cv2
 import numpy as np
 import torch
+
+
+class _PyAVStreamWriter:
+    """Single-file MP4 writer backed by PyAV (libx264, yuv420p)."""
+
+    def __init__(self, path: Path, *, width: int, height: int, fps: int) -> None:
+        # H.264 + yuv420p require even dimensions; pad if needed at write time.
+        self.width = int(width) + (int(width) & 1)
+        self.height = int(height) + (int(height) & 1)
+        self._needs_pad = (self.width != width) or (self.height != height)
+        self._container = av.open(str(path), mode="w")
+        self._stream = self._container.add_stream("h264", rate=int(fps))
+        self._stream.width = self.width
+        self._stream.height = self.height
+        self._stream.pix_fmt = "yuv420p"
+        self._stream.options = {"crf": "20", "preset": "veryfast"}
+        self._closed = False
+
+    def write_rgb(self, rgb: np.ndarray) -> None:
+        if self._needs_pad:
+            padded = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+            padded[: rgb.shape[0], : rgb.shape[1]] = rgb
+            rgb = padded
+        frame = av.VideoFrame.from_ndarray(np.ascontiguousarray(rgb), format="rgb24")
+        for packet in self._stream.encode(frame):
+            self._container.mux(packet)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        for packet in self._stream.encode():
+            self._container.mux(packet)
+        self._container.close()
+        self._closed = True
 
 
 def set_viewport_camera(camera_prim_path: str) -> None:
@@ -46,27 +81,24 @@ class _MultiViewConcatWriter:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._base_name = base_name
         self._fps = int(fps)
-        self._fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        self._writers: dict[str, cv2.VideoWriter] = {}
+        self._writers: dict[str, _PyAVStreamWriter] = {}
+        self._paths: dict[str, Path] = {}
         self._sizes: dict[str, tuple[int, int]] = {}
         self._frame_counts: dict[str, int] = {}
         self._warned_missing: set[str] = set()
 
-    def _ensure_writer(self, stream_key: str, frame_bgr: np.ndarray) -> cv2.VideoWriter:
+    def _ensure_writer(self, stream_key: str, frame_bgr: np.ndarray) -> _PyAVStreamWriter:
         h, w = frame_bgr.shape[:2]
         if stream_key in self._writers:
-            # Enforce constant size per view to keep the writer happy.
-            vw, vh = self._sizes[stream_key]
-            if (w, h) != (vw, vh):
-                frame_bgr = cv2.resize(frame_bgr, (vw, vh))
             return self._writers[stream_key]
 
-        out_path = self._dir / f"{self._base_name}_{stream_key}.mp4"
-        writer = cv2.VideoWriter(str(out_path), self._fourcc, self._fps, (w, h))
+        path = self._dir / f"{self._base_name}_{stream_key}.mp4"
+        writer = _PyAVStreamWriter(path, width=w, height=h, fps=self._fps)
         self._writers[stream_key] = writer
+        self._paths[stream_key] = path
         self._sizes[stream_key] = (w, h)
         self._frame_counts[stream_key] = 0
-        print(f"Video: Recording stream '{stream_key}' -> {out_path.name}")
+        print(f"Video: Recording stream '{stream_key}' -> {path.name} (h264/yuv420p, {w}x{h} @ {self._fps}fps)")
         return writer
 
     @staticmethod
@@ -89,7 +121,7 @@ class _MultiViewConcatWriter:
         img = np.zeros((h, w, 3), dtype=np.uint8)
         cv2.putText(img, text, (20, max(40, h // 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         for _ in range(max(1, int(frames))):
-            self._writers[stream_key].write(img)
+            self._writers[stream_key].write_rgb(img)
             self._frame_counts[stream_key] += 1
 
     def _timecode_for_view(self, stream_key: str) -> str:
@@ -192,12 +224,16 @@ class _MultiViewConcatWriter:
         vw, vh = self._sizes[stream_key]
         if bgr.shape[1] != vw or bgr.shape[0] != vh:
             bgr = cv2.resize(bgr, (vw, vh))
-        writer.write(bgr)
+        # PyAV expects RGB; HUD was drawn in BGR space so convert back.
+        writer.write_rgb(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
         self._frame_counts[stream_key] += 1
 
     def close(self) -> None:
-        for w in self._writers.values():
-            w.release()
+        for key, w in self._writers.items():
+            count = self._frame_counts.get(key, 0)
+            path = self._paths.get(key, Path(f"<{key}>"))
+            print(f"Video: stream '{key}' wrote {count} frames -> {path}")
+            w.close()
 
 
 # Camera sensor -> observation key mapping
