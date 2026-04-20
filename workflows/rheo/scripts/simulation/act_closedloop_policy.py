@@ -90,6 +90,14 @@ class ACTClosedloopPolicy(PolicyBase):
         self.action_chunk_length = self.config.get("action_chunk_length", 100)
         self.language_instruction = self.config.get("language_instruction", "pick up block and place in bin")
 
+        # Temporal ensembling (ACT paper / LeRobot ACTTemporalEnsembler). When set,
+        # the policy is queried every env step and the overlapping chunks are blended
+        # via exponential weights (w_i = exp(-coeff * i)). Requires n_action_steps=1
+        # on the underlying config. Default None disables ensembling and uses the
+        # existing chunk-exhaustion path.
+        self.temporal_ensemble_coeff = self.config.get("temporal_ensemble_coeff", None)
+        self._use_temporal_ensemble = self.temporal_ensemble_coeff is not None
+
         # Image target size (H, W, C)
         self.target_image_size = tuple(self.config.get("target_image_size", [480, 640, 3]))
 
@@ -132,7 +140,28 @@ class ACTClosedloopPolicy(PolicyBase):
         # Load ACT policy
         self.policy = self._load_policy()
 
-        # Action chunking state
+        # If temporal ensembling requested, retrofit the loaded policy: mutate its
+        # config, build an ensembler, and reset so it initializes the rolling
+        # buffer instead of the per-step action queue. This works on checkpoints
+        # trained without ensembling — weights are identical either way; the
+        # ensembler is purely an inference-time blender.
+        if self._use_temporal_ensemble:
+            from lerobot.common.policies.act.modeling_act import ACTTemporalEnsembler
+
+            self.policy.config.temporal_ensemble_coeff = self.temporal_ensemble_coeff
+            self.policy.config.n_action_steps = 1
+            self.policy.temporal_ensembler = ACTTemporalEnsembler(
+                self.temporal_ensemble_coeff, self.policy.config.chunk_size
+            )
+            self.policy.reset()
+            self.action_chunk_length = 1
+            print(
+                f"[ACT] Temporal ensembling ENABLED "
+                f"(coeff={self.temporal_ensemble_coeff}, chunk_size={self.policy.config.chunk_size})"
+            )
+
+        # Action chunking state. When ensembling is on, action_chunk_length was
+        # just set to 1 above, so each forward pass returns a single blended action.
         self.current_action_chunk = torch.zeros(
             (num_envs, self.action_chunk_length, self.sim_action_dim),
             dtype=torch.float32,
@@ -277,17 +306,32 @@ class ACTClosedloopPolicy(PolicyBase):
             action_chunk: Shape (num_envs, chunk_size, sim_action_dim)
         """
 
-        # LeRobot ACT predict_action_chunk returns (1, chunk_size, action_dim).
-        # select_action only pops one step from an internal queue, which would
-        # collapse each chunk to a single repeated action.
+        # Two inference paths:
+        #   - Default (chunk-exhaustion): predict_action_chunk returns
+        #     (1, chunk_size, action_dim). We consume it over chunk_size env steps
+        #     before re-inferring. Bypasses select_action so each chunk is not
+        #     collapsed by the queue.
+        #   - Temporal ensembling (opt-in via temporal_ensemble_coeff): select_action
+        #     internally calls predict_action_chunk every call, feeds it to the
+        #     ACTTemporalEnsembler, and returns a single (1, action_dim) blended
+        #     action. Fresh observations every env step; overlapping chunks smoothed.
         chunks = []
         for i in range(self.num_envs):
             single_obs = {k: v[i : i + 1] for k, v in act_obs.items()}
-            action = self.policy.predict_action_chunk(single_obs)
-            if isinstance(action, np.ndarray):
-                action = torch.from_numpy(action)
-            if action.ndim == 3:
-                action = action.squeeze(0)  # (chunk_size, action_dim)
+            if self._use_temporal_ensemble:
+                action = self.policy.select_action(single_obs)  # (1, action_dim)
+                if isinstance(action, np.ndarray):
+                    action = torch.from_numpy(action)
+                if action.ndim == 1:
+                    action = action.unsqueeze(0)  # (1, action_dim)
+                # Normalize to (chunk_len=1, action_dim) so the stack/scatter path below is shape-uniform.
+                action = action  # already (1, action_dim)
+            else:
+                action = self.policy.predict_action_chunk(single_obs)
+                if isinstance(action, np.ndarray):
+                    action = torch.from_numpy(action)
+                if action.ndim == 3:
+                    action = action.squeeze(0)  # (chunk_size, action_dim)
             chunks.append(action)
 
         # Stack: (num_envs, chunk_size, policy_dim)

@@ -44,9 +44,12 @@ import numpy as np
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="ACT Evaluation — Inspire FTP Grasp Task")
-parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint")
+parser.add_argument(
+    "--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval",
+    help="gym id. Default -Joint-Eval has zero block XY/yaw noise — use -Joint for noisy training env.",
+)
 parser.add_argument("--model_path", type=str, default=None, help="path to ACT checkpoint")
-parser.add_argument("--num_episodes", type=int, default=10)
+parser.add_argument("--num_episodes", type=int, default=1)
 parser.add_argument("--max_steps", type=int, default=300)
 parser.add_argument("--seed", type=int, default=4)
 parser.add_argument("--save_video", action="store_true")
@@ -62,6 +65,15 @@ parser.add_argument(
 )
 parser.add_argument("--slot", type=int, default=1, choices=range(6))
 parser.add_argument(
+    "--pin_block_from_hdf5", type=str, default=None,
+    help="HDF5 path to read block initial pose from (overrides --slot). "
+         "Use --pin_demo_key to select which demo inside the file.",
+)
+parser.add_argument(
+    "--pin_demo_key", type=str, default="demo_0",
+    help="HDF5 demo key (e.g. 'demo_28') used with --pin_block_from_hdf5.",
+)
+parser.add_argument(
     "--action_chunk_size", type=int, default=50,
     help="actions to execute per chunk before re-observing (default: 50, matching ACT chunk_size)",
 )
@@ -69,8 +81,15 @@ parser.add_argument("--clamp_actions", type=float, default=0.0,
                     help="clamp action values to [-val, val] (0 = no clamping)")
 parser.add_argument("--log_actions", action="store_true", help="log per-chunk action statistics")
 parser.add_argument(
-    "--arm", type=str, default="dual", choices=["dual", "left", "right"],
+    "--arm", type=str, default="right", choices=["dual", "left", "right"],
     help="which ACT config to load — dual-arm (26D) or single-arm (13D, left or right)",
+)
+parser.add_argument(
+    "--temporal_ensemble_coeff", type=float, default=None,
+    help="Enable LeRobot ACT temporal ensembling with this coefficient "
+         "(e.g. 0.01 = ACT paper default, positive weights older actions more). "
+         "When set, the policy is queried every env step and overlapping chunks "
+         "are exponentially blended; --action_chunk_size is ignored.",
 )
 
 AppLauncher.add_app_launcher_args(parser)
@@ -121,11 +140,29 @@ def main():
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             collision_props=sim_utils.CollisionPropertiesCfg(),
         )
-    slot_pos = TRAY_SLOT_POSITIONS[args_cli.slot]
-    env_cfg.scene.block.init_state.pos = slot_pos
-    env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+    if args_cli.pin_block_from_hdf5:
+        import h5py
 
-    print(f"  Tool: {args_cli.object}  |  Slot: {args_cli.slot}")
+        with h5py.File(args_cli.pin_block_from_hdf5, "r") as _hf:
+            _root_pose = _hf[f"data/{args_cli.pin_demo_key}/initial_state/rigid_object/block/root_pose"][()]
+        _p = np.asarray(_root_pose).reshape(-1)
+        slot_pos = (float(_p[0]), float(_p[1]), float(_p[2]))
+        slot_rot = (float(_p[3]), float(_p[4]), float(_p[5]), float(_p[6]))
+        env_cfg.scene.block.init_state.pos = slot_pos
+        env_cfg.scene.block.init_state.rot = slot_rot
+        env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+        env_cfg.events.reset_block_position.params["slot_rot"] = slot_rot
+        print(
+            f"  Tool: {args_cli.object}  |  Block pinned from {args_cli.pin_demo_key}: "
+            f"pos={slot_pos}, rot={slot_rot}"
+        )
+    else:
+        slot_pos = TRAY_SLOT_POSITIONS[args_cli.slot]
+        env_cfg.scene.block.init_state.pos = slot_pos
+        env_cfg.scene.block.init_state.rot = TOOL_ROT
+        env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
+        env_cfg.events.reset_block_position.params["slot_rot"] = TOOL_ROT
+        print(f"  Tool: {args_cli.object}  |  Slot: {args_cli.slot}")
 
     env = gym.make(args_cli.task, cfg=env_cfg).unwrapped
     env.seed(args_cli.seed)
@@ -180,11 +217,22 @@ def main():
             "hand_type": "inspire_ftp",
             "experiment_config_path": _exp_cfg_rel,
         }
+        if args_cli.temporal_ensemble_coeff is not None:
+            config["temporal_ensemble_coeff"] = args_cli.temporal_ensemble_coeff
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
         yaml.dump(config, tmp)
         tmp.close()
         policy = ACTClosedloopPolicy(tmp.name, num_envs=1, device=args_cli.device)
         print(f"ACT policy loaded ({_exp_policy_dim}D → 41D sim)")
+        if args_cli.temporal_ensemble_coeff is not None:
+            print(
+                f"[Inference] Temporal ensembling ON "
+                f"(coeff={args_cli.temporal_ensemble_coeff}) — querying policy every env step"
+            )
+        else:
+            print(
+                f"[Inference] Chunk-exhaustion mode (action_chunk_size={args_cli.action_chunk_size})"
+            )
 
     # --- Video setup ---
     video_writer = None
@@ -235,6 +283,7 @@ def main():
         total_reward = 0.0
         ep_success = False
         chunk_idx = 0
+        applied_actions = [] if args_cli.log_actions else None
 
         for step in range(args_cli.max_steps):
             # Get new action chunk if buffer empty

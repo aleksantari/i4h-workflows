@@ -175,3 +175,265 @@ the matching 53-D/41-D branches. A one-line conversion fix is localized and safe
 - `TRAY_SLOT_POSITIONS` differ by only `±0.055 m` in X and `0.2365 m` in Y between the
   back-row and front-row tool positions — enough to matter for generalization if we
   ever try to eval on an untrained slot.
+
+---
+
+## Session 2 — 2026-04-19
+
+### Where things stand
+
+Since Session 1 we have landed two fixes and confirmed the smoketest is still not
+reproducing the recorded trajectory — though the fingers are now visibly closing
+correctly after the second fix. Documenting remaining hypotheses so none are lost
+if context rolls over again.
+
+**Fixes already applied:**
+
+1. **Elbow offset compensation** — 38-D branch of
+   [scripts/utils/inspire_ftp_lerobot_fields.py](../scripts/utils/inspire_ftp_lerobot_fields.py)
+   now adds `+0.3` to elbow columns (matching the 53-D/41-D branches). Context and
+   rationale: [elbow_offset.md](elbow_offset.md). Required re-converting the
+   dataset and rebuilding `demo_ep28`, then retraining the smoketest.
+2. **Middle/pinky scatter swap** — [scripts/utils/inspire_ftp_experiment_config.py](../scripts/utils/inspire_ftp_experiment_config.py)
+   `GROUP_SIM_INDICES` for both hands now respects the env's `actuated_joint_names`
+   order (`little_1` before `middle_1`). No retraining needed — training labels were
+   correct, only eval-time scatter was wrong. Full writeup:
+   [inspire_scatter_indices.md](inspire_scatter_indices.md).
+
+After both fixes + re-eval of the `005000` smoketest checkpoint, fingers look
+better but the policy still does not reproduce the recorded motion. Remaining
+hypotheses below.
+
+### Remaining hypotheses (unverified)
+
+**From the original D1–D5 diagnostic plan:**
+
+- ~~**D2 — Runtime obs state layout.**~~ **Checked 2026-04-19. Clean.**
+  Extended `verify_scatter_indices.py` to dump canonical name order plus post-reset
+  obs values. Confirmed: `body[22:29]` = 7 right-arm joints in canonical order;
+  `inspire[6:12]` = `[R_thumb_1, R_thumb_2, R_index_1, R_middle_1, R_ring_1, R_little_1]`
+  (= `thumb_yaw, thumb_pitch, index, middle, ring, pinky` per the canonical label
+  convention); runtime `body[22]=-0.5`, `body[25]=-0.3`, all others 0 — identical
+  to parquet row 0 of `demo_ep28`. Obs state path is not the bug.
+- ~~**D5 — Training loss floor.**~~ **Checked 2026-04-19. Clean.**
+  `train/l1_loss` reached 0.034 at step 5000 (still decreasing slowly). To verify
+  memorization quality in real units, wrote
+  [scripts/utils/offline_replay_mae.py](../scripts/utils/offline_replay_mae.py)
+  and replayed ep28 through the checkpoint. Results: overall raw MAE
+  **0.0138 rad (~0.79°/joint/step)**, uniform across arm and finger dims. The
+  model memorized the trajectory tightly. This means the failure must be at
+  eval time — the model is not seeing the observations it expects, not failing
+  to reproduce the actions given good observations.
+
+**Environmental / distribution-shift hypotheses (mentioned, never checked):**
+
+- **Reset-pose mismatch (investigating next).** Does `obs[0]` at eval start
+  match the first frame of the recorded episode? The env resets to
+  `default_joint_pos` (elbows at -0.3, arms at 0) + randomized block position.
+  The recorded demo starts from whatever pose the teleop operator happened to
+  be in. For a memorized single-episode policy, any drift in the first frame
+  means the first predicted action is wrong, and the model has no mechanism to
+  recover — every subsequent frame is further off-distribution.
+- **Control cadence / dt mismatch.** Record-time step dt vs eval-time step dt.
+  If eval ticks at a different rate than the 50 Hz the dataset was recorded at,
+  the 100-step chunk covers a different wall-clock window than trained. Check
+  `sim.dt`, `decimation`, and any render-gating delays.
+- ~~**Camera pose drift.**~~ **Checked 2026-04-19. Minor contributor only.**
+  Camera prim paths, pos/rot offsets, focal lengths, resolution, lighting, and
+  materials are all identical between teleop and eval envs (teleop inherits from
+  base env and only overrides actions / XR / episode length). One real
+  discrepancy: teleop env sets `sim.render_interval = 2` while the base (eval)
+  env uses `render_interval = decimation = 4`. Both envs render at the same
+  policy-step boundaries but teleop gets 2× more DLAA temporal history samples.
+  Pixel-diff of reset frames after 10 static-arm warmup steps:
+  front camera MAE=1.05/255 (0.41%), wrist cams MAE≈0.54/255 (0.21%). 99% of
+  pixels differ by ≤8/255. Post-ResNet18 normalization this is ~1.6% input
+  shift — small, not the primary bug. In-motion divergence could be larger
+  (DLAA less converged during movement) but untested. Cleanup target: set
+  `self.sim.render_interval = self.decimation` in the teleop env to match the
+  production cadence.
+- ~~**Normalization stats scope.**~~ **Checked 2026-04-19. Clean.**
+  `demo_ep28/lerobot/meta/episodes_stats.jsonl` (count=211, ep28 only) was written
+  at 16:39 after the parquet at 16:33 and before the 20:39 training run — fresh
+  and single-episode-scoped. Action[3] (right elbow) stats shift +0.3 relative to
+  observation.state[3], confirming the elbow-offset fix is baked in correctly and
+  no stale pre-fix stats are in play. Image stats are the LeRobot default
+  placeholder mean=0.5/std=0.25 (not ImageNet, not real ep28 pixel stats) — same
+  both at train and eval so self-consistent for memorization, worth knowing but
+  not a bug.
+
+### Check order (cheapest first)
+
+1. **Reset-pose mismatch** — compare env `obs[0]` against parquet row 0 in
+   `demo_ep28/lerobot`. No sim boot needed beyond one env.reset(). *(Next.)*
+2. **Normalization stats** — inspect `meta/stats.json` timestamps and values.
+   Trivial JSON read.
+3. **D2 obs layout** — add state check to `verify_scatter_indices.py` and rerun
+   inside docker.
+4. **D5 loss floor** — open wandb.
+5. **Cadence / cameras** — only if the above pass.
+
+### Elbow-offset fix re-validation — 2026-04-20. Confirmed correct.
+
+User reported the pre-fix smoketest (`right_arm_smoketest_20260419-152551/checkpoints/005000`,
+trained on parquet before the `+0.3` shift was added) visually reaches closer to
+the tool at eval than the post-fix checkpoint (`right_arm_smoketest_20260419-203926/checkpoints/005000`)
+under the same `eval_act_inspire.py` invocation with a deterministic block pose.
+This is counter-intuitive — the fix should make the model command the recorded
+trajectory exactly, while the pre-fix should systematically under-reach.
+
+**Diagnostic E1:** Ran
+[scripts/utils/offline_replay_mae.py](../scripts/utils/offline_replay_mae.py)
+against both checkpoints using the current (post-fix) `demo_ep28` parquet.
+
+| Dim | Pre-fix raw MAE | Post-fix raw MAE |
+|-----|----------------:|-----------------:|
+| 0 shoulder_pitch | 0.010 | 0.010 |
+| 1 shoulder_roll  | 0.007 | 0.008 |
+| 2 shoulder_yaw   | 0.018 | 0.019 |
+| **3 elbow**      | **0.298** | **0.008** |
+| 4 wrist_roll     | 0.016 | 0.016 |
+| 5 wrist_pitch    | 0.008 | 0.009 |
+| 6 wrist_yaw      | 0.008 | 0.008 |
+| 7–12 hand joints | 0.004–0.021 | 0.005–0.022 |
+| **Overall**      | 0.0358 | 0.0138 |
+
+The entire 0.022 overall-MAE gap is concentrated in dim 3 (right_elbow); in std
+units the elbow jumps from 0.05 (post-fix, comparable to every other dim) to
+**1.79 (pre-fix)**. The pre-fix model memorized `action[3] ≈ observed_state[3]`
+(no shift); the post-fix model memorized `action[3] ≈ observed_state[3] + 0.3`.
+**The fix is mechanically doing exactly what was designed.**
+
+After the env's `-0.3` elbow offset:
+- **Post-fix commanded elbow target = recorded `observation.state[3]`** — matches
+  the teleop trajectory on every step, including the peak-reach extension at
+  ≈+0.14 rad.
+- **Pre-fix commanded elbow target = recorded `observation.state[3]` − 0.3** —
+  0.3 rad more bent than the recording everywhere (peak at ≈−0.16 rad).
+
+**Implication for the "pre-fix reaches closer" observation.** The pre-fix model
+is *not* reaching closer because the fix is wrong — it reaches closer *despite*
+commanding an over-bent elbow. Two candidate explanations (not yet tested;
+filed for the main debug thread):
+
+1. The teleop recording itself didn't successfully reach/grasp in the first
+   place, so a checkpoint that memorizes it perfectly cannot succeed either.
+2. Eval-world geometry differs from teleop-world (block pose, PD tracking lag,
+   dome lighting -> perception, etc.), so the "correct" elbow angle to reach
+   the tool in eval is not the same as the recorded observation.
+
+**Decision: keep the fix.** The post-fix training contract is correct, the
+model memorized it to 0.008 rad MAE, and the remaining regression lives
+elsewhere in the train→eval handshake — most likely in the observation-side
+distribution shift items still on the open list above (reset-pose mismatch,
+control cadence, or recording quality).
+
+### Inference pattern — chunk-exhaustion vs temporal ensembling — 2026-04-20
+
+**Current pattern (chunk-exhaustion).** Our wrapper
+[scripts/simulation/act_closedloop_policy.py](../scripts/simulation/act_closedloop_policy.py)
+calls `self.policy.predict_action_chunk(obs)` once per inference and returns a
+`(1, 100, 13)` chunk. The eval loop in
+[scripts/simulation/examples/eval_act_inspire.py](../scripts/simulation/examples/eval_act_inspire.py)
+buffers the first `--action_chunk_size` (default 50) actions from that chunk,
+pops one per env step, and re-queries only when the buffer is empty. Net
+behavior: **one inference per 50 env steps (~1 s at 50 Hz), fully open-loop
+within each chunk, no blending across chunks.** `select_action` is explicitly
+bypassed (see comment at
+[scripts/simulation/act_closedloop_policy.py:280-282](../scripts/simulation/act_closedloop_policy.py#L280-L282))
+because with the default LeRobot config (`temporal_ensemble_coeff=None`) it
+would just pop from an `n_action_steps`-deep queue and collapse each chunk to
+a single repeated action.
+
+**What the docker-bundled LeRobot offers.** `ACTPolicy`
+(`/isaac-sim/kit/python/lib/python3.11/site-packages/lerobot/common/policies/act/modeling_act.py`)
+ships `ACTTemporalEnsembler` at lines 180-268 — the ACT paper's
+exponential-weighted overlap blender. Activation mechanism at line 77: if
+`config.temporal_ensemble_coeff is not None`, `ACTPolicy.__init__`
+instantiates `self.temporal_ensembler = ACTTemporalEnsembler(coeff, chunk_size)`,
+and `ACTPolicy.select_action` (lines 120-123) routes every call through
+`predict_action_chunk → ensembler.update → single blended action`. Weights
+are `w_i = exp(-coeff * i)` with the paper default `coeff=0.01` giving
+**older actions more weight** (rationale: aggressive newer-weighting
+diminishes the smoothing benefit of chunking — see
+https://github.com/huggingface/lerobot/pull/319). Validation constraint at
+`configuration_act.py` line 148: `n_action_steps` must be 1 when ensembling
+is enabled (policy is re-queried every env step).
+
+**Why this is the top remaining inference-time hypothesis.** Our open-loop
+window is 50 env steps on a single observation. At raw MAE 0.008 rad on the
+elbow (post-fix offline replay) the model is essentially perfect at every
+single step in training, but closed-loop rollout amplifies any observation
+that lands slightly off the training manifold — once the arm deviates, the
+next chunk gets a novel observation and the error compounds. Temporal
+ensembling injects fresh visual feedback every step *and* averages single-query
+errors across ≤100 overlapping predictions, which is exactly the failure mode
+the ACT paper designed the ensembler to address.
+
+**Implementation landed 2026-04-20 (pre-A/B).** Added `temporal_ensemble_coeff`
+plumbing:
+- Wrapper
+  [scripts/simulation/act_closedloop_policy.py](../scripts/simulation/act_closedloop_policy.py):
+  when the YAML config sets `temporal_ensemble_coeff`, after loading the
+  checkpoint we mutate `self.policy.config.temporal_ensemble_coeff`,
+  `n_action_steps=1`, attach a fresh `ACTTemporalEnsembler(coeff, chunk_size)`,
+  and call `self.policy.reset()`. `_forward_action_chunk` then routes through
+  `select_action` (returning `(1, action_dim)`) instead of
+  `predict_action_chunk` (returning the full chunk). `action_chunk_length`
+  drops to 1 so the eval buffer triggers a fresh inference every env step.
+- CLI flag
+  [scripts/simulation/examples/eval_act_inspire.py](../scripts/simulation/examples/eval_act_inspire.py):
+  `--temporal_ensemble_coeff FLOAT` (default `None`). Passed through the
+  temp YAML into the wrapper. Mode is logged at run start.
+- The weights are identical across paths — ensembling is purely inference-time,
+  no retraining needed.
+
+**A/B to run on the post-fix smoketest.** Same deterministic block pose
+(`--pin_block_from_hdf5 demo.hdf5 --pin_demo_key demo_28`):
+
+```bash
+# A. Chunk-exhaustion (current default)
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py \
+  --model_path /workspaces/.../right_arm_smoketest_20260419-203926/checkpoints/005000/pretrained_model \
+  --pin_block_from_hdf5 /workspaces/workflows/rheo/datasets/inspire_right_arm/demo.hdf5 \
+  --pin_demo_key demo_28 --enable_cameras --save_video
+
+# B. Temporal ensembling (ACT paper default coefficient)
+./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py \
+  --model_path ... --pin_block_from_hdf5 ... --pin_demo_key demo_28 \
+  --enable_cameras --save_video --temporal_ensemble_coeff 0.01
+```
+
+**A/B result — 2026-04-20.** Both runs completed, 300 steps each, same checkpoint
+(`right_arm_smoketest_20260419-203926/checkpoints/005000`), same pinned block
+pose (demo_28).
+
+| Mode | Chunks | Success | Reward | Stage at step 250 |
+|------|-------:|--------:|-------:|------------------:|
+| A — chunk-exhaustion (default) | 6 | 0/1 | 0.00 | 0 |
+| B — temporal ensemble (coeff=0.01) | 300 | 0/1 | 0.00 | 0 |
+
+The chunk count confirms the mechanical switch landed correctly (A = 300/50 = 6
+inferences; B = 1 inference per env step). **Neither run succeeded.** Both
+remained at stage 0 throughout — the arm never advanced out of reach-toward-tool
+into grasp.
+
+Videos (for visual inspection of trajectory differences):
+- A: `eval_videos/20260420_132538_act_pretrained_model_front.mp4`
+- B: `eval_videos/20260420_132819_act_pretrained_model_front.mp4`
+
+**Interpretation.** Open-loop amplification is not the primary eval-time bug.
+If the 100-step open-loop window were driving the regression, ensembling with
+per-step observation refresh and exponential blending should have produced a
+qualitatively different trajectory, at least visually; it didn't improve
+reward or stage. Either (a) the input distribution to the model at eval is
+sufficiently off-manifold that per-step re-query doesn't help (the model
+keeps predicting something coherent but wrong), or (b) the memorization
+itself has a gap we haven't seen yet in the static-frame offline MAE.
+
+**CLI flag retained** as a low-cost experimental lever. Next pass should
+focus on the observation-side candidates that ensembling does not address:
+reset-pose drift between teleop recording and eval reset, PD controller
+tracking lag during the initial peak-reach, or the dome-lighting / DLAA
+render-interval discrepancy between teleop (render_interval=2) and eval
+(render_interval=4) that was flagged in the camera-pose check above.

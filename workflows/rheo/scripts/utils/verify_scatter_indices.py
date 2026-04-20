@@ -76,6 +76,42 @@ def main():
             phys = names_41[idx]
             print(f"    slot '{label:<18}'  ->  env[{idx:2d}] = {phys}")
 
+    # D2 check: observation-side joint layout.
+    # extract_state slices body_87d[:, 22:29] for right_arm and
+    # inspire_12d[:, 6:12] for right_hand. Verify these slices resolve to
+    # the physical joints the canonical labels claim.
+    from simulation.tasks.grasp_policy_inspire.mdp.observations import (
+        _BODY_JOINT_NAMES_CANONICAL,
+        _INSPIRE_ACTUATED_NAMES,
+        get_robot_body_joint_states,
+        get_robot_inspire_joint_states,
+    )
+
+    print("\n=============================================")
+    print("D2: observation-side joint layout")
+    print("=============================================")
+    print("\n  _BODY_JOINT_NAMES_CANONICAL[15:29] (arm slice source):")
+    for i in range(15, 29):
+        print(f"    body[{i:2d}]: {_BODY_JOINT_NAMES_CANONICAL[i]}")
+    print("\n  _INSPIRE_ACTUATED_NAMES (full 12-D):")
+    for i, n in enumerate(_INSPIRE_ACTUATED_NAMES):
+        print(f"    inspire[{i:2d}]: {n}")
+
+    # Runtime obs numerical check: right_elbow should reset to -0.3,
+    # right_shoulder_pitch to -0.5, all others (arm + hand) to 0.
+    env.reset()
+    body_87d = get_robot_body_joint_states(env).cpu().numpy()[0]
+    inspire_12d = get_robot_inspire_joint_states(env).cpu().numpy()[0]
+
+    print("\n  Runtime obs values after reset (env0):")
+    print("    body[15:29] (arm positions — L then R):")
+    for i in range(15, 29):
+        print(f"      [{i:2d}] {_BODY_JOINT_NAMES_CANONICAL[i]:<28} = {body_87d[i]:+.4f}")
+    print("\n    inspire[0:12] (hand positions — L then R):")
+    for i in range(12):
+        print(f"      [{i:2d}] {_INSPIRE_ACTUATED_NAMES[i]:<24} = {inspire_12d[i]:+.4f}")
+    print("\n  Expected: *_shoulder_pitch = -0.5, *_elbow = -0.3, all others ≈ 0.0")
+
     env.close()
     simulation_app.close()
 
