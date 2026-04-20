@@ -47,7 +47,7 @@ parser = argparse.ArgumentParser(description="ACT Evaluation — Inspire FTP Gra
 parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint")
 parser.add_argument("--model_path", type=str, default=None, help="path to ACT checkpoint")
 parser.add_argument("--num_episodes", type=int, default=10)
-parser.add_argument("--max_steps", type=int, default=1000)
+parser.add_argument("--max_steps", type=int, default=300)
 parser.add_argument("--seed", type=int, default=4)
 parser.add_argument("--save_video", action="store_true")
 parser.add_argument("--video_dir", type=str, default="./eval_videos")
