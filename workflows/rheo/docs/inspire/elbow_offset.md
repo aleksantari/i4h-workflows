@@ -71,7 +71,7 @@ raw = target − offset
     = target + 0.3
 ```
 
-This is exactly what the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors encode in [scripts/utils/inspire_ftp_lerobot_fields.py](../../scripts/utils/inspire_ftp_lerobot_fields.py):
+This is exactly what the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors encode in [scripts/utils/inspire_lerobot_fields.py](../../scripts/utils/inspire_lerobot_fields.py):
 
 | Variant | Vector | Non-zero entries |
 |---|---|---|
@@ -118,9 +118,9 @@ When reasoning about any elbow-angle value in the Inspire FTP grasp or trocar pi
 |---|---|---|
 | Env spawn | [grasp_policy_inspire/config/robot_config.py:60,67](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60) | Sets physical elbow = -0.3 at reset. Independent of action mapping. |
 | Env action term | [grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115) | Passes `offset=offset_dict` to `JointPositionActionCfg`. Defines the raw-action coordinate system. |
-| Teleop converter (26-D dual) | [scripts/utils/inspire_ftp_lerobot_fields.py:77-79](../../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79), used in `convert_g1_state_action_to_lerobot_26d` | Adds +0.3 at elbow dims when converting 38-D PinkIK → raw-action LeRobot. |
-| Teleop converter (13-D right) | [scripts/utils/inspire_ftp_lerobot_fields.py:213-215](../../scripts/utils/inspire_ftp_lerobot_fields.py#L213-L215), used in `convert_g1_state_action_to_lerobot_13d` | Same, right elbow only. (Bug fix: was missing in the `else` branch for the 38-D case; fixed 2026-04-19.) |
-| Teleop converter (13-D left) | [scripts/utils/inspire_ftp_lerobot_fields.py:282-284](../../scripts/utils/inspire_ftp_lerobot_fields.py#L282-L284), used in `convert_g1_state_action_to_lerobot_13d_left` | Same, left elbow only. |
+| Teleop converter (26-D dual) | [scripts/utils/inspire_lerobot_fields.py:77-79](../../scripts/utils/inspire_lerobot_fields.py#L77-L79), used in `convert_g1_state_action_to_lerobot_26d` | Adds +0.3 at elbow dims when converting 38-D PinkIK → raw-action LeRobot. |
+| Teleop converter (13-D right) | [scripts/utils/inspire_lerobot_fields.py:213-215](../../scripts/utils/inspire_lerobot_fields.py#L213-L215), used in `convert_g1_state_action_to_lerobot_13d` | Same, right elbow only. (Bug fix: was missing in the `else` branch for the 38-D case; fixed 2026-04-19.) |
+| Teleop converter (13-D left) | [scripts/utils/inspire_lerobot_fields.py:282-284](../../scripts/utils/inspire_lerobot_fields.py#L282-L284), used in `convert_g1_state_action_to_lerobot_13d_left` | Same, left elbow only. |
 | Trocar converter | [scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61) | Same pattern for the trocar task. |
 | Eval scatter (hold) | [scripts/simulation/examples/eval_act_inspire.py:220-231](../../scripts/simulation/examples/eval_act_inspire.py#L220-L231) | Inverts offset when computing the 41-D hold vector fed to `policy.set_default_action`. |
 
@@ -158,7 +158,7 @@ The offset is a **convenience**, not a requirement:
 If/when we decide to remove it, the changes are coordinated but mechanical:
 
 1. Set `offset_dict = {}` (or drop `offset=` entirely) in both task env cfgs (`grasp_policy_inspire`, `assemble_trocar`). `default_joint_pos` stays — the physical rest pose is unchanged.
-2. Delete the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors in `inspire_ftp_lerobot_fields.py` and their additions in the `convert_*` functions. Same for `assemble_trocar_lerobot_fields.py`.
+2. Delete the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors in `inspire_lerobot_fields.py` and their additions in the `convert_*` functions. Same for `assemble_trocar_lerobot_fields.py`.
 3. Remove the offset subtraction in `eval_act_inspire.py`'s hold-41D computation — the raw-action rest pose then equals `default_joint_pos` directly.
 4. Rerun **all** HDF5 → LeRobot conversions for all tasks; prior datasets become stale.
 5. Retrain **all** IL checkpoints against the new datasets; prior checkpoints become stale.

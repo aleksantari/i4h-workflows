@@ -21,7 +21,7 @@ URDF — which includes d435_link — to USD so that camera transforms match the
 real robot for sim-to-real transfer.
 
 Usage (inside Docker):
-    python scripts/utils/convert_inspire_ftp_urdf_to_usd.py
+    python scripts/utils/convert_inspire_urdf_to_usd.py
 
 Output:
     assets/robots/g1-29dof-inspire-ftp-usd/g1_29dof_inspire_ftp.usd

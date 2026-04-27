@@ -45,7 +45,7 @@ at the bottom; earlier context is kept so the thought process stays traceable.
 7. **26D → 41D scatter indices.** Verified against `actuated_joint_names` order in the
    env cfg. Correct.
 
-### Primary finding: elbow offset asymmetry (`inspire_ftp_lerobot_fields.py:294`)
+### Primary finding: elbow offset asymmetry (`inspire_lerobot_fields.py:294`)
 
 Walking the HDF5 → LeRobot → train → eval pipeline end-to-end turned up a broken
 contract between how the training data stores actions and how the eval env applies
@@ -66,7 +66,7 @@ data/demo_0/
 ```
 
 **The conversion's `else` branch fires for every episode.** In
-`scripts/utils/inspire_ftp_lerobot_fields.py:270-300`:
+`scripts/utils/inspire_lerobot_fields.py:270-300`:
 
 ```python
 if action_full.shape[1] == 53:
@@ -128,7 +128,7 @@ This is consistent with "arm flailing, never reaches the tool" as the dominant s
 
 Add the elbow compensation to the 38-D else branch so the training contract is
 symmetric across all three HDF5 widths. One line in
-`scripts/utils/inspire_ftp_lerobot_fields.py` around line 294:
+`scripts/utils/inspire_lerobot_fields.py` around line 294:
 
 ```python
 else:
@@ -190,11 +190,11 @@ if context rolls over again.
 **Fixes already applied:**
 
 1. **Elbow offset compensation** — 38-D branch of
-   [scripts/utils/inspire_ftp_lerobot_fields.py](../../scripts/utils/inspire_ftp_lerobot_fields.py)
+   [scripts/utils/inspire_lerobot_fields.py](../../scripts/utils/inspire_lerobot_fields.py)
    now adds `+0.3` to elbow columns (matching the 53-D/41-D branches). Context and
    rationale: [elbow_offset.md](elbow_offset.md). Required re-converting the
    dataset and rebuilding `demo_ep28`, then retraining the smoketest.
-2. **Middle/pinky scatter swap** — [scripts/utils/inspire_ftp_experiment_config.py](../../scripts/utils/inspire_ftp_experiment_config.py)
+2. **Middle/pinky scatter swap** — [scripts/utils/inspire_experiment_config.py](../../scripts/utils/inspire_experiment_config.py)
    `GROUP_SIM_INDICES` for both hands now respects the env's `actuated_joint_names`
    order (`little_1` before `middle_1`). No retraining needed — training labels were
    correct, only eval-time scatter was wrong. Full writeup:

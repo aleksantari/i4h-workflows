@@ -16,7 +16,7 @@
 """Inspect the joint ordering of the G1 + Inspire FTP nucleus USD.
 
 Run inside Docker:
-    ./docker/run_docker.sh -g1.5 python scripts/utils/inspect_inspire_ftp_joints.py
+    ./docker/run_docker.sh -g1.5 python scripts/utils/inspect_inspire_joints.py
 
 Prints the full joint list with indices, and identifies body vs hand joints,
 actuated vs mimic hand joints. Use this output to set hardcoded indices in

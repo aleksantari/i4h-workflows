@@ -166,7 +166,7 @@ arm joints are always at fixed, contiguous slices:
 | **22–28** | **right arm** (same 7) |
 
 The Dex3 body observation uses the same canonical order, which is why the
-shared joint-index constants in [`inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py)
+shared joint-index constants in [`inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py)
 (`STATE_26_BODY_COL_LEFT_ARM = range(15, 22)`,
 `STATE_26_BODY_COL_RIGHT_ARM = range(22, 29)`) work identically across the
 two hand variants.
@@ -241,7 +241,7 @@ Stages advance **forward only** — no regressions. Success termination is
 > The *representation* contract: how embodiment state and actions become
 > something the model can train on.
 > Source of truth:
-> [`inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py)
+> [`inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py)
 > and [`convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).
 
 ### AVP → teleop action (38D)
@@ -323,10 +323,10 @@ hand boundaries.
 Entry point:
 [`convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) →
 `convert_trajectory_to_df_rheo()`. Per-row state/action construction is in
-[`convert_g1_state_action_to_lerobot_26d()`](../../scripts/utils/inspire_ftp_lerobot_fields.py#L270-L301).
+[`convert_g1_state_action_to_lerobot_26d()`](../../scripts/utils/inspire_lerobot_fields.py#L270-L301).
 
 **Canonical 26D layout** (`STATE_26_NAMES_ENV_ORDER`,
-[inspire_ftp_lerobot_fields.py:30-61](../../scripts/utils/inspire_ftp_lerobot_fields.py#L30-L61)):
+[inspire_lerobot_fields.py:30-61](../../scripts/utils/inspire_lerobot_fields.py#L30-L61)):
 
 | Slice | Joints |
 |---|---|
@@ -358,7 +358,7 @@ That is:
    targets directly.
 2. Then **`+0.3`** is added to indices **3** (left elbow) and **10** (right
    elbow) via `STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA`
-   ([inspire_ftp_lerobot_fields.py:77-79](../../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79))
+   ([inspire_lerobot_fields.py:77-79](../../scripts/utils/inspire_lerobot_fields.py#L77-L79))
    so the saved action compensates the env's `offset_dict -0.3` at rollout
    time. This is the **+0.3 side** of the elbow offset chain.
 
@@ -458,7 +458,7 @@ corrupt rollouts. **Regenerate = retrain.**
 > [`act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml),
 > [`act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py),
 > and the experiment config module
-> [`inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py).
+> [`inspire_experiment_config.py`](../../scripts/utils/inspire_experiment_config.py).
 
 ### Base config — `act_config_inspire.yaml`
 

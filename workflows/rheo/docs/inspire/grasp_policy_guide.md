@@ -162,7 +162,7 @@ IsaacLab env observations
 
 > **Code:**
 > Joint group definitions and scatter logic in
-> [`scripts/utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py).
+> [`scripts/utils/inspire_experiment_config.py`](../../scripts/utils/inspire_experiment_config.py).
 > Observation extraction in
 > [`scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
 
@@ -493,7 +493,7 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 > Conversion script:
 > [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).
 > Inspire field mappings:
-> [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py).
+> [`scripts/utils/inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py).
 > Dataset config:
 > [`scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml).
 > Modality definition:
@@ -727,7 +727,7 @@ The RLinf extension module has full Inspire FTP support:
 > **Code:**
 > [`scripts/simulation/rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py)
 > — Inspire env wrapper (lines 565-636), ACT converters (lines 644-705).
-> [`scripts/utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py)
+> [`scripts/utils/inspire_experiment_config.py`](../../scripts/utils/inspire_experiment_config.py)
 > — 26D joint groups, scatter_to_sim (41D), state extraction.
 
 ### RLinf Config Files
@@ -882,12 +882,12 @@ policy, 41D sim scatter, front camera by default).
 
 | File | Description |
 |------|-------------|
-| [`utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
-| [`utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
+| [`utils/inspire_experiment_config.py`](../../scripts/utils/inspire_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
+| [`utils/inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
 | [`utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
 | [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
 | [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |
-| [`utils/inspect_inspire_ftp_joints.py`](../../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
+| [`utils/inspect_inspire_joints.py`](../../scripts/utils/inspect_inspire_joints.py) | Debug tool: USD joint ordering verification |
 
 ### ACT Training
 

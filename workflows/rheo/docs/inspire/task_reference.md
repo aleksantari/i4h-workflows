@@ -438,7 +438,7 @@ retargeter output aligns with PinkIK's expected joint order.
 
 ## 10. Data Pipeline (26D / 13D Policy Format)
 
-**Files:** `utils/inspire_ftp_lerobot_fields.py`, `utils/convert_hdf5_to_lerobot.py`,
+**Files:** `utils/inspire_lerobot_fields.py`, `utils/convert_hdf5_to_lerobot.py`,
 `config/g1_grasp_policy_inspire_dataset.yaml`,
 `config/g1_grasp_policy_inspire_dataset_right_arm.yaml`,
 `config/g1_grasp_policy_inspire_dataset_left_arm.yaml`
@@ -670,8 +670,8 @@ All paths relative to `scripts/`.
 
 | File | Role |
 |------|------|
-| `utils/inspire_ftp_lerobot_fields.py` | 26D and 13D state/action conversion logic (handles 53D, 41D, 38D) |
-| `utils/inspire_ftp_experiment_config.py` | 26D joint groups, scatter_to_sim (41D), state extraction |
+| `utils/inspire_lerobot_fields.py` | 26D and 13D state/action conversion logic (handles 53D, 41D, 38D) |
+| `utils/inspire_experiment_config.py` | 26D joint groups, scatter_to_sim (41D), state extraction |
 | `utils/convert_hdf5_to_lerobot.py` | HDF5 -> LeRobot dataset converter |
 | `config/g1_grasp_policy_inspire_dataset.yaml` | 26D dual-arm dataset conversion config |
 | `config/g1_grasp_policy_inspire_dataset_right_arm.yaml` | 13D right-arm dataset conversion config |

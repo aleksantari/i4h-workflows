@@ -111,8 +111,8 @@ scripts/
 │       └── train_gr00t_assemble_trocar.sh  # GR00T RL training launcher (trocar)
 ├── utils/
 │   ├── joint_conversion.py        # Policy-to-sim joint remapping (43 DOF, GR00T trocar)
-│   ├── inspire_ftp_lerobot_fields.py # Inspire FTP 26D + 13D state/action conversion (handles 38D teleop, 41D, 53D)
-│   ├── inspire_ftp_experiment_config.py # 26D joint groups + scatter_to_sim (26D→41D)
+│   ├── inspire_lerobot_fields.py # Inspire FTP 26D + 13D state/action conversion (handles 38D teleop, 41D, 53D)
+│   ├── inspire_experiment_config.py # 26D joint groups + scatter_to_sim (26D→41D)
 │   ├── policy_tasks.py            # TensorRT DiT wrapper, success-hold wrapper
 │   ├── webrtc_cam.py              # WebRTC video streaming (aiortc)
 │   ├── trigger_server.py          # HTTP trigger server for remote policy activation
@@ -142,10 +142,10 @@ Set by the Dockerfile and training launcher scripts:
 `BaseClosedloopPolicy` is the abstract base for all policy wrappers. It maintains `current_action_chunk` and `current_action_index` per env, requesting a new forward pass only when the chunk is exhausted. Reset via `policy.reset(env_ids)`. GR00T uses 16-step chunks; ACT (Inspire FTP) uses 50-step chunks.
 
 ### Observation Processing
-`obs_processor.py` provides model-agnostic observation extraction via the `ProcessedObservation` dataclass. It extracts camera images (front, left_wrist, right_wrist) and arm+hand joint state from IsaacLab environments. The Inspire FTP path uses `inspire_ftp_experiment_config.py` to select 26D / 13D state slicing.
+`obs_processor.py` provides model-agnostic observation extraction via the `ProcessedObservation` dataclass. It extracts camera images (front, left_wrist, right_wrist) and arm+hand joint state from IsaacLab environments. The Inspire FTP path uses `inspire_experiment_config.py` to select 26D / 13D state slicing.
 
 ### Joint Remapping
-For the GR00T trocar path, policy output (43 DOF, body-group order) is remapped to simulator joint order via `joint_conversion.py`, with mapping YAMLs from `third_party/IsaacLab-Arena/isaaclab_arena_gr00t/config/g1/`; 15 zeros are padded at the front for leg/waist joints. For the Inspire FTP ACT path, scattering from 26D/13D policy output to the 41D sim action lives in `inspire_ftp_experiment_config.py:GROUP_SIM_INDICES`.
+For the GR00T trocar path, policy output (43 DOF, body-group order) is remapped to simulator joint order via `joint_conversion.py`, with mapping YAMLs from `third_party/IsaacLab-Arena/isaaclab_arena_gr00t/config/g1/`; 15 zeros are padded at the front for leg/waist joints. For the Inspire FTP ACT path, scattering from 26D/13D policy output to the 41D sim action lives in `inspire_experiment_config.py:GROUP_SIM_INDICES`.
 
 ### RL Checkpoint Evaluation (--rl_ckpt)
 When evaluating an RL-trained GR00T checkpoint, you **must** pass `--rl_ckpt` to `eval_assemble_trocar.py`. This applies `tools/env_setup/patches/gr00t_policy_padding_dropout.patch` via `git apply` (eagle input padding to 850 tokens + dropout→Identity replacement). The patch is auto-reverted via context manager. Without this flag on an RL checkpoint, inference silently produces wrong results.

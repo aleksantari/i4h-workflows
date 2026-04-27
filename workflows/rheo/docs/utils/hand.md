@@ -816,5 +816,5 @@ else:
 ```
 
 > **Code:**
-> [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py),
+> [`scripts/utils/inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py),
 > [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).

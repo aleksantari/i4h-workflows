@@ -32,7 +32,7 @@ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg  # noqa: E402
 
 from simulation.tasks import grasp_policy_inspire  # noqa: F401,E402
 
-# Inlined copy of GROUP_SIM_INDICES from utils/inspire_ftp_experiment_config.py
+# Inlined copy of GROUP_SIM_INDICES from utils/inspire_experiment_config.py
 # (avoids the dataclass import-by-path quirk inside Isaac Sim's Python).
 GROUP_SIM_INDICES = {
     "left_arm":   [11, 15, 19, 21, 23, 25, 27],

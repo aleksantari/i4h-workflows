@@ -41,7 +41,7 @@ from isaaclab_arena_gr00t.data_utils.io_utils import create_config_from_yaml, du
 from tqdm import tqdm
 from utils.assemble_trocar_lerobot_fields import STATE_28_NAMES_ENV_ORDER, convert_g1_state_action_to_lerobot_28d
 from utils.extended_dataset_config import ExtendedDatasetConfig
-from utils.inspire_ftp_lerobot_fields import (
+from utils.inspire_lerobot_fields import (
     STATE_13_LEFT_NAMES_ENV_ORDER,
     STATE_13_NAMES_ENV_ORDER,
     STATE_26_NAMES_ENV_ORDER,

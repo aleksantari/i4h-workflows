@@ -6,7 +6,7 @@
 The rollout log is 41-D sim-space actions (one row per env step). The ep28
 parquet stores 13-D policy-space actions (7 right-arm + 6 right-hand). We
 map the 13 policy dims into the 41-D sim space via the Inspire FTP scatter
-indices from inspire_ftp_experiment_config.py, then compare per-dim.
+indices from inspire_experiment_config.py, then compare per-dim.
 
 Usage (host, grasp conda env):
     python scripts/utils/plot_rollout_vs_gt.py \

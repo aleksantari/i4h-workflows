@@ -89,7 +89,7 @@ STATE_26_INSPIRE_COL_LEFT_HAND = list(range(0, 6))
 STATE_26_INSPIRE_COL_RIGHT_HAND = list(range(6, 12))
 
 # The full 53-joint env config order (= USD tree-traversal order).
-# Updated from inspect_inspire_ftp_joints.py output.
+# Updated from inspect_inspire_joints.py output.
 # L/R are interleaved, and actuated/mimic hand joints are NOT contiguous.
 RECORDED_ACTION_53_JOINT_NAMES = (
     # --- Body (29): L/R interleaved ---

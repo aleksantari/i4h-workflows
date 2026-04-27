@@ -473,7 +473,7 @@ def _convert_inspire_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any
       - observation.images.cam_room: (B, C, H, W) float tensor
       - observation.state: (B, 26) float tensor
     """
-    from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+    from utils.inspire_experiment_config import InspireFTPExperimentConfig
 
     exp_config = InspireFTPExperimentConfig.from_env_or_default()
 
@@ -498,7 +498,7 @@ def _convert_inspire_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray
 
     Uses InspireFTPExperimentConfig to scatter 26D policy actions into 53D sim space.
     """
-    from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
+    from utils.inspire_experiment_config import InspireFTPExperimentConfig
 
     if isinstance(action_chunk, dict):
         action = action_chunk.get("action", action_chunk.get("actions"))
