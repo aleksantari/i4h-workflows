@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 See the [parent CLAUDE.md](../../CLAUDE.md) for repo-wide conventions (linting, license headers, DCO sign-off, testing framework).
 
+## About this workflow
+
+This workflow has been narrowed into a **G1 + Inspire FTP universal platform** for tabletop manipulation tasks. Active development centers on `grasp_policy_inspire` (with more G1 + Inspire FTP tasks planned) and on extending the closed-loop policy stack beyond ACT (VLAs first; see `simulation/policies/`). The original NVIDIA Rheo material — GR00T trocar / Arena locomanip / VLM agents — is preserved as borrow-only infrastructure under `_rheo/` directories (`scripts/simulation/_rheo/`, `scripts/simulation/tasks/_rheo_arena/`, `scripts/simulation/_rheo/agents/`); treat those with care and avoid building new active features on top of them. The parent `workflows/rheo/` directory name is upstream and not renamed.
+
 ## Primary Track: G1 + Inspire FTP Grasp Policy
 
 The active focus of this workflow is the **G1 + Inspire FTP 5-finger hand grasp policy** — pick a surgical tool from a tray and place it on a target pad, trained via ACT imitation learning and (optionally) RLinf PPO post-training. When a request says "the policy" / "the task" / "the pipeline" without qualifying, default to this track.
@@ -62,9 +66,9 @@ Arena environments are registered via `_rheo/register_and_patch.py` into an `Exa
 | Policy | Model | Action dims | Chunk size | Wrapper / Config |
 |--------|-------|-------------|------------|------------------|
 | **GR00T** | DiT (TensorRT) | 43 DOF | 16 | `_rheo/gr00t_closedloop_policy.py` (trocar) |
-| **ACT (Inspire FTP)** | CVAE (LeRobot) | 26 DOF dual-arm or 13 DOF single-arm (scattered to 41D sim) | 50 | `act_closedloop_policy.py` + `act_config_inspire.yaml` (dim_model=256) |
+| **ACT (Inspire FTP)** | CVAE (LeRobot) | 26 DOF dual-arm or 13 DOF single-arm (scattered to 41D sim) | 50 | `policies/act.py` + `act_config_inspire.yaml` (dim_model=256) |
 
-Both extend `BaseClosedloopPolicy`, which manages per-env action chunk state (current chunk, index, exhaustion tracking). Subclasses implement `_load_model()` and `_get_action_chunk()`.
+Both wrappers implement the `PolicyBase` interface (from `isaaclab_arena.policy.policy_base`) and manage per-env action chunk state. `simulation/policies/base.py` defines `BaseClosedloopPolicy` as scaffolding for future wrappers (e.g. the planned VLA path); current wrappers inherit `PolicyBase` directly.
 
 The Inspire FTP grasp policy eval entry point is `eval_act_inspire.py`.
 
@@ -86,8 +90,10 @@ scripts/
 │   ├── act_config_inspire.yaml          # LeRobot ACT training config — Inspire FTP grasp (chunk=50, dim_model=256)
 │   └── train_act_grasp_policy_inspire.sh # LeRobot ACT training launcher (Inspire FTP)
 ├── simulation/
-│   ├── base_closedloop_policy.py  # Abstract base: shared action chunking for policy wrappers
-│   ├── act_closedloop_policy.py   # ACT policy wrapper (26D/13D → 41D scatter, action_horizon=50) — Inspire FTP
+│   ├── policies/                  # Closed-loop policy wrappers (active)
+│   │   ├── base.py                      # `BaseClosedloopPolicy` (action-chunking scaffolding; not currently inherited)
+│   │   ├── act.py                       # `ACTClosedloopPolicy` (Inspire FTP, 26D/13D → 41D scatter, action_horizon=50)
+│   │   └── vla.py                       # placeholder for forthcoming VLA wrapper
 │   ├── obs_processor.py           # Model-agnostic observation extraction (ProcessedObservation dataclass)
 │   ├── record_demos.py            # Generic IsaacLab demo recording (auto-success, VR gestures)
 │   ├── replay_demos_isaaclab.py   # Generic demo replay with success rate validation
@@ -128,7 +134,7 @@ scripts/
     ├── keyboard_23d_adapter.py    # 23-DOF keyboard control
     ├── motion_controllers.py      # Meta Quest controller support
     └── handtracking.py            # AVP OpenXR hand tracking → gripper+wrist retarget (PINK IK)
-agents/
+scripts/simulation/_rheo/agents/    # Borrowed-rheo VLM agent system (parked; not on the active path)
 ├── agents/                        # VLM agent implementations (chat, monitoring, robot control)
 └── configs/                       # Agent YAML configs (global + per-agent)
 docs/                              # End-to-end guides (inspire/grasp_policy_guide, inspire/task_reference, inspire/pipeline_contracts, utils/avp_teleoperation, utils/cloudxr)
@@ -161,7 +167,7 @@ When evaluating an RL-trained GR00T checkpoint, you **must** pass `--rl_ckpt` to
 For Arena-track tasks, `_rheo/register_and_patch.py` must run before the simulation app starts. It registers environment classes into `ExampleEnvironments` and registers asset libraries (objects, backgrounds, embodiments) via side-effect imports. The `policy_runner.py` entry point handles this automatically.
 
 ### RLinf Extension Module
-RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rlinf_ext/__init__.py:register()`. This registers gym IDs (`Isaac-Assemble-Trocar-G129-Dex3-*` for GR00T trocar and `Isaac-Grasp-Policy-G129-InspireFTP-*` for ACT Inspire FTP grasp) into RLinf's env map, registers obs/action converters (GR00T `dex3` for trocar, ACT `act_inspire_ftp` for Inspire FTP grasp), monkeypatches `get_model` for the `new_embodiment` tag, and imports policy configs. `act_policy.py` wraps ACT with a `ValueHead` for RL critic estimation.
+RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rlinf_ext/__init__.py:register()`. This registers gym IDs (`Isaac-Assemble-Trocar-G129-Dex3-*` for GR00T trocar and `Isaac-Grasp-Policy-G129-InspireFTP-*` for ACT Inspire FTP grasp) into RLinf's env map, registers obs/action converters (GR00T `dex3` for trocar, ACT `act_inspire` for Inspire FTP grasp), monkeypatches `get_model` for the `new_embodiment` tag, and imports policy configs. `act_policy.py` wraps ACT with a `ValueHead` for RL critic estimation.
 
 ### Demo Recording
 `record_demos.py` is the generic IsaacLab demo recording script (replaces task-specific scripts). Features: auto-success detection (saves after N consecutive success frames), VR gesture controls (OpenXR hand-tracking START/STOP/RESET), and XR UI overlays. `replay_demos_isaaclab.py` replays and validates recorded demos with optional success rate checking.
@@ -172,10 +178,10 @@ RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rli
 > **Note:** `handtracking.py` is the Arena/trocar fallback (binary gripper). The Inspire FTP Teleop env registers its own `UnitreeG1RetargeterCfg` directly in `g1_grasp_policy_inspire_teleop_env_cfg.py` for full 24-joint DexPilot retargeting — `handtracking.py` is bypassed entirely on that path.
 
 ### Inspire FTP Mimic Joints
-The Inspire FTP hand has 24 joints — 12 actuated + 12 mimic. `InspireFTPJointPositionAction.apply_actions()` enforces the 12 mimic rules from the policy's 12 actuated targets (multipliers 1.0843 for finger PIPs, 0.8024 / 0.9487 for the chained thumb segments). **Never bypass this action class** with direct `set_joint_position_target` writes against mimic joints — grasps collapse silently. Rule processing order is also load-bearing for the thumb chain (`thumb_3` must be computed before `thumb_4`).
+The Inspire FTP hand has 24 joints — 12 actuated + 12 mimic. `InspireJointPositionAction.apply_actions()` enforces the 12 mimic rules from the policy's 12 actuated targets (multipliers 1.0843 for finger PIPs, 0.8024 / 0.9487 for the chained thumb segments). **Never bypass this action class** with direct `set_joint_position_target` writes against mimic joints — grasps collapse silently. Rule processing order is also load-bearing for the thumb chain (`thumb_3` must be computed before `thumb_4`).
 
 ### Inspire FTP Elbow Offset Chain
-A `−0.3` rad offset is applied to `{left,right}_elbow_joint` in `InspireFTPJointPositionActionCfg.offset`. To compensate, the HDF5→LeRobot converter adds `+0.3` to the elbow column of every parquet `action`. **Exactly one comp on each side** — never both, never neither. The converter add must be out-of-place (in-place `+=` aliases the state buffer through shared NumPy views). Symptom of a broken chain: arm drifts monotonically during eval. Full details in [`docs/inspire/pipeline_contracts.md`](docs/inspire/pipeline_contracts.md).
+A `−0.3` rad offset is applied to `{left,right}_elbow_joint` in `InspireJointPositionActionCfg.offset`. To compensate, the HDF5→LeRobot converter adds `+0.3` to the elbow column of every parquet `action`. **Exactly one comp on each side** — never both, never neither. The converter add must be out-of-place (in-place `+=` aliases the state buffer through shared NumPy views). Symptom of a broken chain: arm drifts monotonically during eval. Full details in [`docs/inspire/pipeline_contracts.md`](docs/inspire/pipeline_contracts.md).
 
 ## Testing
 

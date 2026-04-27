@@ -47,7 +47,7 @@ def register() -> None:
     logger.info("rlinf_ext: Registering i4h extensions...")
 
     _register_gr00t_converters()
-    _register_inspire_ftp_act_converters()
+    _register_inspire_act_converters()
 
     _register_gr00t_data_config()
 
@@ -453,12 +453,12 @@ def _get_grasp_policy_inspire_env_class():
 # ---------------------------------------------------------------------------
 
 
-def _register_inspire_ftp_act_converters() -> None:
+def _register_inspire_act_converters() -> None:
     """Register Inspire FTP ACT obs/action converters."""
     from rlinf.models.embodiment.gr00t import simulation_io
 
-    simulation_io.OBS_CONVERSION.setdefault("act_inspire_ftp", _convert_inspire_obs_to_act_format)
-    simulation_io.ACTION_CONVERSION.setdefault("act_inspire_ftp", _convert_inspire_act_action_to_sim)
+    simulation_io.OBS_CONVERSION.setdefault("act_inspire", _convert_inspire_obs_to_act_format)
+    simulation_io.ACTION_CONVERSION.setdefault("act_inspire", _convert_inspire_act_action_to_sim)
     logger.debug("rlinf_ext: Registered Inspire FTP ACT obs/action converters")
 
 
@@ -473,9 +473,9 @@ def _convert_inspire_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any
       - observation.images.cam_room: (B, C, H, W) float tensor
       - observation.state: (B, 26) float tensor
     """
-    from utils.inspire_experiment_config import InspireFTPExperimentConfig
+    from utils.inspire_experiment_config import InspireExperimentConfig
 
-    exp_config = InspireFTPExperimentConfig.from_env_or_default()
+    exp_config = InspireExperimentConfig.from_env_or_default()
 
     act_obs: dict[str, Any] = {}
     raw_cameras = env_obs.get("camera_images_raw")
@@ -496,9 +496,9 @@ def _convert_inspire_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any
 def _convert_inspire_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray, chunk_size: int = 1) -> Any:
     """Convert ACT action output into an action tensor for the Inspire FTP env.
 
-    Uses InspireFTPExperimentConfig to scatter 26D policy actions into 53D sim space.
+    Uses InspireExperimentConfig to scatter 26D policy actions into 53D sim space.
     """
-    from utils.inspire_experiment_config import InspireFTPExperimentConfig
+    from utils.inspire_experiment_config import InspireExperimentConfig
 
     if isinstance(action_chunk, dict):
         action = action_chunk.get("action", action_chunk.get("actions"))
@@ -513,5 +513,5 @@ def _convert_inspire_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray
     if isinstance(action, torch.Tensor):
         action = action.cpu().numpy()
 
-    exp_config = InspireFTPExperimentConfig.from_env_or_default()
+    exp_config = InspireExperimentConfig.from_env_or_default()
     return exp_config.scatter_to_sim_numpy(action)

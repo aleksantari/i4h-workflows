@@ -76,7 +76,7 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         action_dim: int = 26,
         num_action_chunks: int = 1,
         add_value_head: bool = True,
-        obs_converter_type: str = "act_inspire_ftp",
+        obs_converter_type: str = "act_inspire",
     ):
         nn.Module.__init__(self)
         self.act_policy = act_policy
@@ -210,9 +210,9 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         act_obs = {}
 
         # Concatenate state parts into flat vector (config-driven joint groups)
-        from utils.inspire_experiment_config import InspireFTPExperimentConfig
+        from utils.inspire_experiment_config import InspireExperimentConfig
 
-        exp_config = InspireFTPExperimentConfig.from_env_or_default()
+        exp_config = InspireExperimentConfig.from_env_or_default()
 
         state_parts = []
         for key in exp_config.rlinf_state_keys():

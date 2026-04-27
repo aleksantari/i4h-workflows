@@ -62,7 +62,7 @@ and `_resolve_indices` looks each name up in the articulation at runtime. So the
 
 ## 3. Why eval is broken
 
-`act_closedloop_policy.scatter_to_sim` uses `GROUP_SIM_INDICES` to place the 13-D policy output into the 41-D env action. With the current (wrong) `right_hand` list:
+`policies/act.scatter_to_sim` uses `GROUP_SIM_INDICES` to place the 13-D policy output into the 41-D env action. With the current (wrong) `right_hand` list:
 
 - Policy outputs `action[10]` intended for **middle**; scatter writes it to env slot 35 → driven into `right_little_1_joint` (pinky).
 - Policy outputs `action[12]` intended for **pinky**; scatter writes it to env slot 36 → driven into `right_middle_1_joint` (middle).

@@ -154,10 +154,10 @@ IsaacLab env observations
     Policy input/output: 26D
     [left_arm(7) | right_arm(7) | left_hand(6) | right_hand(6)]
             |
-    Scatter to 41D sim action (InspireFTPExperimentConfig.scatter_to_sim)
+    Scatter to 41D sim action (InspireExperimentConfig.scatter_to_sim)
             |
     Simulator steps with 41D action (29 body + 12 actuated hand)
-    Mimic joints (12) driven internally by InspireFTPJointPositionAction.apply_actions()
+    Mimic joints (12) driven internally by InspireJointPositionAction.apply_actions()
 ```
 
 > **Code:**
@@ -183,7 +183,7 @@ joints from `robot_inspire_joint_state` (12 DOF — actuated joints only).
 ### Mimic Joint Rules
 
 The Inspire FTP hand has 12 mimic joints (6 per hand) that are mechanically coupled
-to actuated joints. The env's `InspireFTPJointPositionAction` class enforces these
+to actuated joints. The env's `InspireJointPositionAction` class enforces these
 automatically — the policy only needs to output the 12 actuated joint targets.
 
 | Mimic Joint | Parent Joint | Multiplier |
@@ -294,7 +294,7 @@ docker stop cloudxr-runtime 2>/dev/null
     --enable_pinocchio \
     --enable_cameras \
     --device cuda:0 \
-    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire/demo.hdf5 \
     --num_demos 10 \
     --xr
 
@@ -344,7 +344,7 @@ modifications needed.
     --enable_pinocchio \
     --enable_cameras \
     --device cuda:0 \
-    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire/demo.hdf5 \
     --num_demos 10 \
     --xr
 
@@ -389,7 +389,7 @@ tool position is randomized +/-2 cm in X/Y with +/-15° yaw rotation.
     --enable_cameras \
     --device cuda:0 \
     --object tool_2 \
-    --dataset_file ./datasets/inspire_ftp/tool_2_demos.hdf5 \
+    --dataset_file ./datasets/inspire/tool_2_demos.hdf5 \
     --num_demos 10 \
     --xr
 
@@ -402,7 +402,7 @@ tool position is randomized +/-2 cm in X/Y with +/-15° yaw rotation.
     --enable_cameras \
     --device cuda:0 \
     --object tool_3 --slot 1 \
-    --dataset_file ./datasets/inspire_ftp/tool_3_slot1_demos.hdf5 \
+    --dataset_file ./datasets/inspire/tool_3_slot1_demos.hdf5 \
     --num_demos 10 \
     --xr
 ```
@@ -448,14 +448,14 @@ The recorded HDF5 will contain:
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
-    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire/demo.hdf5 \
     --enable_cameras --enable_pinocchio --device cuda:0
 
 # Replay with success validation
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/replay_demos_isaaclab.py \
     --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \
-    --dataset_file ./datasets/inspire_ftp/demo.hdf5 \
+    --dataset_file ./datasets/inspire/demo.hdf5 \
     --enable_cameras --enable_pinocchio --device cuda:0 \
     --validate_success_rate
 
@@ -529,7 +529,7 @@ Three dataset configs are available:
 
 | Config | Policy dim | Flag | Camera(s) | `data_root` |
 |--------|-----------|------|-----------|-------------|
-| `g1_grasp_policy_inspire_dataset.yaml` | 26D | `rheo_26d_state_action` | front | `datasets/inspire_ftp` |
+| `g1_grasp_policy_inspire_dataset.yaml` | 26D | `rheo_26d_state_action` | front | `datasets/inspire` |
 | `g1_grasp_policy_inspire_dataset_right_arm.yaml` | 13D | `rheo_13d_state_action` | front | `datasets/inspire_right_arm` |
 | `g1_grasp_policy_inspire_dataset_left_arm.yaml` | 13D | `rheo_13d_left_state_action` | front | `datasets/inspire_left_arm` |
 
@@ -565,7 +565,7 @@ else (e.g. 38D teleop).
 
 ### Verified Output
 
-Tested with 1 demo (434 timesteps). Output at `datasets/inspire_ftp/test/lerobot/`:
+Tested with 1 demo (434 timesteps). Output at `datasets/inspire/test/lerobot/`:
 
 ```
 test/lerobot/
@@ -643,7 +643,7 @@ remain the same as Dex3.
 ```bash
 ./docker/run_docker_grasp.sh \
     bash scripts/policy/train_act_grasp_policy_inspire.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire/test/lerobot
 ```
 
 Extra args are passed through to LeRobot's training script:
@@ -652,20 +652,20 @@ Extra args are passed through to LeRobot's training script:
 # Custom batch size and steps
 ./docker/run_docker_grasp.sh \
     bash scripts/policy/train_act_grasp_policy_inspire.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot \
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire/test/lerobot \
     --steps 50000 --batch_size 32
 
 # Resume from checkpoint
 ./docker/run_docker_grasp.sh \
     bash scripts/policy/train_act_grasp_policy_inspire.sh \
-    --dataset_path /workspaces/workflows/rheo/datasets/inspire_ftp/test/lerobot \
-    --resume_path /models/act_inspire_ftp/checkpoint_50000
+    --dataset_path /workspaces/workflows/rheo/datasets/inspire/test/lerobot \
+    --resume_path /models/act_inspire/checkpoint_50000
 ```
 
 The script automatically:
 - Generates `episodes_stats.jsonl` if missing (required by LeRobot v2.1)
 - Strips the `experiment:` section before passing to LeRobot (it rejects unknown fields)
-- Sets `INSPIRE_FTP_EXPERIMENT_CONFIG` env var for downstream code
+- Sets `INSPIRE_EXPERIMENT_CONFIG` env var for downstream code
 - Saves output to `scripts/simulation/rl/results/act_grasp_policy_inspire/`
 
 ---
@@ -719,7 +719,7 @@ number of parallel envs, PPO hyperparameters, object placement randomization.
 The RLinf extension module has full Inspire FTP support:
 
 - Environment wrapper (`IsaaclabGraspPolicyInspireEnv`) with correct 26D state extraction
-- ACT obs/action converters (`act_inspire_ftp`) for 26D policy <-> 41D sim mapping
+- ACT obs/action converters (`act_inspire`) for 26D policy <-> 41D sim mapping
 - Gym IDs registered: `Isaac-Grasp-Policy-G129-InspireFTP-Joint` and `-Joint-Eval`
 
 > **Note (2026-04-13):** `-Joint-Eval` is now truly deterministic — `G1GraspPolicyInspireEvalEnvCfg.__post_init__` zeros `xy_noise` and `yaw_noise_deg` on `reset_block_position`, so every episode sees the identical block pose. Previously it was a `pass` stub that inherited the RL noise. `eval_act_inspire.py` still defaults to `-Joint`; future work: add a `--deterministic` flag (or switch the default) so the IL eval can select `-Joint-Eval` for checkpoint sweeps where you want variance to come from (tool, slot) grids instead of reset noise.
@@ -747,8 +747,8 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 ```bash
 ./docker/run_docker_grasp.sh \
     bash scripts/simulation/rl/train_act_grasp_policy_inspire.sh train \
-    actor.model.model_path=/models/act_inspire_ftp \
-    rollout.model.model_path=/models/act_inspire_ftp
+    actor.model.model_path=/models/act_inspire \
+    rollout.model.model_path=/models/act_inspire
 ```
 
 ### PPO Configuration
@@ -784,7 +784,7 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_act_inspire.py \
-    --model_path /models/act_inspire_ftp \
+    --model_path /models/act_inspire \
     --arm right \
     --num_episodes 10 \
     --save_video \
@@ -799,18 +799,18 @@ By default, `tool_0` is loaded in tray slot 1. Use `--object` and `--slot` to ov
 # Evaluate on tool_2 in default slot
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_act_inspire.py \
-    --model_path /models/act_inspire_ftp \
+    --model_path /models/act_inspire \
     --object tool_2 --enable_cameras --device cuda:0
 
 # Evaluate on tool_0 in slot 4
 ./docker/run_docker_grasp.sh \
     python scripts/simulation/examples/eval_act_inspire.py \
-    --model_path /models/act_inspire_ftp \
+    --model_path /models/act_inspire \
     --slot 4 --enable_cameras --device cuda:0
 ```
 
 The eval script writes a temporary policy config YAML and the
-`ACTClosedloopPolicy` wrapper loads `InspireFTPExperimentConfig` (26D / 13D
+`ACTClosedloopPolicy` wrapper loads `InspireExperimentConfig` (26D / 13D
 policy, 41D sim scatter, front camera by default).
 
 ### CLI Arguments
@@ -840,9 +840,9 @@ policy, 41D sim scatter, front camera by default).
 
 > **Code:**
 > [`scripts/simulation/examples/eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py).
-> [`scripts/simulation/act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py)
+> [`scripts/simulation/policies/act.py`](../../scripts/simulation/policies/act.py)
 > — Inspire-FTP-only ACT eval wrapper (26D / 13D policy → 41D sim scatter via
-> `InspireFTPExperimentConfig`).
+> `InspireExperimentConfig`).
 
 ---
 
@@ -895,7 +895,7 @@ policy, 41D sim scatter, front camera by default).
 |------|-------------|
 | [`policy/act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml) | IL training config (26D state/action, 1 camera) |
 | [`policy/train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh) | IL training launcher (LeRobot) |
-| [`simulation/act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
+| [`simulation/policies/act.py`](../../scripts/simulation/policies/act.py) | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
 
 ### RLinf Integration
 
@@ -934,7 +934,7 @@ policy, 41D sim scatter, front camera by default).
 | `front_camera does not exist` | Pass `--enable_cameras` to all scripts (`eval_act_inspire.py`, `record_demos.py`, `replay_demos_isaaclab.py`). Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
 | `tool_N/tool_N.usd not found` | Run the mesh converter first: `./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py`. The .obj files must be converted to .usd before the scene can load them. |
 | Only 1 camera image in dataset | The dual-arm YAML (`g1_grasp_policy_inspire_dataset.yaml`) must map all three cameras under `rheo_camera_mappings_obs`. If only `front_camera` is mapped, wrist streams are skipped. |
-| Mimic joints not moving | Verify `InspireFTPJointPositionAction` is used in env cfg (not plain `JointPositionAction`). Check mimic rules in `mimic_action.py`. |
+| Mimic joints not moving | Verify `InspireJointPositionAction` is used in env cfg (not plain `JointPositionAction`). Check mimic rules in `mimic_action.py`. |
 | USD warnings about `d435_link/visuals` unresolved | Cosmetic — sensor links in the URDF don't have visual meshes. Does not affect sim behavior. |
 
 ### Adjacent References

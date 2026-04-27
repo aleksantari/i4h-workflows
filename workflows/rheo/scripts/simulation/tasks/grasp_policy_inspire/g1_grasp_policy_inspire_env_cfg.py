@@ -117,7 +117,7 @@ offset_dict = {
 # ---------------------------------------------------------------------------
 # 41-joint name list: 29 body + 12 actuated hand joints only.
 # Used by the RL/eval action space. Mimic joints are driven separately
-# by InspireFTPJointPositionAction.apply_actions() after targets are set.
+# by InspireJointPositionAction.apply_actions() after targets are set.
 # The full 53-entry joint_names list is kept above for the teleop variant
 # (PinkIK needs all 24 hand joints including mimic).
 # ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ ACTIVE_SLOT_IDX = 4  # slot 4 is the physics-enabled grasp target
 class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
     """Scene: G1 + Inspire FTP robot + surgical tray + single tool + bin."""
 
-    robot = G1InspireRobotPresets.g1_29dof_inspire_ftp_base_fix(
+    robot = G1InspireRobotPresets.g1_29dof_inspire_base_fix(
         init_pos=(-1.84919, 1.94, 0.81168), init_rot=(1.0, 0, 0, 0.0)
     )
 
@@ -256,7 +256,7 @@ class GraspPolicyInspireSceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """41D joint control (29 body + 12 actuated hand) with mimic enforcement."""
 
-    joint_pos = mdp.InspireFTPJointPositionActionCfg(
+    joint_pos = mdp.InspireJointPositionActionCfg(
         asset_name="robot",
         joint_names=actuated_joint_names,
         scale=1.0,

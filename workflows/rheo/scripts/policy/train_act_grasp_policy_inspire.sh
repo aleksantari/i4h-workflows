@@ -21,7 +21,7 @@
 # Inspire FTP hand:
 #   - 26D dual-arm policy or 13D single-arm policy (selected via --arm)
 #   - Uses act_config_inspire{,_left_arm,_right_arm}.yaml
-#   - Sets INSPIRE_FTP_EXPERIMENT_CONFIG env var
+#   - Sets INSPIRE_EXPERIMENT_CONFIG env var
 #
 # Examples:
 #   # Dual-arm training (default, 26D)
@@ -152,7 +152,7 @@ mkdir -p "$(dirname "${OUTPUT_DIR}")"
 
 # Strip the custom 'experiment:' section — LeRobot's TrainPipelineConfig
 # rejects unknown top-level keys.  Our code reads experiment config via the
-# INSPIRE_FTP_EXPERIMENT_CONFIG env var, so LeRobot never needs to see it.
+# INSPIRE_EXPERIMENT_CONFIG env var, so LeRobot never needs to see it.
 FILTERED_CONFIG=$(mktemp /tmp/act_config_inspire_XXXXXX.yaml)
 /isaac-sim/python.sh -c "
 import yaml, sys
@@ -183,7 +183,7 @@ CMD_ARGS+=("${EXTRA_ARGS[@]}")
 # Set environment
 export PYTHONPATH="${WORKSPACE_ROOT}/workflows/rheo/scripts:${PYTHONPATH}"
 # Expose Inspire FTP experiment config to downstream code
-export INSPIRE_FTP_EXPERIMENT_CONFIG="${CONFIG_PATH}"
+export INSPIRE_EXPERIMENT_CONFIG="${CONFIG_PATH}"
 
 # Generate episodes_stats.jsonl if missing (required by LeRobot v2.1 loader)
 STATS_FILE="${DATASET_PATH}/meta/episodes_stats.jsonl"

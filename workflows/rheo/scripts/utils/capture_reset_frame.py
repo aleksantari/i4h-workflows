@@ -100,7 +100,7 @@ def _capture_mode() -> int:
     joint_ids = term._joint_ids.tolist() if hasattr(term._joint_ids, "tolist") else list(term._joint_ids)
     default_41d = robot.data.default_joint_pos[:, joint_ids].clone()
     # Undo the env's elbow offset so commanded target = default pose exactly.
-    # (InspireFTPJointPositionActionCfg applies offset={-0.3 elbows}; to hold
+    # (InspireJointPositionActionCfg applies offset={-0.3 elbows}; to hold
     # the raw default, command raw_default + 0.3 on elbow columns.)
     joint_names_41 = [robot.joint_names[i] for i in joint_ids]
     for i, n in enumerate(joint_names_41):

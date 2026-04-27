@@ -124,7 +124,7 @@ Dex3). Camera presets: `CameraPresets.left_inspire_wrist_camera` /
 **File:** `g1_grasp_policy_inspire_env_cfg.py`, `mdp/mimic_action.py`
 
 The action is a 41D joint position target: **29 body + 12 actuated hand joints**.
-Uses `InspireFTPJointPositionAction`, which sets targets for the 41 actuated joints
+Uses `InspireJointPositionAction`, which sets targets for the 41 actuated joints
 and then computes and sets targets for the 12 mimic joints separately on the
 articulation via `apply_actions()`.
 
@@ -176,7 +176,7 @@ articulation via `apply_actions()`.
 
 **Note:** `thumb_1` = yaw, `thumb_2` = proximal pitch (both actuated).
 The 12 mimic joints (`*_2`, `thumb_3`, `thumb_4`) are NOT in the action space
-but are driven by `InspireFTPJointPositionAction.apply_actions()` using mimic rules.
+but are driven by `InspireJointPositionAction.apply_actions()` using mimic rules.
 
 The full 53-joint list (including mimic) is defined as `joint_names` in the env config
 and used by the teleop variant's PinkIK controller.
@@ -574,7 +574,7 @@ index 3 in both 13D variants.
 | **Hands** | `ImplicitActuatorCfg` | All 24 hand joints | 10 | 0.2 | 30 |
 
 Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
-`InspireFTPJointPositionAction`, not the actuator model.
+`InspireJointPositionAction`, not the actuator model.
 
 **Default joint positions:** All zero except elbows at -0.3 rad.
 
@@ -591,14 +591,14 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 | **Body joints** | 29 | 29 |
 | **Hand joints (total)** | 24 (12 actuated + 12 mimic) | 14 (7 per hand) |
 | **Actuated hand joints** | 6 per hand | 7 per hand |
-| **Mimic enforcement** | Yes (`InspireFTPJointPositionAction`) | No |
+| **Mimic enforcement** | Yes (`InspireJointPositionAction`) | No |
 | **Hand observation dim** | 12 (`robot_inspire_joint_state`) | 14 (`robot_dex3_joint_state`) |
 | **Body observation dim** | 87 (same) | 87 (same) |
 | **Policy dim (26D/28D)** | 26 (14 arm + 12 hand) | 28 (14 arm + 14 hand) |
 | **Cameras** | 1 (front only) | 3 (front, left wrist, right wrist) |
 | **Teleop action dim** | 38 (PinkIK) | 23 (WBC+PINK) |
 | **Teleop hand control** | Full dex-retargeting (DexPilot IK) | Binary gripper (pinch) |
-| **Action class** | `InspireFTPJointPositionActionCfg` | `JointPositionActionCfg` |
+| **Action class** | `InspireJointPositionActionCfg` | `JointPositionActionCfg` |
 | **Eval script** | `eval_act_inspire.py` | (n/a — Dex3 grasp variant removed) |
 | **Reward/termination/events** | `grasp_policy_inspire/mdp/` (self-contained) | (n/a) |
 
@@ -658,7 +658,7 @@ All paths relative to `scripts/`.
 | `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py` | RL/eval env config (41D, 20s) |
 | `simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py` | Teleop env config (38D PinkIK, 300s) |
 | `simulation/tasks/grasp_policy_inspire/mdp/__init__.py` | MDP module exports |
-| `simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py` | `InspireFTPJointPositionAction` with mimic enforcement |
+| `simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py` | `InspireJointPositionAction` with mimic enforcement |
 | `simulation/tasks/grasp_policy_inspire/mdp/observations.py` | 87D body + 12D hand observations |
 | `simulation/tasks/grasp_policy/mdp/rewards.py` | 3-stage sparse rewards (shared) |
 | `simulation/tasks/grasp_policy/mdp/terminations.py` | Drop/success/timeout (shared) |
@@ -690,7 +690,7 @@ All paths relative to `scripts/`.
 |------|------|
 | `policy/act_config_inspire.yaml` | IL training config (26D state/action, 1 camera) |
 | `policy/train_act_grasp_policy_inspire.sh` | IL training launcher (LeRobot) |
-| `simulation/act_closedloop_policy.py` | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
+| `simulation/policies/act.py` | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
 | `simulation/examples/eval_act_inspire.py` | Evaluation entry point (ACT / `--test` dummy modes) |
 
 ### RLinf RL Post-Training

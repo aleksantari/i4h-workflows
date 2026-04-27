@@ -96,7 +96,7 @@ def create_policy(args: argparse.Namespace) -> tuple[PolicyBase, int]:
         )
         num_steps = args.num_steps
     elif args.policy_type == "act_closedloop":
-        from simulation.act_closedloop_policy import ACTClosedloopPolicy
+        from simulation.policies.act import ACTClosedloopPolicy
 
         policy = ACTClosedloopPolicy(
             args.policy_config_yaml_path, num_envs=args.num_envs, device=args.policy_device

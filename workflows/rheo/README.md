@@ -17,6 +17,8 @@ The workflow provides an end-to-end development pipeline for Physical AI in clin
 - **Policy Training**: Supervised fine-tuning (SFT) of GR00T Vision-Language-Action models (N1.5/N1.6) on curated datasets, with online RL post-training (PPO via RLinf) to push precision manipulation stages—such as multi-step trocar assembly—over the line.
 - **Pre-Deployment Validation**: Task-level evaluation runners for closed-loop policy assessment, plus end-to-end integration testing with WebRTC camera streaming and trigger-based action execution for system-level verification before physical deployment.
 
+> **Note (active fork direction):** This branch has been narrowed into a **G1 + Inspire FTP universal platform** for tabletop manipulation. Active development centers on the **Inspire FTP grasp policy** (ACT IL + RLinf RL post-training) with more G1 + Inspire FTP tasks planned. The Inspire-track entry points and docs live under [`scripts/simulation/tasks/grasp_policy_inspire/`](scripts/simulation/tasks/grasp_policy_inspire/), [`scripts/simulation/policies/`](scripts/simulation/policies/), and [`docs/inspire/`](docs/inspire/). The original NVIDIA Rheo material below — GR00T trocar / Arena locomanip / VLM agents — is preserved as borrow-only infrastructure under `_rheo/` directories. See [`docs/inspire/grasp_policy_guide.md`](docs/inspire/grasp_policy_guide.md) for the active end-to-end pipeline.
+
 ## 📋 Table of Contents
 
 - [🚀 Quick Start](#-quick-start)
@@ -253,7 +255,7 @@ Locomanipulation tasks (Surgical Tray Pick and Place, Surgical Case Cart Pushing
 
 ```bash
 ./workflows/rheo/docker/run_docker.sh -g1.6 \
-  python scripts/simulation/record_demos_locomanip.py \
+  python scripts/simulation/_rheo/record_demos_locomanip.py \
   --dataset_file /datasets/demo.hdf5 \
   --num_demos 1 \
   --num_success_steps 50 \
@@ -271,7 +273,7 @@ Optionally, you can replay keyboard teleoperation demos:
 
 ```bash
 ./workflows/rheo/docker/run_docker.sh -g1.6 \
-  python scripts/simulation/replay_demos.py \
+  python scripts/simulation/_rheo/replay_demos.py \
   --dataset_file /datasets/demo.hdf5 \
   --enable_cameras \
   g1_locomanip_tray_pick_and_place \
@@ -283,7 +285,7 @@ Optionally, you can replay keyboard teleoperation demos:
 
 ```bash
 ./workflows/rheo/docker/run_docker.sh -g1.5 \
-  python scripts/simulation/record_demos_locomanip.py \
+  python scripts/simulation/_rheo/record_demos_locomanip.py \
   --dataset_file /datasets/tray_xr_demo.hdf5 \
   --num_demos 1 \
   --num_success_steps 50 \
@@ -300,7 +302,7 @@ Optionally, you can replay keyboard teleoperation demos:
 
 ```bash
 ./workflows/rheo/docker/run_docker.sh -g1.5 \
-  python scripts/simulation/record_demos_assemble_trocar.py \
+  python scripts/simulation/_rheo/record_demos_assemble_trocar.py \
   --task Isaac-Assemble-Trocar-G129-Dex3-Teleop \
   --teleop_device motion_controllers \
   --enable_pinocchio \
@@ -319,7 +321,7 @@ First, you need to annotate the demos with the following command. This process r
 
 ```bash
 ./workflows/rheo/docker/run_docker.sh -g1.6 \
-  python scripts/simulation/annotate_demos.py \
+  python scripts/simulation/_rheo/annotate_demos.py \
   --input_file /datasets/demo.hdf5 \
   --output_file /datasets/demo_annotated.hdf5 \
   --enable_cameras \
@@ -334,7 +336,7 @@ Then, you can generate the synthetic data with the following command with Mimic 
 ```bash
 # generate 10 successful demos
 ./workflows/rheo/docker/run_docker.sh -g1.6 \
-  python scripts/simulation/generate_dataset.py \
+  python scripts/simulation/_rheo/generate_dataset.py \
   --enable_cameras \
   --mimic \
   --num_steps 150 \
@@ -378,9 +380,9 @@ We also leveraged [Cosmos Transfer 2.5](https://github.com/nvidia-cosmos/cosmos-
 
 Please check the following fine-tuning and reinforcement learning recipes for detailed instructions:
 
-- [Assemble Trocar Fine-Tuning Recipe](./docs/assemble_trocar_finetuning.md)
-- [Loco-Manipulation Fine-Tuning Recipe](./docs/locomanip_finetuning.md)
-- [Reinforcement Learning Recipe](./docs/assemble_trocar_rl_guide.md)
+- [Assemble Trocar Fine-Tuning Recipe](./docs/rheo/assemble_trocar_finetuning.md)
+- [Loco-Manipulation Fine-Tuning Recipe](./docs/rheo/locomanip_finetuning.md)
+- [Reinforcement Learning Recipe](./docs/rheo/assemble_trocar_rl_guide.md)
 
 After fine-tuning or reinforcement learning, you can evaluate the success rate of the policy by following [Individual Task Inference and Evaluation](#individual-task-inference-and-evaluation) section.
 

@@ -286,7 +286,7 @@ def main():
         import tempfile
 
         import yaml
-        from simulation.act_closedloop_policy import ACTClosedloopPolicy
+        from simulation.policies.act import ACTClosedloopPolicy
 
         # Resolve experiment config for policy_action_dim.
         # --arm selects dual-arm (26D) vs single-arm (13D) training recipe.
@@ -314,7 +314,6 @@ def main():
             "policy_action_dim": _exp_policy_dim,
             "sim_action_dim": 41,
             "target_image_size": [480, 640, 3],
-            "hand_type": "inspire_ftp",
             "experiment_config_path": _exp_cfg_rel,
         }
         if args_cli.temporal_ensemble_coeff is not None:

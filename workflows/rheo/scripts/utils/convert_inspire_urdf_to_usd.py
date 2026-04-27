@@ -70,7 +70,7 @@ cfg = UrdfConverterCfg(
     # Without this, fixed joints are merged and d435_link disappears — which is
     # exactly why the Nucleus USD doesn't have it.
     merge_fixed_joints=False,
-    # Mimic enforcement is handled by our custom InspireFTPJointPositionAction,
+    # Mimic enforcement is handled by our custom InspireJointPositionAction,
     # not by the USD/physics engine.
     convert_mimic_joints_to_normal_joints=False,
     self_collision=False,

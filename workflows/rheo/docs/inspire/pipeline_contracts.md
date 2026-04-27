@@ -94,7 +94,7 @@ All three are registered in
 Defined in [`ActionsCfg`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L253-L264):
 
 ```python
-joint_pos = mdp.InspireFTPJointPositionActionCfg(
+joint_pos = mdp.InspireJointPositionActionCfg(
     asset_name="robot",
     joint_names=actuated_joint_names,   # 29 body + 12 actuated hand = 41
     scale=1.0,
@@ -115,7 +115,7 @@ joint_pos = mdp.InspireFTPJointPositionActionCfg(
   [env_cfg.py:112-115](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115).
   This is the **−0.3 side** of the elbow offset chain.
 - **Mimic joints (12 passive)** are driven inside
-  [`InspireFTPJointPositionAction.apply_actions()`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
+  [`InspireJointPositionAction.apply_actions()`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
   They are **not part of the 41D action** — the action manager commands only
   the 12 actuated hand joints (`*_{index,middle,ring,little}_1_joint`,
   `*_thumb_1_joint`, `*_thumb_2_joint`), and mimic targets are derived from
@@ -136,7 +136,7 @@ joint_pos = mdp.InspireFTPJointPositionActionCfg(
   Reordering `_MIMIC_RULES_PER_SIDE` alphabetically silently zeros the distal
   thumb segment.
 
-  **Do not bypass `InspireFTPJointPositionAction`.** If you write joint
+  **Do not bypass `InspireJointPositionAction`.** If you write joint
   targets directly to the articulation (e.g. a debug script that calls
   `robot.set_joint_position_target` against `_MIMIC_JOINT_NAMES` by hand),
   you lose mimic enforcement and grasps collapse. Same "don't bypass the
@@ -456,7 +456,7 @@ corrupt rollouts. **Regenerate = retrain.**
 > The *learning* contract: model, inputs, outputs, inference wrapper.
 > Source of truth:
 > [`act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml),
-> [`act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py),
+> [`simulation/policies/act.py`](../../scripts/simulation/policies/act.py),
 > and the experiment config module
 > [`inspire_experiment_config.py`](../../scripts/utils/inspire_experiment_config.py).
 
@@ -489,7 +489,7 @@ The rest is standard LeRobot:
 1. Reads `act_config_inspire.yaml`.
 2. **Strips the `experiment:` block** into a temp file (LeRobot's
    `TrainPipelineConfig` rejects unknown keys).
-3. Exports `INSPIRE_FTP_EXPERIMENT_CONFIG` pointing back to the original so
+3. Exports `INSPIRE_EXPERIMENT_CONFIG` pointing back to the original so
    the eval-time wrapper can read it.
 4. Forwards `EXTRA_ARGS` (unknown CLI flags) verbatim to
    `lerobot.scripts.train`.
@@ -507,7 +507,7 @@ Any LeRobot CLI override works without editing the script, e.g.:
 
 ### Closed-loop inference wrapper
 
-[`ACTClosedloopPolicy`](../../scripts/simulation/act_closedloop_policy.py) loads
+[`ACTClosedloopPolicy`](../../scripts/simulation/policies/act.py) loads
 the LeRobot checkpoint (`ACTPolicy.from_pretrained`), picks the Inspire FTP
 experiment config, and exposes two observation paths:
 
@@ -536,10 +536,10 @@ Use `predict_action_chunk()` and squeeze.
 
 ### 26D → 41D scatter
 
-`InspireFTPExperimentConfig.scatter_to_sim` places the 26D policy output at
+`InspireExperimentConfig.scatter_to_sim` places the 26D policy output at
 the canonical sim-joint indices and leaves everything else at its env default
 (legs, waist, mimic hand joints). **The `-0.3` elbow offset is not applied
-here** — it's applied downstream by `InspireFTPJointPositionActionCfg.offset`
+here** — it's applied downstream by `InspireJointPositionActionCfg.offset`
 at articulation time. This is important: if you bypass the action manager and
 write joint targets directly, you must apply the `-0.3` yourself.
 
@@ -556,7 +556,7 @@ write joint targets directly, you must apply the `-0.3` yourself.
 | Block never reaches stage 1 even with a known-good policy | L1 (reset state doesn't match training) | Check `TRAY_SLOT_POSITIONS[slot]` matches the slot used at recording; confirm `TOOL_ROT` hasn't changed. |
 | Eval works for one slot/tool but not another | Training coverage, not a bug | Expected — 30 teleop demos is borderline. Record more, or restrict eval. |
 | Extreme action values (`|a| > 3`) warning in eval | L3 normalization | `meta/episodes_stats.jsonl` may be stale relative to the checkpoint. Regenerate parquet → retrain. |
-| Hand fingers move but mimic finger segments don't | L1 mimic | Confirm action is going through `InspireFTPJointPositionActionCfg`, not a raw articulation write — mimic is applied in `apply_actions()`. |
+| Hand fingers move but mimic finger segments don't | L1 mimic | Confirm action is going through `InspireJointPositionActionCfg`, not a raw articulation write — mimic is applied in `apply_actions()`. |
 | Video is fine in playback but policy sees black frames | L3 image path | Check `_extract_observations_from_raw()` — `obs["camera_images"]["front_camera"]` must be uint8 HWC before the wrapper divides by 255. |
 | Non-controlled arm drifts during single-arm teleop | L1 teleop masking | FK wrist pose may not be reading correctly after reset. Check `_read_frozen_wrist_fk()` — verify `body_names.index("*_wrist_yaw_link")` resolves and `body_pos_w` / `body_quat_w` are populated. |
 | Only proximal finger joints move in single-arm teleop | L1 teleop masking | Hand index lists are likely using contiguous slices instead of interleaved indices. Verify `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` match the USD joint order in `env_cfg.py:53-110`. |

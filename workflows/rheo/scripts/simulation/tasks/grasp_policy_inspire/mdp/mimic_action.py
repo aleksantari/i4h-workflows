@@ -57,7 +57,7 @@ for side in ("left", "right"):
         MIMIC_RULES.append((mimic_tmpl.format(side=side), parent_tmpl.format(side=side), mult))
 
 
-class InspireFTPJointPositionAction(JointPositionAction):
+class InspireJointPositionAction(JointPositionAction):
     """JointPositionAction with mimic joint enforcement for Inspire FTP hands.
 
     Accepts a 41-D action (29 body + 12 actuated hand).  After setting
@@ -65,7 +65,7 @@ class InspireFTPJointPositionAction(JointPositionAction):
     sets targets for the 12 mimic joints on the articulation.
     """
 
-    def __init__(self, cfg: InspireFTPJointPositionActionCfg, env):
+    def __init__(self, cfg: InspireJointPositionActionCfg, env):
         super().__init__(cfg, env)
 
         # Resolve mimic joint IDs from the full articulation.
@@ -131,7 +131,7 @@ class InspireFTPJointPositionAction(JointPositionAction):
 
 
 @configclass
-class InspireFTPJointPositionActionCfg(JointPositionActionCfg):
+class InspireJointPositionActionCfg(JointPositionActionCfg):
     """Configuration for the Inspire FTP mimic-enforcing joint position action."""
 
-    class_type: type = InspireFTPJointPositionAction
+    class_type: type = InspireJointPositionAction

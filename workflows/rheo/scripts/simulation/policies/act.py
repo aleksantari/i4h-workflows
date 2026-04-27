@@ -68,7 +68,7 @@ class ACTClosedloopPolicy(PolicyBase):
 
     Camera selection and joint groups are driven by the ``experiment:`` section
     in the training config YAML (pointed to by ``experiment_config_path`` in
-    the policy config).  See :class:`InspireFTPExperimentConfig` for details.
+    the policy config).  See :class:`InspireExperimentConfig` for details.
 
     Targets the G1 + Inspire FTP grasp policy (41D sim action, 26D dual-arm or
     13D single-arm policy state).
@@ -102,14 +102,14 @@ class ACTClosedloopPolicy(PolicyBase):
 
         # Load the Inspire FTP experiment config (26D / 13D policy → 41D sim).
         _mod = _import_from_utils("inspire_experiment_config")
-        InspireFTPExperimentConfig = _mod.InspireFTPExperimentConfig
+        InspireExperimentConfig = _mod.InspireExperimentConfig
 
         exp_cfg_path = self.config.get("experiment_config_path")
         if exp_cfg_path:
             exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
-            self.exp_config = InspireFTPExperimentConfig.from_yaml(exp_cfg_path)
+            self.exp_config = InspireExperimentConfig.from_yaml(exp_cfg_path)
         else:
-            self.exp_config = InspireFTPExperimentConfig()
+            self.exp_config = InspireExperimentConfig()
         self.sim_action_dim = 41
 
         self.policy_action_dim = self.exp_config.policy_dim

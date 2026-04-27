@@ -77,7 +77,7 @@ DEFAULT_JOINT_POS: Dict[str, float] = {
 }
 
 
-G129_CFG_WITH_INSPIRE_FTP_BASE_FIX = ArticulationCfg(
+G129_CFG_WITH_INSPIRE_BASE_FIX = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=UNITREE_G1_29DOF_INSPIRE_FTP_USD,
         activate_contact_sensors=True,
@@ -222,13 +222,13 @@ G129_CFG_WITH_INSPIRE_FTP_BASE_FIX = ArticulationCfg(
 )
 
 
-def make_g1_29dof_inspire_ftp_cfg(
+def make_g1_29dof_inspire_cfg(
     *,
     prim_path: str = "/World/envs/env_.*/Robot",
     init_pos: Tuple[float, float, float] = (-0.15, 0.0, 0.744),
     init_rot: Tuple[float, float, float, float] = (0.7071, 0, 0, 0.7071),
     custom_joint_pos: Optional[Dict[str, float]] = None,
-    base_config: ArticulationCfg = G129_CFG_WITH_INSPIRE_FTP_BASE_FIX,
+    base_config: ArticulationCfg = G129_CFG_WITH_INSPIRE_BASE_FIX,
 ) -> ArticulationCfg:
     """Create the Inspire FTP robot articulation cfg."""
     joint_pos = DEFAULT_JOINT_POS.copy()
@@ -250,10 +250,10 @@ class G1InspireRobotPresets:
     """G1 + Inspire FTP robot preset configuration collection."""
 
     @classmethod
-    def g1_29dof_inspire_ftp_base_fix(
+    def g1_29dof_inspire_base_fix(
         cls,
         init_pos: Tuple[float, float, float] = (-0.15, 0.0, 0.76),
         init_rot: Tuple[float, float, float, float] = (0.7071, 0, 0, 0.7071),
     ) -> ArticulationCfg:
         """Tabletop manipulation configuration — fixed base, Inspire FTP hands."""
-        return make_g1_29dof_inspire_ftp_cfg(init_pos=init_pos, init_rot=init_rot)
+        return make_g1_29dof_inspire_cfg(init_pos=init_pos, init_rot=init_rot)

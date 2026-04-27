@@ -89,7 +89,7 @@ positions, unshifted.
 `g1_grasp_policy_inspire_env_cfg.py:257-264`:
 
 ```python
-joint_pos = mdp.InspireFTPJointPositionActionCfg(
+joint_pos = mdp.InspireJointPositionActionCfg(
     scale=1.0,
     use_default_offset=False,
     offset={"left_elbow_joint": -0.3, "right_elbow_joint": -0.3},
@@ -148,7 +148,7 @@ After the edit:
    21, 22) stay in the `-0.5..-0.1 rad` band rather than drifting below `-0.6`.
 
 **Why not remove the env offset instead.** The `-0.3` elbow offset on
-`InspireFTPJointPositionActionCfg` exists so that the policy's "zero action" resolves
+`InspireJointPositionActionCfg` exists so that the policy's "zero action" resolves
 to a safe bent-elbow pose matching `DEFAULT_JOINT_POS`. Removing it would change the
 zero-action resolution and ripple through reset defaults, success-check pose, and
 the matching 53-D/41-D branches. A one-line conversion fix is localized and safe.
@@ -331,7 +331,7 @@ control cadence, or recording quality).
 ### Inference pattern — chunk-exhaustion vs temporal ensembling — 2026-04-20
 
 **Current pattern (chunk-exhaustion).** Our wrapper
-[scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py)
+[scripts/simulation/policies/act.py](../../scripts/simulation/policies/act.py)
 calls `self.policy.predict_action_chunk(obs)` once per inference and returns a
 `(1, 100, 13)` chunk. The eval loop in
 [scripts/simulation/examples/eval_act_inspire.py](../../scripts/simulation/examples/eval_act_inspire.py)
@@ -340,7 +340,7 @@ pops one per env step, and re-queries only when the buffer is empty. Net
 behavior: **one inference per 50 env steps (~1 s at 50 Hz), fully open-loop
 within each chunk, no blending across chunks.** `select_action` is explicitly
 bypassed (see comment at
-[scripts/simulation/act_closedloop_policy.py:280-282](../../scripts/simulation/act_closedloop_policy.py#L280-L282))
+[scripts/simulation/policies/act.py:280-282](../../scripts/simulation/policies/act.py#L280-L282))
 because with the default LeRobot config (`temporal_ensemble_coeff=None`) it
 would just pop from an `n_action_steps`-deep queue and collapse each chunk to
 a single repeated action.
@@ -373,7 +373,7 @@ the ACT paper designed the ensembler to address.
 **Implementation landed 2026-04-20 (pre-A/B).** Added `temporal_ensemble_coeff`
 plumbing:
 - Wrapper
-  [scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py):
+  [scripts/simulation/policies/act.py](../../scripts/simulation/policies/act.py):
   when the YAML config sets `temporal_ensemble_coeff`, after loading the
   checkpoint we mutate `self.policy.config.temporal_ensemble_coeff`,
   `n_action_steps=1`, attach a fresh `ACTTemporalEnsembler(coeff, chunk_size)`,

@@ -92,7 +92,7 @@ For episodes recorded against the 53-D action space (full joint_pos action term,
 The eval-time flow for single-arm ACT is:
 
 1. Policy predicts a 13-D raw action (one arm + one hand).
-2. [scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py) scatters those 13 values into a 41-D vector at the canonical `GROUP_SIM_INDICES` slots.
+2. [scripts/simulation/policies/act.py](../../scripts/simulation/policies/act.py) scatters those 13 values into a 41-D vector at the canonical `GROUP_SIM_INDICES` slots.
 3. The remaining 28 entries of the 41-D vector must hold the non-controlled joints at their rest state — otherwise the passive arm, torso, and opposite hand droop under gravity.
 
 That "hold rest state" value is **also in raw action space**, not joint-target space, because the env will again apply `+ offset` on top. So the dummy/hold action for the elbow of the *non-commanded* arm has to be `−offset_dict[elbow] = +0.3`, not 0 and not the physical rest pose `-0.3`.

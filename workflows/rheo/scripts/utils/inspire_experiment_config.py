@@ -18,7 +18,7 @@
 Specifies which cameras and joint groups an ACT experiment consumes, and the
 mapping from policy state space (26D dual-arm or 13D single-arm) to the 41D
 sim action space. Hand groups are 6 actuated DOF each (12 total mimic joints
-are driven internally by InspireFTPJointPositionAction).
+are driven internally by InspireJointPositionAction).
 """
 
 from __future__ import annotations
@@ -105,7 +105,7 @@ DEFAULT_JOINT_GROUPS: list[str] = ["left_arm", "right_arm", "left_hand", "right_
 
 
 @dataclass
-class InspireFTPExperimentConfig:
+class InspireExperimentConfig:
     """Defines which cameras and joint groups an Inspire FTP ACT experiment uses.
 
     Per-group sizing: arm=7, hand=6. Scatters policy actions back into the
@@ -153,7 +153,7 @@ class InspireFTPExperimentConfig:
     # --- Constructors --------------------------------------------------------
 
     @classmethod
-    def from_yaml(cls, yaml_path: str | Path) -> InspireFTPExperimentConfig:
+    def from_yaml(cls, yaml_path: str | Path) -> InspireExperimentConfig:
         """Load from the ``experiment:`` section of an ACT config YAML."""
         with open(yaml_path) as f:
             raw = yaml.safe_load(f)
@@ -163,13 +163,13 @@ class InspireFTPExperimentConfig:
         return cls(cameras=cameras, joint_groups=joint_groups)
 
     @classmethod
-    def from_env_or_default(cls) -> InspireFTPExperimentConfig:
-        """Load from ``INSPIRE_FTP_EXPERIMENT_CONFIG`` env var, or return defaults."""
+    def from_env_or_default(cls) -> InspireExperimentConfig:
+        """Load from ``INSPIRE_EXPERIMENT_CONFIG`` env var, or return defaults."""
         global _cached_config  # noqa: PLW0603
         if _cached_config is not None:
             return _cached_config
 
-        env_path = os.environ.get("INSPIRE_FTP_EXPERIMENT_CONFIG")
+        env_path = os.environ.get("INSPIRE_EXPERIMENT_CONFIG")
         if env_path and Path(env_path).is_file():
             _cached_config = cls.from_yaml(env_path)
         else:
@@ -215,7 +215,7 @@ class InspireFTPExperimentConfig:
         Returns:
             Tensor of shape ``(..., 41)``.
             Mimic joints are not part of the 41-D action space — they are
-            driven by InspireFTPJointPositionAction.apply_actions().
+            driven by InspireJointPositionAction.apply_actions().
         """
         import torch
 
@@ -269,4 +269,4 @@ class InspireFTPExperimentConfig:
 
 
 # Module-level cache for ``from_env_or_default()``.
-_cached_config: InspireFTPExperimentConfig | None = None
+_cached_config: InspireExperimentConfig | None = None

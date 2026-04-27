@@ -531,7 +531,7 @@ GROUP_SIM_RANGES = {
 Indices 0–14 (legs + waist) are always zero.
 
 > **Code:**
-> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py)
+> [`scripts/simulation/policies/act.py`](../scripts/simulation/policies/act.py)
 > — `ACTClosedloopPolicy._get_action_chunk()`.
 > [`scripts/utils/act_experiment_config.py`](../scripts/utils/act_experiment_config.py)
 > — `scatter_to_sim()`, `GROUP_SIM_RANGES`.
@@ -690,7 +690,7 @@ tasks remain untouched.
 | File | What changes |
 |------|-------------|
 | `act_experiment_config.py` | `GROUP_SIZE` cannot be a single constant (arm=7, hand=6). Must support per-group sizing or define new group ranges for Inspire FTP hand. |
-| `act_closedloop_policy.py` | `sim_action_dim` = 41 (not 43). Scatter indices change. |
+| `simulation/policies/act.py` | `sim_action_dim` = 41 (not 43). Scatter indices change. |
 | `obs_processor.py` | Hand observation is 12D (not 14D). `state_26d` replaces `state_28d`. |
 | `act_config_dex3.yaml` | New experiment section: 1 camera, hand groups with 6 DOF each. |
 | `g1_act_closedloop_grasp_policy_dex3.yaml` | `policy_action_dim: 26`, `sim_action_dim: 41`. |

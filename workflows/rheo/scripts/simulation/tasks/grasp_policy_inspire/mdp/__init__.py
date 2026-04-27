@@ -16,14 +16,14 @@
 from isaaclab.envs.mdp import time_out
 
 from .events import reset_block_random_position, reset_block_to_tray_slot, reset_task_stage
-from .mimic_action import InspireFTPJointPositionAction, InspireFTPJointPositionActionCfg
+from .mimic_action import InspireJointPositionAction, InspireJointPositionActionCfg
 from .observations import get_robot_body_joint_states, get_robot_inspire_joint_states
 from .rewards import get_task_stage, grasp_reward, place_reward, transport_reward, update_task_stage
 from .terminations import object_drop_termination, task_success_termination
 
 __all__ = [
-    "InspireFTPJointPositionAction",
-    "InspireFTPJointPositionActionCfg",
+    "InspireJointPositionAction",
+    "InspireJointPositionActionCfg",
     "time_out",
     "get_robot_body_joint_states",
     "get_robot_inspire_joint_states",
