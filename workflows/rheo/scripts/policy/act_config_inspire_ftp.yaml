@@ -16,7 +16,7 @@
 # LeRobot ACT training configuration for Inspire FTP grasp_policy task
 # Usage: python -m lerobot.scripts.train --config_path <this_file>
 #
-# Parallel to act_config_dex3.yaml but for the Inspire FTP hand:
+# Inspire FTP hand:
 #   - 26D policy space (14 arm + 12 hand with 6 actuated DOF per hand)
 #   - 41D sim action space (29 body + 12 actuated hand, mimic joints driven internally)
 

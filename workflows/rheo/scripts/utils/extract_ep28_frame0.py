@@ -27,9 +27,9 @@ import numpy as np
 import pandas as pd
 
 
-def _first_video_frame(mp4_path: Path) -> np.ndarray:
-    """Decode frame 0 of an MP4 to a (H, W, 3) uint8 RGB array."""
-    frame = iio.imread(mp4_path, index=0, plugin="FFMPEG")
+def _video_frame(mp4_path: Path, idx: int) -> np.ndarray:
+    """Decode the frame at `idx` of an MP4 to a (H, W, 3) uint8 RGB array."""
+    frame = iio.imread(mp4_path, index=idx, plugin="FFMPEG")
     if frame.ndim != 3 or frame.shape[-1] != 3:
         raise ValueError(f"unexpected frame shape {frame.shape} from {mp4_path}")
     return frame.astype(np.uint8)
@@ -40,16 +40,21 @@ def main():
     p.add_argument("--lerobot_root", required=True,
                    help="path to the single-episode LeRobot dataset root")
     p.add_argument("--out", required=True, help="output directory")
+    p.add_argument("--frame_idx", type=int, default=0,
+                   help="frame index into the parquet/mp4 (default 0). "
+                        "Use a settled-frame index to compare against an eval "
+                        "rollout that pinned the block via --pin_block_frame_idx.")
     args = p.parse_args()
 
     root = Path(args.lerobot_root)
     out = Path(args.out)
+    idx = args.frame_idx
     out.mkdir(parents=True, exist_ok=True)
 
     parquet = root / "data" / "chunk-000" / "episode_000000.parquet"
     df = pd.read_parquet(parquet)
-    state_13d = np.asarray(df["observation.state"].iloc[0], dtype=np.float64)
-    action_13d = np.asarray(df["action"].iloc[0], dtype=np.float64)
+    state_13d = np.asarray(df["observation.state"].iloc[idx], dtype=np.float64)
+    action_13d = np.asarray(df["action"].iloc[idx], dtype=np.float64)
     assert state_13d.shape == (13,), state_13d.shape
     assert action_13d.shape == (13,), action_13d.shape
     np.save(out / "gt_state_13d.npy", state_13d)
@@ -64,22 +69,23 @@ def main():
         if not mp4.exists():
             print(f"[warn] missing video: {mp4}")
             continue
-        frame = _first_video_frame(mp4)
+        frame = _video_frame(mp4, idx)
         iio.imwrite(out / out_name, frame)
-        print(f"  wrote {out / out_name}  shape={frame.shape}")
+        print(f"  wrote {out / out_name}  shape={frame.shape}  idx={idx}")
 
     info = json.loads((root / "meta" / "info.json").read_text())
     meta = {
         "lerobot_root": str(root),
+        "frame_idx": idx,
         "fps": info.get("fps"),
         "total_frames": info.get("total_frames"),
         "state_shape": list(state_13d.shape),
         "action_shape": list(action_13d.shape),
-        "state_row0": state_13d.tolist(),
-        "action_row0": action_13d.tolist(),
+        "state_row": state_13d.tolist(),
+        "action_row": action_13d.tolist(),
     }
     (out / "gt_meta.json").write_text(json.dumps(meta, indent=2))
-    print(f"wrote GT artifacts to {out}")
+    print(f"wrote GT artifacts to {out}  (frame_idx={idx})")
 
 
 if __name__ == "__main__":

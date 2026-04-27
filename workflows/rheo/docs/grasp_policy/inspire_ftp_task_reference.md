@@ -106,9 +106,9 @@ to .usd before first use:
 ./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py
 ```
 
-Both the eval script (`eval_grasp_policy_inspire.py`) and the recording script
+Both the eval script (`eval_act_inspire.py`) and the recording script
 (`record_demos.py`) support `--object <name>` (default: `tool_0`) to select the tool
-and `--slot N` (default: 4) to choose the tray slot (0-5).
+and `--slot N` to choose the tray slot (0-5).
 
 Wrist cameras live on `left_hand_camera_base_link` / `right_hand_camera_base_link` in
 the `g1-29dof-inspire-ftp-usd-wrist_cam/` USD variant (the same mount link layout as
@@ -599,8 +599,8 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 | **Teleop action dim** | 38 (PinkIK) | 23 (WBC+PINK) |
 | **Teleop hand control** | Full dex-retargeting (DexPilot IK) | Binary gripper (pinch) |
 | **Action class** | `InspireFTPJointPositionActionCfg` | `JointPositionActionCfg` |
-| **Eval script** | `eval_grasp_policy_inspire.py` / `eval_act_inspire.py` | `eval_grasp_policy_dex3.py` |
-| **Reward/termination/events** | Shared (`grasp_policy/mdp/`) | Same files |
+| **Eval script** | `eval_act_inspire.py` | (n/a — Dex3 grasp variant removed) |
+| **Reward/termination/events** | `grasp_policy_inspire/mdp/` (self-contained) | (n/a) |
 
 ---
 
@@ -690,8 +690,8 @@ All paths relative to `scripts/`.
 |------|------|
 | `policy/act_config_inspire_ftp.yaml` | IL training config (26D state/action, 1 camera) |
 | `policy/train_act_grasp_policy_inspire.sh` | IL training launcher (LeRobot) |
-| `simulation/act_closedloop_policy.py` | ACT eval wrapper (Dex3 43D + Inspire 41D) |
-| `simulation/examples/eval_grasp_policy_inspire.py` | Evaluation entry point (ACT/test modes) |
+| `simulation/act_closedloop_policy.py` | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
+| `simulation/examples/eval_act_inspire.py` | Evaluation entry point (ACT / `--test` dummy modes) |
 
 ### RLinf RL Post-Training
 

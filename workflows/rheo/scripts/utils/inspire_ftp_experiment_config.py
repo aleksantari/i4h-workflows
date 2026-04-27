@@ -15,11 +15,10 @@
 
 """Config-driven camera and joint group selection for Inspire FTP ACT experiments.
 
-Parallel to ``act_experiment_config.py`` but for the Inspire FTP hand
-(6 actuated DOF per hand instead of Dex3's 7).
-
-The key difference is that hand groups have 6 DOF instead of 7,
-giving a 26D policy space instead of 28D.
+Specifies which cameras and joint groups an ACT experiment consumes, and the
+mapping from policy state space (26D dual-arm or 13D single-arm) to the 41D
+sim action space. Hand groups are 6 actuated DOF each (12 total mimic joints
+are driven internally by InspireFTPJointPositionAction).
 """
 
 from __future__ import annotations
@@ -109,8 +108,8 @@ DEFAULT_JOINT_GROUPS: list[str] = ["left_arm", "right_arm", "left_hand", "right_
 class InspireFTPExperimentConfig:
     """Defines which cameras and joint groups an Inspire FTP ACT experiment uses.
 
-    Parallel to ACTExperimentConfig but with variable per-group sizing
-    (arm=7, hand=6) and Inspire FTP hand joint mapping.
+    Per-group sizing: arm=7, hand=6. Scatters policy actions back into the
+    41D sim action space using GROUP_SIM_INDICES.
     """
 
     cameras: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_CAMERAS))

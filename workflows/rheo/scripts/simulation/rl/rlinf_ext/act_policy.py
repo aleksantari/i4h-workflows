@@ -64,7 +64,7 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
 
     Args:
         act_policy: The loaded LeRobot ACT policy (nn.Module).
-        action_dim: Output action dimension (28 for dex3 manipulation).
+        action_dim: Output action dimension (26 for Inspire FTP dual-arm grasp).
         num_action_chunks: Number of action steps to predict per forward pass.
         add_value_head: Whether to attach a ValueHead for RL critic.
         obs_converter_type: Key for obs/action converter lookup in simulation_io.
@@ -73,10 +73,10 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
     def __init__(
         self,
         act_policy: nn.Module,
-        action_dim: int = 28,
+        action_dim: int = 26,
         num_action_chunks: int = 1,
         add_value_head: bool = True,
-        obs_converter_type: str = "act",
+        obs_converter_type: str = "act_inspire_ftp",
     ):
         nn.Module.__init__(self)
         self.act_policy = act_policy
@@ -210,9 +210,9 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         act_obs = {}
 
         # Concatenate state parts into flat vector (config-driven joint groups)
-        from utils.act_experiment_config import ACTExperimentConfig
+        from utils.inspire_ftp_experiment_config import InspireFTPExperimentConfig
 
-        exp_config = ACTExperimentConfig.from_env_or_default()
+        exp_config = InspireFTPExperimentConfig.from_env_or_default()
 
         state_parts = []
         for key in exp_config.rlinf_state_keys():

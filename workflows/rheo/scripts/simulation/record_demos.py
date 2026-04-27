@@ -18,7 +18,7 @@
 Record demonstrations with Isaac Lab environments using human teleoperation.
 
 Adapted from IsaacLab's ``scripts/tools/record_demos.py`` with project-specific
-task registration (grasp_policy, assemble_trocar).
+task registration (grasp_policy_inspire, assemble_trocar).
 
 Features over the old ``record_demos_assemble_trocar.py``:
 - **Auto-success detection** — evaluates the env's ``success`` termination every
@@ -28,10 +28,10 @@ Features over the old ``record_demos_assemble_trocar.py``:
 - **XR UI overlays** — demo count shown as 3-D text in the headset.
 
 Usage:
-    # AVP hand-tracking (grasp_policy)
-    python record_demos.py --task Isaac-Grasp-Policy-G129-Dex3-Teleop \\
+    # AVP hand-tracking (Inspire FTP grasp)
+    python record_demos.py --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \\
         --teleop_device handtracking --enable_pinocchio --enable_cameras \\
-        --dataset_file ./datasets/grasp_policy/demo.hdf5 --num_demos 5
+        --dataset_file ./datasets/grasp_policy_inspire/demo.hdf5 --num_demos 5
 
     # AVP hand-tracking (trocar)
     python record_demos.py --task Isaac-Assemble-Trocar-G129-Dex3-Teleop \\
@@ -39,9 +39,9 @@ Usage:
         --dataset_file ./datasets/trocar/demo.hdf5 --num_demos 5
 
     # Keyboard (desktop, any task)
-    python record_demos.py --task Isaac-Grasp-Policy-G129-Dex3-Teleop \\
+    python record_demos.py --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \\
         --teleop_device keyboard --enable_pinocchio \\
-        --dataset_file ./datasets/grasp_policy/test.hdf5 --num_demos 1
+        --dataset_file ./datasets/grasp_policy_inspire/test.hdf5 --num_demos 1
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -162,7 +162,6 @@ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 
 # Register project-specific gym environments
 from simulation.tasks import assemble_trocar  # noqa: F401
-from simulation.tasks import grasp_policy  # noqa: F401
 from simulation.tasks import grasp_policy_inspire  # noqa: F401
 
 # import logger

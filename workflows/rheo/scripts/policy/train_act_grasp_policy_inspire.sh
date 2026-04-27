@@ -18,7 +18,7 @@
 # ACT IL Training on Inspire FTP grasp_policy task
 # Usage: bash train_act_grasp_policy_inspire.sh --dataset_path /path/to/lerobot_dataset [OPTIONS]
 #
-# Parallel to train_act_grasp_policy_dex3.sh but for the Inspire FTP hand:
+# Inspire FTP hand:
 #   - 26D dual-arm policy or 13D single-arm policy (selected via --arm)
 #   - Uses act_config_inspire_ftp{,_left_arm,_right_arm}.yaml
 #   - Sets INSPIRE_FTP_EXPERIMENT_CONFIG env var

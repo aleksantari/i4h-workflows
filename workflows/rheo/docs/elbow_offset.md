@@ -15,7 +15,6 @@ The G1's default posture for all our tabletop tasks has both elbows bent at `-0.
 The `ArticulationCfg.InitialStateCfg.joint_pos` dict in each task's `robot_config.py` puts elbows at `-0.3` at reset:
 
 - [scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py:60,67](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60)
-- [scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py:87-88](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py#L87-L88)
 - [scripts/simulation/tasks/assemble_trocar/config/robot_config.py:131,138](../scripts/simulation/tasks/assemble_trocar/config/robot_config.py#L131)
 
 This is the **physics state** at `env.reset()`. It is independent of any action mapping — the robot simply starts with its elbows bent.
@@ -41,7 +40,6 @@ joint_pos = mdp.JointPositionActionCfg(
 ```
 
 - [scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115)
-- [scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py:86-89,179](../scripts/simulation/tasks/grasp_policy/g1_grasp_policy_dex3_env_cfg.py#L86-L89)
 - [scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py:84-87,170](../scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py#L84-L87)
 
 IsaacLab's `JointPositionActionCfg` computes the per-step joint target as
@@ -55,7 +53,7 @@ With `scale=1.0` and `offset[elbow] = -0.3`, the policy's "raw action" space is 
 ### 1c. The design intent
 
 - **Zero action ≈ hold rest pose.** A freshly initialized RL policy (or a collapsed one) outputs something near zero. With the offset, that means "elbows stay bent, arms stay down." Without it, zero action commands elbow = 0, which stretches the arm straight and likely makes the robot tip forward or drag the tray edge.
-- **Matches the inductive bias used across trocar and Dex3 grasp.** When the Inspire FTP task was forked from the Dex3 grasp task, it inherited this convention verbatim — hence the same pattern shows up in three task packages.
+- **Matches the inductive bias used by trocar.** The Inspire FTP task originally inherited this convention from the (now-removed) Dex3 grasp task, which itself adopted it from trocar — hence the same pattern in both surviving task packages.
 
 So: `default_joint_pos` says "start here in physics space"; `offset_dict` says "policy outputs are centered on this pose in action space." They happen to use the same numerical value because they describe the same physical pose, but they are conceptually independent — you could keep one and drop the other.
 
@@ -114,7 +112,7 @@ If this subtraction is ever removed, the non-commanded arm ends up at `-0.6 rad`
 
 ## 4. Inventory: every file that has to agree
 
-When reasoning about any elbow-angle value in the Inspire (or Dex3 or trocar) pipeline, you must know which space the value lives in. The table below lists every code path that touches the offset.
+When reasoning about any elbow-angle value in the Inspire FTP grasp or trocar pipeline, you must know which space the value lives in. The table below lists every code path that touches the offset.
 
 | Layer | File | What it does with -0.3 / +0.3 |
 |---|---|---|
@@ -125,7 +123,6 @@ When reasoning about any elbow-angle value in the Inspire (or Dex3 or trocar) pi
 | Teleop converter (13-D left) | [scripts/utils/inspire_ftp_lerobot_fields.py:282-284](../scripts/utils/inspire_ftp_lerobot_fields.py#L282-L284), used in `convert_g1_state_action_to_lerobot_13d_left` | Same, left elbow only. |
 | Trocar converter | [scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61) | Same pattern for the trocar task. |
 | Eval scatter (hold) | [scripts/simulation/examples/eval_act_inspire.py:220-231](../scripts/simulation/examples/eval_act_inspire.py#L220-L231) | Inverts offset when computing the 41-D hold vector fed to `policy.set_default_action`. |
-| Eval (Dex3 grasp) | [scripts/simulation/examples/eval_grasp_policy_dex3.py](../scripts/simulation/examples/eval_grasp_policy_dex3.py) | Inherits the same logic via `BaseClosedloopPolicy`. |
 
 Any new trainer, new recorder, new scatter path, or new debugging notebook that **moves data between "joint position" and "raw action" spaces must account for this shift at the elbow dims.**
 
@@ -153,21 +150,21 @@ If you suspect the offset has been mishandled:
 The offset is a **convenience**, not a requirement:
 
 - **Pro-remove:** Three conversion code paths collapse to the 53-D branch. The eval-time hold inversion becomes a no-op. Future task forks won't inherit the trap. One fewer source of silent bugs per data pipeline.
-- **Pro-keep (short-term):** All existing checkpoints (trocar GR00T + RL, Dex3 ACT + RL, Inspire FTP ACT) were trained with the offset present. Removing it invalidates every one of them — they would command elbow = 0 and immediately drive the arm into an extended posture.
+- **Pro-keep (short-term):** All existing checkpoints (trocar GR00T + RL, Inspire FTP ACT) were trained with the offset present. Removing it invalidates every one of them — they would command elbow = 0 and immediately drive the arm into an extended posture.
 - **Pro-keep (RL prior):** "Zero action = rest pose" is a mildly useful inductive bias for PPO-from-scratch. Without it, exploration starts from a random-arms posture. In practice this is small compared to other RL problems on this task, but it's non-zero.
 
 ### What a removal would actually touch
 
 If/when we decide to remove it, the changes are coordinated but mechanical:
 
-1. Set `offset_dict = {}` (or drop `offset=` entirely) in all three task env cfgs (`grasp_policy_inspire`, `grasp_policy`, `assemble_trocar`). `default_joint_pos` stays — the physical rest pose is unchanged.
+1. Set `offset_dict = {}` (or drop `offset=` entirely) in both task env cfgs (`grasp_policy_inspire`, `assemble_trocar`). `default_joint_pos` stays — the physical rest pose is unchanged.
 2. Delete the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors in `inspire_ftp_lerobot_fields.py` and their additions in the `convert_*` functions. Same for `assemble_trocar_lerobot_fields.py`.
 3. Remove the offset subtraction in `eval_act_inspire.py`'s hold-41D computation — the raw-action rest pose then equals `default_joint_pos` directly.
 4. Rerun **all** HDF5 → LeRobot conversions for all tasks; prior datasets become stale.
 5. Retrain **all** IL checkpoints against the new datasets; prior checkpoints become stale.
 6. Retrain **all** RL checkpoints (or at minimum verify that existing ones are still in-distribution — they will not be at the elbow dim).
 
-Because the blast radius spans both the IL and RL pipelines for three tasks, removing the offset is best done as a single dedicated refactor, not piggybacked onto another change.
+Because the blast radius spans both the IL and RL pipelines for the surviving tasks, removing the offset is best done as a single dedicated refactor, not piggybacked onto another change.
 
 ## 7. Rule of thumb while the offset remains
 

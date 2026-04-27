@@ -18,16 +18,16 @@
 Replay demonstrations with Isaac Lab environments (IsaacLab-track).
 
 Adapted from IsaacLab's ``scripts/tools/replay_demos.py`` with project-specific
-task registration (grasp_policy, assemble_trocar).
+task registration (grasp_policy_inspire, assemble_trocar).
 
 Usage:
     # Replay all episodes
-    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-Dex3-Joint \
-        --dataset_file /datasets/grasp_policy/demo.hdf5 --enable_cameras
+    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-InspireFTP-Joint \
+        --dataset_file /datasets/grasp_policy_inspire/demo.hdf5 --enable_cameras
 
     # Replay specific episodes with success validation
-    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-Dex3-Joint \
-        --dataset_file /datasets/grasp_policy/demo.hdf5 --enable_cameras \
+    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-InspireFTP-Joint \
+        --dataset_file /datasets/grasp_policy_inspire/demo.hdf5 --enable_cameras \
         --select_episodes 0 2 4 --validate_success_rate
 
     # Replay trocar demos
@@ -116,7 +116,6 @@ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 
 # Register project-specific gym environments
 from simulation.tasks import assemble_trocar  # noqa: F401
-from simulation.tasks import grasp_policy  # noqa: F401
 from simulation.tasks import grasp_policy_inspire  # noqa: F401
 
 is_paused = False

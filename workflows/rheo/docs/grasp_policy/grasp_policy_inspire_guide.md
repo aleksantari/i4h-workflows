@@ -69,7 +69,7 @@ correctly with the Inspire FTP hands.
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    python scripts/simulation/examples/eval_act_inspire.py \
     --test --enable_cameras --device cuda:0
 ```
 
@@ -91,14 +91,14 @@ correctly with the Inspire FTP hands.
 - Action Manager shows `shape: 41` (direct joint control, 29 body + 12 actuated hand)
 - Observation Manager shows `robot_joint_state (87,)` and `robot_inspire_joint_state (12,)`
 
-**Tool selection:** By default, `tool_0` is loaded. Use `--object tool_1` through
-`--object tool_4` to select a different tool. Use `--slot N` (0-5) to change the
-tray slot (default: 4). Use `--view` to inspect the scene without running a policy.
+**Tool selection:** By default, `tool_0` is loaded in tray slot 1. Use `--object tool_1`
+through `--object tool_4` to select a different tool. Use `--slot N` (0-5) to change the
+tray slot.
 
 > **Code:**
-> [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py) —
-> evaluation entry point supporting `--test` (dummy policy) and `--policy_type act`
-> (ACT checkpoint).
+> [`scripts/simulation/examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py) —
+> the active evaluation entry point. Supports `--test` (dummy zero-action policy)
+> and `--model_path` (ACT checkpoint).
 
 ---
 
@@ -775,19 +775,17 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
+    python scripts/simulation/examples/eval_act_inspire.py \
     --test --enable_cameras --device cuda:0
 ```
 
 ### ACT IL Checkpoint
 
-**Status: UNTESTED** (requires trained model)
-
 ```bash
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
-    --policy_type act \
+    python scripts/simulation/examples/eval_act_inspire.py \
     --model_path /models/act_inspire_ftp \
+    --arm right \
     --num_episodes 10 \
     --save_video \
     --enable_cameras --device cuda:0
@@ -795,49 +793,56 @@ All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as De
 
 ### Tool and Slot Selection
 
-By default, `tool_0` is loaded in tray slot 4. Use `--object` and `--slot` to override:
+By default, `tool_0` is loaded in tray slot 1. Use `--object` and `--slot` to override:
 
 ```bash
 # Evaluate on tool_2 in default slot
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
-    --policy_type act --model_path /models/act_inspire_ftp \
+    python scripts/simulation/examples/eval_act_inspire.py \
+    --model_path /models/act_inspire_ftp \
     --object tool_2 --enable_cameras --device cuda:0
 
-# Evaluate on tool_0 in slot 1
+# Evaluate on tool_0 in slot 4
 ./docker/run_docker_grasp.sh \
-    python scripts/simulation/examples/eval_grasp_policy_inspire.py \
-    --policy_type act --model_path /models/act_inspire_ftp \
-    --slot 1 --enable_cameras --device cuda:0
+    python scripts/simulation/examples/eval_act_inspire.py \
+    --model_path /models/act_inspire_ftp \
+    --slot 4 --enable_cameras --device cuda:0
 ```
 
-The eval script auto-generates a policy config YAML with `sim_action_dim: 41` and
-`hand_type: inspire_ftp`. The `ACTClosedloopPolicy` wrapper detects Inspire FTP and
-loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by default).
+The eval script writes a temporary policy config YAML and the
+`ACTClosedloopPolicy` wrapper loads `InspireFTPExperimentConfig` (26D / 13D
+policy, 41D sim scatter, front camera by default).
 
 ### CLI Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--task` | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | Gym task ID |
-| `--policy_type` | `act` | `act` or `test` |
-| `--model_path` | None | Path to ACT checkpoint |
-| `--num_episodes` | 10 | Number of evaluation episodes |
-| `--max_steps` | 256 | Max steps per episode |
-| `--action_chunk_size` | 1 | Actions per chunk to execute |
-| `--object` | `tool_0` | Grasp tool: `tool_0`..`tool_4` |
-| `--slot` | 4 | Tray slot index (0-5) |
-| `--view` | false | Load scene and render without stepping (scene inspection) |
-| `--save_video` | false | Save evaluation videos |
-| `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3) |
+| `--task` | `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` | Gym task ID. `-Joint-Eval` is deterministic (zero block XY/yaw noise); use `-Joint` for the noisy training env. |
+| `--model_path` | None | Path to ACT checkpoint. Omit with `--test` for dummy zero-action policy. |
+| `--test` | false | Run with dummy zero-action policy (no checkpoint needed). |
+| `--num_episodes` | 1 | Number of evaluation episodes. |
+| `--max_steps` | 300 | Max steps per episode. |
+| `--action_chunk_size` | 50 | Actions per chunk to execute. |
+| `--arm` | `right` | `dual`, `left`, or `right` — must match the dim of the trained policy (26D dual / 13D single). |
+| `--object` | `tool_0` | Grasp tool: `tool_0`..`tool_4`. |
+| `--slot` | 1 | Tray slot index (0-5). |
+| `--save_video` | false | Save evaluation videos. |
+| `--video_dir` | `./eval_videos` | Where to save videos. |
+| `--success_stage` | 3 | Task success stage (grasp=1, transport=2, place=3). |
+| `--seed` | 4 | RNG seed. |
+| `--temporal_ensemble_coeff` | None | Enable LeRobot ACT temporal ensembling at this exponential coefficient. |
+| `--clamp_actions` | 0.0 | Clip per-step action delta from the held base action (debugging). |
+| `--log_actions` | false | Log per-chunk action mean/std statistics — primary diagnostic for chunk-collapse. |
+| `--dump_first_obs` | None | Dump the first env observation to this dir; pair with `scripts/utils/diff_first_obs.py` to compare against a recorded reference. |
+| `--pin_block_from_hdf5` | None | Pin the block to the pose at frame `--pin_block_frame_idx` from `--pin_demo_key` of the given HDF5. |
 | `--device` | `cuda:0` | **Recommended.** Simulation device. XR mode overrides to CPU if not set explicitly. |
 | `--enable_cameras` | false | **Required.** Enable camera rendering for observations. |
-| `--enable_pinocchio` | false | Required for PinkIK (teleop task only) |
 
 > **Code:**
-> [`scripts/simulation/examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py).
+> [`scripts/simulation/examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py).
 > [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py)
-> — supports both Dex3 (43D) and Inspire FTP (41D) via `hand_type` / `sim_action_dim` config.
+> — Inspire-FTP-only ACT eval wrapper (26D / 13D policy → 41D sim scatter via
+> `InspireFTPExperimentConfig`).
 
 ---
 
@@ -853,15 +858,15 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by
 | [`tasks/grasp_policy_inspire/config/robot_config.py`](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) | Robot USD asset, actuator configs, default joint positions |
 | [`tasks/grasp_policy_inspire/mdp/mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Mimic joint enforcement (12 rules) |
 | [`tasks/grasp_policy_inspire/mdp/observations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py) | Body (87D) + hand (12D) observation functions |
-| [`tasks/grasp_policy_inspire/mdp/rewards.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/rewards.py) | Reward functions (grasp, transport, place) — shared with Dex3 |
-| [`tasks/grasp_policy_inspire/mdp/terminations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py) | Termination conditions — shared with Dex3 |
-| [`tasks/grasp_policy_inspire/mdp/events.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/events.py) | Reset events — shared with Dex3 |
+| [`tasks/grasp_policy_inspire/mdp/rewards.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/rewards.py) | Reward functions (grasp, transport, place) |
+| [`tasks/grasp_policy_inspire/mdp/terminations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py) | Termination conditions |
+| [`tasks/grasp_policy_inspire/mdp/events.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/events.py) | Reset events |
 
 ### Entry Points
 
 | File | Description |
 |------|-------------|
-| [`examples/eval_grasp_policy_inspire.py`](../scripts/simulation/examples/eval_grasp_policy_inspire.py) | Evaluation (ACT/test modes) |
+| [`examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py) | Evaluation entry point (ACT / `--test` dummy modes) |
 | [`simulation/record_demos.py`](../scripts/simulation/record_demos.py) | Demo recording (shared, generic) |
 | [`simulation/replay_demos_isaaclab.py`](../scripts/simulation/replay_demos_isaaclab.py) | Demo replay (shared, generic) |
 
@@ -890,7 +895,7 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by
 |------|-------------|
 | [`policy/act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml) | IL training config (26D state/action, 1 camera) |
 | [`policy/train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh) | IL training launcher (LeRobot) |
-| [`simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (supports both Dex3 43D and Inspire 41D) |
+| [`simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
 
 ### RLinf Integration
 
@@ -906,8 +911,8 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by
 
 | File | Description |
 |------|-------------|
-| [`docker/Dockerfile.grasp`](../docker/Dockerfile.grasp) | Docker image (shared with Dex3) |
-| [`docker/run_docker_grasp.sh`](../docker/run_docker_grasp.sh) | Docker launcher (shared with Dex3) |
+| [`docker/Dockerfile.grasp`](../docker/Dockerfile.grasp) | Docker image |
+| [`docker/run_docker_grasp.sh`](../docker/run_docker_grasp.sh) | Docker launcher |
 
 ---
 
@@ -918,21 +923,24 @@ loads `InspireFTPExperimentConfig` (26D policy, 41D sim scatter, front camera by
 | Issue | Fix |
 |-------|-----|
 | `ValueError: Not all regular expressions matched -- L_.*: []` | Joint names use URDF convention (`left_index_1_joint`), not Nucleus (`L_index_proximal_joint`). Check `robot_config.py` actuator patterns. |
-| `KeyError: 'robot_dex3_joint_state'` | Wrong task ID or shared code assumes Dex3. Ensure using `InspireFTP` task variant. Check `examples/utils.py` handles both hand types. |
+| `KeyError: 'robot_dex3_joint_state'` | Wrong task ID. Ensure you're on the `InspireFTP` gym variant — the Dex3 grasp task is no longer registered. |
 | `ValueError: Invalid action shape, expected: 38, received: 41` | You're running the eval script against the Teleop env. Use the `Joint` variant for eval, or `record_demos.py` for teleop. |
-| `ValueError: Invalid action shape, expected: 41, received: 43` | Policy wrapper defaulting to Dex3. Ensure config YAML has `sim_action_dim: 41` or `hand_type: inspire_ftp`. |
+| `ValueError: Invalid action shape, expected: 41, received: 43` | Stale policy config left over from the Dex3 era. `ACTClosedloopPolicy` is now Inspire-FTP-only and always emits a 41D action — regenerate the policy config YAML by re-running the eval script. |
 | `FileExistsError: Output directory ... already exists` | LeRobot rejects pre-existing output dirs. Delete the old run: `rm -rf scripts/simulation/rl/results/act_grasp_policy_inspire/` |
 | `DecodingError: fields 'experiment' are not valid for TrainPipelineConfig` | The `experiment:` section must be stripped before LeRobot sees the config. Use `train_act_grasp_policy_inspire.sh` (handles this automatically). |
 | `PermissionError: ... episodes_stats.jsonl` | Dataset directory owned by root. Fix: `sudo chown -R $USER:$USER datasets/` |
 | `FrameNotFound: "g1_29dof_rev_1_0_left_wrist_yaw_link"` | PinkIK frame names use wrong prefix. URDF robot name produces prefix `g1_29dof_rev_1_0_with_inspire_hand_FTP_`. Update `FrameTask` link names in teleop env cfg. |
 | `ValueError: 'L_index_proximal_joint' is not in list` | Retargeter uses Nucleus-style joint names. Ensure `RETARGETER_HAND_JOINT_NAMES` (Nucleus naming) is passed to the retargeter, not `HAND_JOINT_NAMES` (URDF naming). |
-| `front_camera does not exist` | Pass `--enable_cameras` to all scripts (`eval_grasp_policy_inspire.py`, `record_demos.py`, `replay_demos_isaaclab.py`). Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
+| `front_camera does not exist` | Pass `--enable_cameras` to all scripts (`eval_act_inspire.py`, `record_demos.py`, `replay_demos_isaaclab.py`). Without it, `remove_camera_configs()` strips the camera scene entity but leaves the observation term. |
 | `tool_N/tool_N.usd not found` | Run the mesh converter first: `./docker/run_docker_grasp.sh python scripts/simulation/assets/convert_sinus_toolkit.py`. The .obj files must be converted to .usd before the scene can load them. |
 | Only 1 camera image in dataset | The dual-arm YAML (`g1_grasp_policy_inspire_dataset.yaml`) must map all three cameras under `rheo_camera_mappings_obs`. If only `front_camera` is mapped, wrist streams are skipped. |
 | Mimic joints not moving | Verify `InspireFTPJointPositionAction` is used in env cfg (not plain `JointPositionAction`). Check mimic rules in `mimic_action.py`. |
 | USD warnings about `d435_link/visuals` unresolved | Cosmetic — sensor links in the URDF don't have visual meshes. Does not affect sim behavior. |
 
-### Shared Issues
+### Adjacent References
 
-See [`docs/grasp_policy_guide.md`](grasp_policy_guide.md) Section 10 for
-CloudXR/AVP issues, training issues, and general debugging.
+For elbow-offset / pipeline-invariant issues see
+[`docs/inspire_ftp_pipeline_contracts.md`](../inspire_ftp_pipeline_contracts.md)
+and [`docs/elbow_offset.md`](../elbow_offset.md). For CloudXR / AVP setup see
+[`docs/utils/cloudxr.md`](../utils/cloudxr.md) and
+[`docs/utils/avp_teleoperation.md`](../utils/avp_teleoperation.md).

@@ -13,7 +13,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from simulation.tasks.grasp_policy.mdp.terminations import (  # noqa: F401
-    object_drop_termination,
-    task_success_termination,
-)
+"""Termination functions for the grasp-policy pick-and-place task."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import torch
+from isaaclab.managers import SceneEntityCfg
+
+from .rewards import get_task_stage
+
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedRLEnv
+
+
+def object_drop_termination(
+    env: ManagerBasedRLEnv,
+    drop_height_threshold: float = 0.5,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("block"),
+) -> torch.Tensor:
+    """Terminate if the block falls below the drop height threshold."""
+    obj = env.scene[asset_cfg.name].data.root_pos_w  # (num_envs, 3)
+    env_origins = env.scene.env_origins
+    obj_z = obj[:, 2] - env_origins[:, 2]
+    return obj_z < drop_height_threshold
+
+
+def task_success_termination(
+    env: ManagerBasedRLEnv,
+    success_stage: int = 3,
+) -> torch.Tensor:
+    """Terminate when the task reaches the success stage."""
+    stage = get_task_stage(env)
+    return stage >= success_stage

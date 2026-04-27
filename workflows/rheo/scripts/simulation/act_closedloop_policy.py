@@ -68,11 +68,10 @@ class ACTClosedloopPolicy(PolicyBase):
 
     Camera selection and joint groups are driven by the ``experiment:`` section
     in the training config YAML (pointed to by ``experiment_config_path`` in
-    the policy config).  See :class:`ACTExperimentConfig` for details.
+    the policy config).  See :class:`InspireFTPExperimentConfig` for details.
 
-    Supports both Dex3 (43D sim, 28D policy) and Inspire FTP (41D sim, 26D
-    policy).  The hand type is selected via ``hand_type`` in the policy config
-    YAML, or inferred from ``sim_action_dim`` if provided.
+    Targets the G1 + Inspire FTP grasp policy (41D sim action, 26D dual-arm or
+    13D single-arm policy state).
 
     Args:
         policy_config_yaml_path: Path to YAML config with model_path, action settings, etc.
@@ -101,34 +100,17 @@ class ACTClosedloopPolicy(PolicyBase):
         # Image target size (H, W, C)
         self.target_image_size = tuple(self.config.get("target_image_size", [480, 640, 3]))
 
-        # Determine hand type and load the appropriate experiment config.
-        # "inspire_ftp" uses InspireFTPExperimentConfig (41D sim, 26D policy).
-        # "dex3" (default) uses ACTExperimentConfig (43D sim, 28D policy).
-        hand_type = self.config.get("hand_type", "dex3")
-        if self.config.get("sim_action_dim") == 41:
-            hand_type = "inspire_ftp"
+        # Load the Inspire FTP experiment config (26D / 13D policy → 41D sim).
+        _mod = _import_from_utils("inspire_ftp_experiment_config")
+        InspireFTPExperimentConfig = _mod.InspireFTPExperimentConfig
 
         exp_cfg_path = self.config.get("experiment_config_path")
-        if hand_type == "inspire_ftp":
-            _mod = _import_from_utils("inspire_ftp_experiment_config")
-            InspireFTPExperimentConfig = _mod.InspireFTPExperimentConfig
-
-            if exp_cfg_path:
-                exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
-                self.exp_config = InspireFTPExperimentConfig.from_yaml(exp_cfg_path)
-            else:
-                self.exp_config = InspireFTPExperimentConfig()
-            self.sim_action_dim = 41
+        if exp_cfg_path:
+            exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
+            self.exp_config = InspireFTPExperimentConfig.from_yaml(exp_cfg_path)
         else:
-            _mod = _import_from_utils("act_experiment_config")
-            ACTExperimentConfig = _mod.ACTExperimentConfig
-
-            if exp_cfg_path:
-                exp_cfg_path = (Path(policy_config_yaml_path).parent / exp_cfg_path).resolve()
-                self.exp_config = ACTExperimentConfig.from_yaml(exp_cfg_path)
-            else:
-                self.exp_config = ACTExperimentConfig()
-            self.sim_action_dim = 43
+            self.exp_config = InspireFTPExperimentConfig()
+        self.sim_action_dim = 41
 
         self.policy_action_dim = self.exp_config.policy_dim
 
@@ -202,10 +184,7 @@ class ACTClosedloopPolicy(PolicyBase):
         (e.g. from RL training paths).
         """
         body_state = observation["policy"]["robot_joint_state"]  # (B, 87)
-        if self.sim_action_dim == 41:
-            hand_state = observation["policy"]["robot_inspire_joint_state"]  # (B, 12)
-        else:
-            hand_state = observation["policy"]["robot_dex3_joint_state"]  # (B, 14)
+        hand_state = observation["policy"]["robot_inspire_joint_state"]  # (B, 12)
         state = self.exp_config.extract_state(body_state, hand_state)  # (B, policy_dim)
 
         camera_obs = observation["camera_images"]
@@ -341,7 +320,7 @@ class ACTClosedloopPolicy(PolicyBase):
         # If set_default_action() has been called (single-arm Inspire FTP eval),
         # non-commanded joints hold that base pose instead of being driven to 0.
         scatter_kwargs = {}
-        if self._base_action is not None and hasattr(self.exp_config, "scatter_to_sim") and self.sim_action_dim == 41:
+        if self._base_action is not None and hasattr(self.exp_config, "scatter_to_sim"):
             scatter_kwargs["base_action"] = self._base_action
         sim_actions = self.exp_config.scatter_to_sim(policy_actions, **scatter_kwargs)
 
