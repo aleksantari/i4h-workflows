@@ -12,7 +12,7 @@ As of 2026-04-20 the default eval setup is:
 - `--temporal_ensemble_coeff 0.01` — switch inference from chunk-exhaustion
   (1 forward pass per 50–100 env steps) to per-step temporal ensembling
   (1 forward pass per env step, exponentially weighted overlap blending).
-  See `docs/debug_policy.md` Session 2 for the rationale.
+  See `docs/inspire/debug_policy.md` Session 2 for the rationale.
 - `--pin_block_from_hdf5 … --pin_demo_key demo_28` — deterministic block
   pose matching the ep28 teleop demo, so rollout is reproducible and directly
   comparable to the teleop ground-truth.

@@ -96,7 +96,7 @@ through `--object tool_4` to select a different tool. Use `--slot N` (0-5) to ch
 tray slot.
 
 > **Code:**
-> [`scripts/simulation/examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py) —
+> [`scripts/simulation/examples/eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py) —
 > the active evaluation entry point. Supports `--test` (dummy zero-action policy)
 > and `--model_path` (ACT checkpoint).
 
@@ -162,9 +162,9 @@ IsaacLab env observations
 
 > **Code:**
 > Joint group definitions and scatter logic in
-> [`scripts/utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py).
+> [`scripts/utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py).
 > Observation extraction in
-> [`scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
+> [`scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
 
 ### 26D Canonical Joint Order
 
@@ -199,7 +199,7 @@ automatically — the policy only needs to output the 12 actuated joint targets.
 > from `_3`.
 
 > **Code:**
-> [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
+> [`scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
 
 ### Cameras
 
@@ -230,7 +230,7 @@ from the Apple Vision Pro to the 24 Inspire FTP finger actuators.
 > A name mapping (`_URDF_TO_NUCLEUS` dict) in the teleop env cfg bridges this gap.
 
 > **Code:**
-> [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py).
+> [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py).
 
 ---
 
@@ -244,9 +244,9 @@ All fingers are individually tracked using DexPilot IK, which maps the operator'
 hand pose to the 24 Inspire FTP finger joints via Nucleus hand-only URDFs.
 
 > **Code:** Task registration in
-> [`scripts/simulation/tasks/grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py).
+> [`scripts/simulation/tasks/grasp_policy_inspire/__init__.py`](../../scripts/simulation/tasks/grasp_policy_inspire/__init__.py).
 > Teleop environment config in
-> [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py).
+> [`scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py).
 
 ### 38D Action Space
 
@@ -316,8 +316,8 @@ docker stop cloudxr-runtime 2>/dev/null
 
 **On AVP:** Launch "Isaac XR Teleop Sample Client" --> Enter workstation IP --> Connect --> Play
 
-> See [`docs/avp_teleoperation.md`](avp_teleoperation.md) and
-> [`docs/cloudxr.md`](cloudxr.md) for detailed CloudXR setup and troubleshooting.
+> See [`docs/avp_teleoperation.md`](../utils/avp_teleoperation.md) and
+> [`docs/cloudxr.md`](../utils/cloudxr.md) for detailed CloudXR setup and troubleshooting.
 
 > **Note:** The `idle_action` tensor in the teleop env cfg contains approximate wrist
 > positions. These may need empirical tuning at first run via FK at the default joint pose.
@@ -329,7 +329,7 @@ docker stop cloudxr-runtime 2>/dev/null
 **Status: TESTED**
 
 Record demos using
-[`scripts/simulation/record_demos.py`](../scripts/simulation/record_demos.py).
+[`scripts/simulation/record_demos.py`](../../scripts/simulation/record_demos.py).
 This is the same generic recording script used for Dex3 — no Inspire-specific
 modifications needed.
 
@@ -495,7 +495,7 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 > Inspire field mappings:
 > [`scripts/utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py).
 > Dataset config:
-> [`scripts/config/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/g1_grasp_policy_inspire_dataset.yaml).
+> [`scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml).
 > Modality definition:
 > [`scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json`](../../scripts/simulation/tasks/grasp_policy_inspire/modality_grasp_policy_inspire.json).
 
@@ -506,7 +506,7 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml
 ```
 
 **Single-arm (13D) — right arm only:**
@@ -514,7 +514,7 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml
 ```
 
 **Single-arm (13D) — left arm only:**
@@ -522,7 +522,7 @@ Convert recorded HDF5 demonstrations to LeRobot format (Parquet + MP4) for ACT t
 ```bash
 ./docker/run_docker_grasp.sh \
     python scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml
 ```
 
 Three dataset configs are available:
@@ -601,9 +601,9 @@ Train an ACT policy on the converted LeRobot dataset.
 
 > **Code:**
 > Training config:
-> [`scripts/policy/act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml).
+> [`scripts/policy/act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml).
 > Training launcher:
-> [`scripts/policy/train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh).
+> [`scripts/policy/train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh).
 
 ### Training Configuration
 
@@ -625,7 +625,7 @@ Train an ACT policy on the converted LeRobot dataset.
 
 ### Key Differences from Dex3 Config
 
-The Inspire FTP config (`act_config_inspire_ftp.yaml`) differs from the Dex3 config
+The Inspire FTP config (`act_config_inspire.yaml`) differs from the Dex3 config
 (`act_config_dex3.yaml`) in:
 
 - **`experiment.cameras`**: Currently front only (dataset also has both wrist
@@ -725,9 +725,9 @@ The RLinf extension module has full Inspire FTP support:
 > **Note (2026-04-13):** `-Joint-Eval` is now truly deterministic — `G1GraspPolicyInspireEvalEnvCfg.__post_init__` zeros `xy_noise` and `yaw_noise_deg` on `reset_block_position`, so every episode sees the identical block pose. Previously it was a `pass` stub that inherited the RL noise. `eval_act_inspire.py` still defaults to `-Joint`; future work: add a `--deterministic` flag (or switch the default) so the IL eval can select `-Joint-Eval` for checkpoint sweeps where you want variance to come from (tool, slot) grids instead of reset noise.
 
 > **Code:**
-> [`scripts/simulation/rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py)
+> [`scripts/simulation/rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py)
 > — Inspire env wrapper (lines 565-636), ACT converters (lines 644-705).
-> [`scripts/utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py)
+> [`scripts/utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py)
 > — 26D joint groups, scatter_to_sim (41D), state extraction.
 
 ### RLinf Config Files
@@ -736,9 +736,9 @@ Three YAML configs (parallel to their Dex3 equivalents):
 
 | Config | File | Key Difference from Dex3 |
 |--------|------|--------------------------|
-| **Model** | [`config/model/act_inspire_ftp.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml) | `action_dim: 26` (was 28) |
-| **Env** | [`config/env/isaaclab_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | `id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint"` |
-| **PPO** | [`config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | References Inspire env/model configs, eval uses `-Joint-Eval` |
+| **Model** | [`config/model/act_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/model/act_inspire.yaml) | `action_dim: 26` (was 28) |
+| **Env** | [`config/env/isaaclab_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | `id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint"` |
+| **PPO** | [`config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | References Inspire env/model configs, eval uses `-Joint-Eval` |
 
 All PPO hyperparameters (gamma=0.99, clip_ratio=0.2, etc.) remain the same as Dex3.
 
@@ -839,8 +839,8 @@ policy, 41D sim scatter, front camera by default).
 | `--enable_cameras` | false | **Required.** Enable camera rendering for observations. |
 
 > **Code:**
-> [`scripts/simulation/examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py).
-> [`scripts/simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py)
+> [`scripts/simulation/examples/eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py).
+> [`scripts/simulation/act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py)
 > — Inspire-FTP-only ACT eval wrapper (26D / 13D policy → 41D sim scatter via
 > `InspireFTPExperimentConfig`).
 
@@ -852,60 +852,60 @@ policy, 41D sim scatter, front camera by default).
 
 | File | Description |
 |------|-------------|
-| [`tasks/grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py) | Gym registrations (Joint, Joint-Eval, Teleop) |
-| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | RL env config (41D action, 87D+12D obs, rewards, terminations) |
-| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | Teleop env config (38D PinkIK, XR, dex-retargeting) |
-| [`tasks/grasp_policy_inspire/config/robot_config.py`](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) | Robot USD asset, actuator configs, default joint positions |
-| [`tasks/grasp_policy_inspire/mdp/mimic_action.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Mimic joint enforcement (12 rules) |
-| [`tasks/grasp_policy_inspire/mdp/observations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py) | Body (87D) + hand (12D) observation functions |
-| [`tasks/grasp_policy_inspire/mdp/rewards.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/rewards.py) | Reward functions (grasp, transport, place) |
-| [`tasks/grasp_policy_inspire/mdp/terminations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py) | Termination conditions |
-| [`tasks/grasp_policy_inspire/mdp/events.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/events.py) | Reset events |
+| [`tasks/grasp_policy_inspire/__init__.py`](../../scripts/simulation/tasks/grasp_policy_inspire/__init__.py) | Gym registrations (Joint, Joint-Eval, Teleop) |
+| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) | RL env config (41D action, 87D+12D obs, rewards, terminations) |
+| [`tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | Teleop env config (38D PinkIK, XR, dex-retargeting) |
+| [`tasks/grasp_policy_inspire/config/robot_config.py`](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) | Robot USD asset, actuator configs, default joint positions |
+| [`tasks/grasp_policy_inspire/mdp/mimic_action.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py) | Mimic joint enforcement (12 rules) |
+| [`tasks/grasp_policy_inspire/mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py) | Body (87D) + hand (12D) observation functions |
+| [`tasks/grasp_policy_inspire/mdp/rewards.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/rewards.py) | Reward functions (grasp, transport, place) |
+| [`tasks/grasp_policy_inspire/mdp/terminations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/terminations.py) | Termination conditions |
+| [`tasks/grasp_policy_inspire/mdp/events.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/events.py) | Reset events |
 
 ### Entry Points
 
 | File | Description |
 |------|-------------|
-| [`examples/eval_act_inspire.py`](../scripts/simulation/examples/eval_act_inspire.py) | Evaluation entry point (ACT / `--test` dummy modes) |
-| [`simulation/record_demos.py`](../scripts/simulation/record_demos.py) | Demo recording (shared, generic) |
-| [`simulation/replay_demos_isaaclab.py`](../scripts/simulation/replay_demos_isaaclab.py) | Demo replay (shared, generic) |
+| [`examples/eval_act_inspire.py`](../../scripts/simulation/examples/eval_act_inspire.py) | Evaluation entry point (ACT / `--test` dummy modes) |
+| [`simulation/record_demos.py`](../../scripts/simulation/record_demos.py) | Demo recording (shared, generic) |
+| [`simulation/replay_demos_isaaclab.py`](../../scripts/simulation/replay_demos_isaaclab.py) | Demo replay (shared, generic) |
 
 ### Scene Assets
 
 | File | Description |
 |------|-------------|
 | [`assets/sinus_toolkit_v1/`](../assets/sinus_toolkit_v1/) | 5 surgical tool .obj meshes (tool_0..tool_4) + surgical tray USD |
-| [`simulation/assets/convert_sinus_toolkit.py`](../scripts/simulation/assets/convert_sinus_toolkit.py) | Batch .obj→.usd converter (run inside Docker) |
-| [`simulation/assets/assets.py`](../scripts/simulation/assets/assets.py) | USD path constants (`SINUS_TOOL_USD_PATHS`) |
+| [`simulation/assets/convert_sinus_toolkit.py`](../../scripts/simulation/assets/convert_sinus_toolkit.py) | Batch .obj→.usd converter (run inside Docker) |
+| [`simulation/assets/assets.py`](../../scripts/simulation/assets/assets.py) | USD path constants (`SINUS_TOOL_USD_PATHS`) |
 
 ### Pipeline Utilities
 
 | File | Description |
 |------|-------------|
-| [`utils/inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
-| [`utils/inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
-| [`utils/convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
-| [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
-| [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |
-| [`utils/inspect_inspire_ftp_joints.py`](../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
+| [`utils/inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
+| [`utils/inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
+| [`utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
+| [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
+| [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |
+| [`utils/inspect_inspire_ftp_joints.py`](../../scripts/utils/inspect_inspire_ftp_joints.py) | Debug tool: USD joint ordering verification |
 
 ### ACT Training
 
 | File | Description |
 |------|-------------|
-| [`policy/act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml) | IL training config (26D state/action, 1 camera) |
-| [`policy/train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh) | IL training launcher (LeRobot) |
-| [`simulation/act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
+| [`policy/act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml) | IL training config (26D state/action, 1 camera) |
+| [`policy/train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh) | IL training launcher (LeRobot) |
+| [`simulation/act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py) | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
 
 ### RLinf Integration
 
 | File | Description |
 |------|-------------|
-| [`rl/rlinf_ext/__init__.py`](../scripts/simulation/rl/rlinf_ext/__init__.py) | Inspire env wrapper (L565-636) + ACT converters (L644-705) |
-| [`rl/rlinf_ext/act_policy.py`](../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACT wrapper with ValueHead for RL (generic) |
-| [`rl/rlinf_ext/config/model/act_inspire_ftp.yaml`](../scripts/simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml) | RLinf model config (action_dim=26) |
-| [`rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | RLinf env config (InspireFTP gym ID) |
-| [`rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | RLinf PPO top-level config |
+| [`rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py) | Inspire env wrapper (L565-636) + ACT converters (L644-705) |
+| [`rl/rlinf_ext/act_policy.py`](../../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACT wrapper with ValueHead for RL (generic) |
+| [`rl/rlinf_ext/config/model/act_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/model/act_inspire.yaml) | RLinf model config (action_dim=26) |
+| [`rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | RLinf env config (InspireFTP gym ID) |
+| [`rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | RLinf PPO top-level config |
 
 ### Docker
 
@@ -940,7 +940,7 @@ policy, 41D sim scatter, front camera by default).
 ### Adjacent References
 
 For elbow-offset / pipeline-invariant issues see
-[`docs/inspire_ftp_pipeline_contracts.md`](../inspire_ftp_pipeline_contracts.md)
-and [`docs/elbow_offset.md`](../elbow_offset.md). For CloudXR / AVP setup see
+[`docs/inspire/pipeline_contracts.md`](pipeline_contracts.md)
+and [`docs/inspire/elbow_offset.md`](elbow_offset.md). For CloudXR / AVP setup see
 [`docs/utils/cloudxr.md`](../utils/cloudxr.md) and
 [`docs/utils/avp_teleoperation.md`](../utils/avp_teleoperation.md).

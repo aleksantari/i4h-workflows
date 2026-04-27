@@ -546,15 +546,15 @@ index 3 in both 13D variants.
 ```bash
 # 26D dual-arm (default)
 /isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset.yaml
 
 # 13D right arm
 /isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml
 
 # 13D left arm
 /isaac-sim/python.sh scripts/utils/convert_hdf5_to_lerobot.py \
-    --config scripts/config/g1_grasp_policy_inspire_dataset_left_arm.yaml
+    --config scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml
 ```
 
 **Output:** LeRobot dataset with (T-1) rows x 26D or 13D state/action + front camera video.
@@ -688,7 +688,7 @@ All paths relative to `scripts/`.
 
 | File | Role |
 |------|------|
-| `policy/act_config_inspire_ftp.yaml` | IL training config (26D state/action, 1 camera) |
+| `policy/act_config_inspire.yaml` | IL training config (26D state/action, 1 camera) |
 | `policy/train_act_grasp_policy_inspire.sh` | IL training launcher (LeRobot) |
 | `simulation/act_closedloop_policy.py` | ACT eval wrapper (Inspire FTP: 26D / 13D policy → 41D sim scatter) |
 | `simulation/examples/eval_act_inspire.py` | Evaluation entry point (ACT / `--test` dummy modes) |
@@ -699,7 +699,7 @@ All paths relative to `scripts/`.
 |------|------|
 | `simulation/rl/rlinf_ext/__init__.py` | RLinf env registration + ACT converters |
 | `simulation/rl/rlinf_ext/act_policy.py` | ACT wrapper with ValueHead for RL (generic) |
-| `simulation/rl/rlinf_ext/config/model/act_inspire_ftp.yaml` | RLinf model config (action_dim=26) |
+| `simulation/rl/rlinf_ext/config/model/act_inspire.yaml` | RLinf model config (action_dim=26) |
 | `simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml` | RLinf env config (InspireFTP gym ID) |
 | `simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml` | RLinf PPO top-level config |
 

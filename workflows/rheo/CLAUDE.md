@@ -10,9 +10,9 @@ The active focus of this workflow is the **G1 + Inspire FTP 5-finger hand grasp 
 
 Authoritative docs (re-read them when in doubt — the rest of `docs/` is older and may have drifted):
 
-- [`docs/grasp_policy/grasp_policy_inspire_guide.md`](docs/grasp_policy/grasp_policy_inspire_guide.md) — end-to-end tutorial (teleop → record → convert → IL → RL → eval).
-- [`docs/grasp_policy/inspire_ftp_task_reference.md`](docs/grasp_policy/inspire_ftp_task_reference.md) — gym IDs, action/obs spaces, scene, mimic rules, comparison vs Dex3.
-- [`docs/inspire_ftp_pipeline_contracts.md`](docs/inspire_ftp_pipeline_contracts.md) — pipeline invariants, elbow offset chain, conversion details, debug playbook. Treat its "Pipeline invariants" list as load-bearing facts.
+- [`docs/inspire/grasp_policy_guide.md`](docs/inspire/grasp_policy_guide.md) — end-to-end tutorial (teleop → record → convert → IL → RL → eval).
+- [`docs/inspire/task_reference.md`](docs/inspire/task_reference.md) — gym IDs, action/obs spaces, scene, mimic rules, comparison vs Dex3.
+- [`docs/inspire/pipeline_contracts.md`](docs/inspire/pipeline_contracts.md) — pipeline invariants, elbow offset chain, conversion details, debug playbook. Treat its "Pipeline invariants" list as load-bearing facts.
 
 Adjacent tracks (live in the same workflow, but not the active work): Trocar assembly (GR00T N1.5, RL) and Arena locomanipulation (GR00T N1.6). The earlier Dex3-hand variant of this grasp task has been removed.
 
@@ -62,7 +62,7 @@ Arena environments are registered via `register_and_patch.py` into an `ExampleEn
 | Policy | Model | Action dims | Chunk size | Wrapper / Config |
 |--------|-------|-------------|------------|------------------|
 | **GR00T** | DiT (TensorRT) | 43 DOF | 16 | `gr00t_closedloop_policy.py` (trocar) |
-| **ACT (Inspire FTP)** | CVAE (LeRobot) | 26 DOF dual-arm or 13 DOF single-arm (scattered to 41D sim) | 50 | `act_closedloop_policy.py` + `act_config_inspire_ftp.yaml` (dim_model=256) |
+| **ACT (Inspire FTP)** | CVAE (LeRobot) | 26 DOF dual-arm or 13 DOF single-arm (scattered to 41D sim) | 50 | `act_closedloop_policy.py` + `act_config_inspire.yaml` (dim_model=256) |
 
 Both extend `BaseClosedloopPolicy`, which manages per-env action chunk state (current chunk, index, exhaustion tracking). Subclasses implement `_load_model()` and `_get_action_chunk()`.
 
@@ -75,14 +75,15 @@ The Inspire FTP grasp policy eval entry point is `eval_act_inspire.py`.
 ```
 scripts/
 ├── config/                        # Policy YAML configs (model path, joint mappings, camera, action horizon)
-│   ├── g1_grasp_policy_inspire_dataset.yaml          # HDF5→LeRobot conversion: 26D dual-arm
-│   ├── g1_grasp_policy_inspire_dataset_right_arm.yaml # HDF5→LeRobot conversion: 13D right arm
-│   └── g1_grasp_policy_inspire_dataset_left_arm.yaml  # HDF5→LeRobot conversion: 13D left arm
+│   └── inspire/                       # Inspire-FTP dataset conversion YAMLs
+│       ├── g1_grasp_policy_inspire_dataset.yaml          # 26D dual-arm
+│       ├── g1_grasp_policy_inspire_dataset_right_arm.yaml # 13D right arm
+│       └── g1_grasp_policy_inspire_dataset_left_arm.yaml  # 13D left arm
 ├── policy/
 │   ├── gr00t_config.py                  # UnitreeG1SimDataConfig — modality definitions for GR00T
 │   ├── gr00t_locomanip_config.py        # Locomanip-specific modality config
 │   ├── apply_gr00t_rl_patch.py          # Context manager: git-apply RL patch during eval
-│   ├── act_config_inspire_ftp.yaml      # LeRobot ACT training config — Inspire FTP grasp (chunk=50, dim_model=256)
+│   ├── act_config_inspire.yaml          # LeRobot ACT training config — Inspire FTP grasp (chunk=50, dim_model=256)
 │   └── train_act_grasp_policy_inspire.sh # LeRobot ACT training launcher (Inspire FTP)
 ├── simulation/
 │   ├── base_closedloop_policy.py  # Abstract base: shared action chunking for GR00T + ACT
@@ -123,7 +124,7 @@ scripts/
 agents/
 ├── agents/                        # VLM agent implementations (chat, monitoring, robot control)
 └── configs/                       # Agent YAML configs (global + per-agent)
-docs/                              # End-to-end guides (grasp_policy/grasp_policy_inspire_guide, grasp_policy/inspire_ftp_task_reference, inspire_ftp_pipeline_contracts, avp_teleoperation, cloudxr)
+docs/                              # End-to-end guides (inspire/grasp_policy_guide, inspire/task_reference, inspire/pipeline_contracts, utils/avp_teleoperation, utils/cloudxr)
 tests/
 ├── helpers.py                     # Test decorators + subprocess runner
 └── test_sim/                      # Unit and integration tests
@@ -167,7 +168,7 @@ RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rli
 The Inspire FTP hand has 24 joints — 12 actuated + 12 mimic. `InspireFTPJointPositionAction.apply_actions()` enforces the 12 mimic rules from the policy's 12 actuated targets (multipliers 1.0843 for finger PIPs, 0.8024 / 0.9487 for the chained thumb segments). **Never bypass this action class** with direct `set_joint_position_target` writes against mimic joints — grasps collapse silently. Rule processing order is also load-bearing for the thumb chain (`thumb_3` must be computed before `thumb_4`).
 
 ### Inspire FTP Elbow Offset Chain
-A `−0.3` rad offset is applied to `{left,right}_elbow_joint` in `InspireFTPJointPositionActionCfg.offset`. To compensate, the HDF5→LeRobot converter adds `+0.3` to the elbow column of every parquet `action`. **Exactly one comp on each side** — never both, never neither. The converter add must be out-of-place (in-place `+=` aliases the state buffer through shared NumPy views). Symptom of a broken chain: arm drifts monotonically during eval. Full details in [`docs/inspire_ftp_pipeline_contracts.md`](docs/inspire_ftp_pipeline_contracts.md).
+A `−0.3` rad offset is applied to `{left,right}_elbow_joint` in `InspireFTPJointPositionActionCfg.offset`. To compensate, the HDF5→LeRobot converter adds `+0.3` to the elbow column of every parquet `action`. **Exactly one comp on each side** — never both, never neither. The converter add must be out-of-place (in-place `+=` aliases the state buffer through shared NumPy views). Symptom of a broken chain: arm drifts monotonically during eval. Full details in [`docs/inspire/pipeline_contracts.md`](docs/inspire/pipeline_contracts.md).
 
 ## Testing
 
@@ -199,4 +200,4 @@ Tests run inside Docker. Conditional decorators in `tests/helpers.py`:
 
 **ACT path (Inspire FTP) — primary track:** VR teleoperation (AVP DexPilot, 38D PinkIK, optional `--arm {left,right,both}` masking) → Record HDF5 (`record_demos.py`, full 87D + 12D obs always recorded) → HDF5→LeRobot conversion to **26D dual-arm** or **13D single-arm** (three YAMLs in `scripts/config/`, observation-derived actions with elbow `+0.3` baked in) → ACT IL training (`train_act_grasp_policy_inspire.sh`) → Optional RL post-training (`rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml` via RLinf) → Evaluation (`eval_act_inspire.py`)
 
-See [`docs/grasp_policy/grasp_policy_inspire_guide.md`](docs/grasp_policy/grasp_policy_inspire_guide.md) for the complete walkthrough.
+See [`docs/inspire/grasp_policy_guide.md`](docs/inspire/grasp_policy_guide.md) for the complete walkthrough.

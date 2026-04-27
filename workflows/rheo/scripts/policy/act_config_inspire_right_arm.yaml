@@ -13,27 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ACT single-episode memorization smoketest — right-arm 13D.
+# LeRobot ACT training configuration for Inspire FTP grasp_policy task —
+# right-arm-only variant.
+# Usage: python -m lerobot.scripts.train --config_path <this_file>
 #
-# Purpose: verify the end-to-end pipeline (data → train → scatter → sim) by
-# overfitting one teleop demo. Pair with eval at the matching slot + tool on
-# the deterministic `-Joint-Eval` task variant. If the model reproduces the
-# recorded trajectory, the pipeline is sound; any remaining eval failure is a
-# learning/data problem.
-#
-# Key departures from act_config_inspire_ftp_right_arm.yaml:
-#   - use_vae: false → deterministic encoder-decoder, no train/eval z mismatch
-#   - kl_weight: 0 (moot when use_vae=false, kept for clarity)
-#   - dataset.episodes: [28] → train on one demo
-#   - steps: 5000, batch_size: 32 → tight budget, many updates per frame
+# Paired with scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml
+# (the 13D single-arm LeRobot dataset).
+#   - 13D policy space (right_arm 7 + right_hand 6)
+#   - 41D sim action space (scatter_to_sim places the 13 values at the right-
+#     arm / right-hand indices; all other joints stay at zero)
+#   - 2 cameras: front + right wrist
 
+# ---------------------------------------------------------------------------
+# Experiment: cameras and joint groups for right-arm-only training.
+# ---------------------------------------------------------------------------
 experiment:
   cameras:
     front_camera: "observation.images.cam_room"
     right_wrist_camera: "observation.images.cam_right_wrist"
   joint_groups:
-    - right_arm
-    - right_hand
+    - right_arm   # 7 DOF, body positions 22-28
+    - right_hand  # 6 DOF, inspire positions 6-11 (actuated only, no mimic)
 
 seed: 1000
 
@@ -42,31 +42,33 @@ wandb:
   project: "rheo-act-inspire"
   disable_artifact: false
 
+# Dataset (repo_id set via CLI --dataset.repo_id)
 dataset:
   repo_id: placeholder
-  # Single-episode dataset is pre-extracted via
-  # scripts/utils/extract_single_episode.py. Don't set `episodes:` here —
-  # LeRobot 0.1.0's episode_data_index lookup is broken for sparse filters.
 
-steps: 5000
-batch_size: 32
-eval_freq: 5000
-save_freq: 1000
-log_freq: 50
+# Training params
+steps: 30000
+batch_size: 64
+eval_freq: 10000
+save_freq: 5000
+log_freq: 250
 save_checkpoint: true
-num_workers: 8
+num_workers: 12
 
+# Eval
 eval:
-  n_episodes: 1
-  batch_size: 1
+  n_episodes: 10
+  batch_size: 10
 
 policy:
   type: act
 
+  # ACT architecture
   chunk_size: 50
   n_action_steps: 50
   n_obs_steps: 1
 
+  # Transformer dimensions
   dim_model: 256
   n_heads: 8
   dim_feedforward: 1600
@@ -74,11 +76,13 @@ policy:
   n_encoder_layers: 2
   n_decoder_layers: 1
 
-  use_vae: false
+  # VAE settings
+  use_vae: true
   latent_dim: 32
   n_vae_encoder_layers: 2
-  kl_weight: 0
+  kl_weight: 10
 
+  # Input features (13D state/action: right_arm(7) + right_hand(6))
   input_features:
     observation.state:
       type: STATE
@@ -94,17 +98,21 @@ policy:
       type: ACTION
       shape: [13]
 
+  # Normalization (keyed by FeatureType, computed from dataset stats)
   normalization_mapping:
     VISUAL: MEAN_STD
     STATE: MEAN_STD
     ACTION: MEAN_STD
 
+  # Vision backbone
   vision_backbone: resnet18
   pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
   replace_final_stride_with_dilation: false
 
+  # Disable hub push (local training only)
   push_to_hub: false
 
+  # Optimizer (ACT-specific, used by get_optimizer_preset)
   optimizer_lr: 2e-5
   optimizer_weight_decay: 1e-4
   optimizer_lr_backbone: 2e-5

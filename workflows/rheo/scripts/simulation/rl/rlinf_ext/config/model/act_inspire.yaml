@@ -1,7 +1,7 @@
 model_type: "act"
 
 # Model path - should be overridden at runtime
-model_path: "/path/to/act_inspire_ftp_checkpoint"
+model_path: "/path/to/act_inspire_checkpoint"
 
 # Model precision
 precision: "bf16"

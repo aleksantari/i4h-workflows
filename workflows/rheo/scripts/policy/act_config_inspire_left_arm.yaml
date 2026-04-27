@@ -14,26 +14,26 @@
 # limitations under the License.
 
 # LeRobot ACT training configuration for Inspire FTP grasp_policy task —
-# right-arm-only variant.
+# left-arm-only variant.
 # Usage: python -m lerobot.scripts.train --config_path <this_file>
 #
-# Paired with scripts/config/g1_grasp_policy_inspire_dataset_right_arm.yaml
+# Paired with scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml
 # (the 13D single-arm LeRobot dataset).
-#   - 13D policy space (right_arm 7 + right_hand 6)
-#   - 41D sim action space (scatter_to_sim places the 13 values at the right-
-#     arm / right-hand indices; all other joints stay at zero)
-#   - 2 cameras: front + right wrist
+#   - 13D policy space (left_arm 7 + left_hand 6)
+#   - 41D sim action space (scatter_to_sim places the 13 values at the left-
+#     arm / left-hand indices; all other joints stay at zero)
+#   - 2 cameras: front + left wrist
 
 # ---------------------------------------------------------------------------
-# Experiment: cameras and joint groups for right-arm-only training.
+# Experiment: cameras and joint groups for left-arm-only training.
 # ---------------------------------------------------------------------------
 experiment:
   cameras:
     front_camera: "observation.images.cam_room"
-    right_wrist_camera: "observation.images.cam_right_wrist"
+    left_wrist_camera: "observation.images.cam_left_wrist"
   joint_groups:
-    - right_arm   # 7 DOF, body positions 22-28
-    - right_hand  # 6 DOF, inspire positions 6-11 (actuated only, no mimic)
+    - left_arm    # 7 DOF, body positions 15-21
+    - left_hand   # 6 DOF, inspire positions 0-5 (actuated only, no mimic)
 
 seed: 1000
 
@@ -47,13 +47,13 @@ dataset:
   repo_id: placeholder
 
 # Training params
-steps: 30000
-batch_size: 64
+steps: 50000
+batch_size: 16
 eval_freq: 10000
 save_freq: 5000
 log_freq: 250
 save_checkpoint: true
-num_workers: 12
+num_workers: 4
 
 # Eval
 eval:
@@ -80,9 +80,9 @@ policy:
   use_vae: true
   latent_dim: 32
   n_vae_encoder_layers: 2
-  kl_weight: 10
+  kl_weight: 1
 
-  # Input features (13D state/action: right_arm(7) + right_hand(6))
+  # Input features (13D state/action: left_arm(7) + left_hand(6))
   input_features:
     observation.state:
       type: STATE
@@ -90,7 +90,7 @@ policy:
     observation.images.cam_room:
       type: VISUAL
       shape: [3, 480, 640]
-    observation.images.cam_right_wrist:
+    observation.images.cam_left_wrist:
       type: VISUAL
       shape: [3, 480, 640]
   output_features:
@@ -113,6 +113,6 @@ policy:
   push_to_hub: false
 
   # Optimizer (ACT-specific, used by get_optimizer_preset)
-  optimizer_lr: 2e-5
+  optimizer_lr: 1e-5
   optimizer_weight_decay: 1e-4
-  optimizer_lr_backbone: 2e-5
+  optimizer_lr_backbone: 1e-5

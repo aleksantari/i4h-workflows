@@ -70,7 +70,7 @@ GROUP_SIM_INDICES: dict[str, list[int]] = {
     # env's 41-D actuated_joint_names puts little_1 (pinky) BEFORE middle_1
     # within each hand — opposite of the RECORDED_ACTION_53 name list. Verified
     # at runtime via scripts/utils/verify_scatter_indices.py; see
-    # docs/inspire_scatter_indices.md.
+    # docs/inspire/scatter_indices.md.
     "left_hand": [33, 39, 29, 31, 32, 30],   # thumb_yaw(33), thumb_pitch(39), idx(29), mid(31), ring(32), pinky(30)
     "right_hand": [38, 40, 34, 36, 37, 35],  # thumb_yaw(38), thumb_pitch(40), idx(34), mid(36), ring(37), pinky(35)
 }

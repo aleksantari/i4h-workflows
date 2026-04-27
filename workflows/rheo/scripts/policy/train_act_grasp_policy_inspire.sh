@@ -20,7 +20,7 @@
 #
 # Inspire FTP hand:
 #   - 26D dual-arm policy or 13D single-arm policy (selected via --arm)
-#   - Uses act_config_inspire_ftp{,_left_arm,_right_arm}.yaml
+#   - Uses act_config_inspire{,_left_arm,_right_arm}.yaml
 #   - Sets INSPIRE_FTP_EXPERIMENT_CONFIG env var
 #
 # Examples:
@@ -41,7 +41,7 @@
 #
 #   # Resume from checkpoint
 #   bash train_act_grasp_policy_inspire.sh --dataset_path /datasets/grasp_policy_inspire_lerobot \
-#       --resume_path /models/act_inspire_ftp/checkpoint_50000
+#       --resume_path /models/act_inspire/checkpoint_50000
 
 set -e
 
@@ -106,15 +106,15 @@ done
 # Select config based on --arm
 case "$ARM" in
     dual)
-        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp.yaml"
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire.yaml"
         RUN_TAG="dual"
         ;;
     left)
-        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_left_arm.yaml"
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_left_arm.yaml"
         RUN_TAG="left_arm"
         ;;
     right)
-        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_right_arm.yaml"
+        CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_right_arm.yaml"
         RUN_TAG="right_arm"
         ;;
     *)
@@ -128,7 +128,7 @@ esac
 if [[ "$SMOKETEST" == "true" ]]; then
     case "$ARM" in
         right)
-            CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_ftp_right_arm_smoketest.yaml"
+            CONFIG_PATH="${SCRIPT_DIR}/act_config_inspire_right_arm_smoketest.yaml"
             ;;
         *)
             echo "Error: --smoketest currently only supports --arm right (got: $ARM)"

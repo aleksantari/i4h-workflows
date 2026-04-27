@@ -1,7 +1,7 @@
 defaults:
   - env/isaaclab_grasp_policy_inspire@env.train
   - env/isaaclab_grasp_policy_inspire@env.eval
-  - model/act_inspire_ftp@actor.model
+  - model/act_inspire@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
 
@@ -125,7 +125,7 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/models/<your_act_inspire_ftp_ckpt>"
+    model_path: "/models/<your_act_inspire_ckpt>"
     precision: ${actor.model.precision}
 
 actor:
@@ -140,9 +140,9 @@ actor:
   seed: 1234
   enable_offload: False
 
-  # Override the default values in model/act_inspire_ftp
+  # Override the default values in model/act_inspire
   model:
-    model_path: "/models/<your_act_inspire_ftp_ckpt>"
+    model_path: "/models/<your_act_inspire_ckpt>"
     add_value_head: True
     num_action_chunks: 1
 

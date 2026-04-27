@@ -14,8 +14,8 @@ The G1's default posture for all our tabletop tasks has both elbows bent at `-0.
 
 The `ArticulationCfg.InitialStateCfg.joint_pos` dict in each task's `robot_config.py` puts elbows at `-0.3` at reset:
 
-- [scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py:60,67](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60)
-- [scripts/simulation/tasks/assemble_trocar/config/robot_config.py:131,138](../scripts/simulation/tasks/assemble_trocar/config/robot_config.py#L131)
+- [scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py:60,67](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60)
+- [scripts/simulation/tasks/assemble_trocar/config/robot_config.py:131,138](../../scripts/simulation/tasks/assemble_trocar/config/robot_config.py#L131)
 
 This is the **physics state** at `env.reset()`. It is independent of any action mapping — the robot simply starts with its elbows bent.
 
@@ -39,8 +39,8 @@ joint_pos = mdp.JointPositionActionCfg(
 )
 ```
 
-- [scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115)
-- [scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py:84-87,170](../scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py#L84-L87)
+- [scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115)
+- [scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py:84-87,170](../../scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_env_cfg.py#L84-L87)
 
 IsaacLab's `JointPositionActionCfg` computes the per-step joint target as
 
@@ -71,7 +71,7 @@ raw = target − offset
     = target + 0.3
 ```
 
-This is exactly what the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors encode in [scripts/utils/inspire_ftp_lerobot_fields.py](../scripts/utils/inspire_ftp_lerobot_fields.py):
+This is exactly what the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors encode in [scripts/utils/inspire_ftp_lerobot_fields.py](../../scripts/utils/inspire_ftp_lerobot_fields.py):
 
 | Variant | Vector | Non-zero entries |
 |---|---|---|
@@ -81,7 +81,7 @@ This is exactly what the three `STATE_*_RAW_ACTION_FROM_PROCESSED_DELTA` vectors
 
 Each variant of `convert_g1_state_action_to_lerobot_*D` adds this vector to `full_*D[1:]` in the 38-D PinkIK teleop branch. **Forgetting to add it in any one branch silently shifts the elbow dimension by 0.3 rad every frame at eval time — which is how this whole investigation started.**
 
-Analogous logic lives in the trocar converter ([scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61)) where `STATE_28_RAW_ACTION_FROM_PROCESSED_DELTA` carries `0.3` at indices 3 and 10 for the same reason.
+Analogous logic lives in the trocar converter ([scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61)) where `STATE_28_RAW_ACTION_FROM_PROCESSED_DELTA` carries `0.3` at indices 3 and 10 for the same reason.
 
 ### 2a. The 53-D recorded branch is *already correct*
 
@@ -92,12 +92,12 @@ For episodes recorded against the 53-D action space (full joint_pos action term,
 The eval-time flow for single-arm ACT is:
 
 1. Policy predicts a 13-D raw action (one arm + one hand).
-2. [scripts/simulation/act_closedloop_policy.py](../scripts/simulation/act_closedloop_policy.py) scatters those 13 values into a 41-D vector at the canonical `GROUP_SIM_INDICES` slots.
+2. [scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py) scatters those 13 values into a 41-D vector at the canonical `GROUP_SIM_INDICES` slots.
 3. The remaining 28 entries of the 41-D vector must hold the non-controlled joints at their rest state — otherwise the passive arm, torso, and opposite hand droop under gravity.
 
 That "hold rest state" value is **also in raw action space**, not joint-target space, because the env will again apply `+ offset` on top. So the dummy/hold action for the elbow of the *non-commanded* arm has to be `−offset_dict[elbow] = +0.3`, not 0 and not the physical rest pose `-0.3`.
 
-This is handled explicitly in [scripts/simulation/examples/eval_act_inspire.py:220-231](../scripts/simulation/examples/eval_act_inspire.py#L220-L231):
+This is handled explicitly in [scripts/simulation/examples/eval_act_inspire.py:220-231](../../scripts/simulation/examples/eval_act_inspire.py#L220-L231):
 
 ```python
 # hold_41d is computed from default_joint_pos (= physical rest pose),
@@ -116,13 +116,13 @@ When reasoning about any elbow-angle value in the Inspire FTP grasp or trocar pi
 
 | Layer | File | What it does with -0.3 / +0.3 |
 |---|---|---|
-| Env spawn | [grasp_policy_inspire/config/robot_config.py:60,67](../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60) | Sets physical elbow = -0.3 at reset. Independent of action mapping. |
-| Env action term | [grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115) | Passes `offset=offset_dict` to `JointPositionActionCfg`. Defines the raw-action coordinate system. |
-| Teleop converter (26-D dual) | [scripts/utils/inspire_ftp_lerobot_fields.py:77-79](../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79), used in `convert_g1_state_action_to_lerobot_26d` | Adds +0.3 at elbow dims when converting 38-D PinkIK → raw-action LeRobot. |
-| Teleop converter (13-D right) | [scripts/utils/inspire_ftp_lerobot_fields.py:213-215](../scripts/utils/inspire_ftp_lerobot_fields.py#L213-L215), used in `convert_g1_state_action_to_lerobot_13d` | Same, right elbow only. (Bug fix: was missing in the `else` branch for the 38-D case; fixed 2026-04-19.) |
-| Teleop converter (13-D left) | [scripts/utils/inspire_ftp_lerobot_fields.py:282-284](../scripts/utils/inspire_ftp_lerobot_fields.py#L282-L284), used in `convert_g1_state_action_to_lerobot_13d_left` | Same, left elbow only. |
-| Trocar converter | [scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61) | Same pattern for the trocar task. |
-| Eval scatter (hold) | [scripts/simulation/examples/eval_act_inspire.py:220-231](../scripts/simulation/examples/eval_act_inspire.py#L220-L231) | Inverts offset when computing the 41-D hold vector fed to `policy.set_default_action`. |
+| Env spawn | [grasp_policy_inspire/config/robot_config.py:60,67](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L60) | Sets physical elbow = -0.3 at reset. Independent of action mapping. |
+| Env action term | [grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py:112-115,264](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115) | Passes `offset=offset_dict` to `JointPositionActionCfg`. Defines the raw-action coordinate system. |
+| Teleop converter (26-D dual) | [scripts/utils/inspire_ftp_lerobot_fields.py:77-79](../../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79), used in `convert_g1_state_action_to_lerobot_26d` | Adds +0.3 at elbow dims when converting 38-D PinkIK → raw-action LeRobot. |
+| Teleop converter (13-D right) | [scripts/utils/inspire_ftp_lerobot_fields.py:213-215](../../scripts/utils/inspire_ftp_lerobot_fields.py#L213-L215), used in `convert_g1_state_action_to_lerobot_13d` | Same, right elbow only. (Bug fix: was missing in the `else` branch for the 38-D case; fixed 2026-04-19.) |
+| Teleop converter (13-D left) | [scripts/utils/inspire_ftp_lerobot_fields.py:282-284](../../scripts/utils/inspire_ftp_lerobot_fields.py#L282-L284), used in `convert_g1_state_action_to_lerobot_13d_left` | Same, left elbow only. |
+| Trocar converter | [scripts/utils/assemble_trocar_lerobot_fields.py:57-61](../../scripts/utils/assemble_trocar_lerobot_fields.py#L57-L61) | Same pattern for the trocar task. |
+| Eval scatter (hold) | [scripts/simulation/examples/eval_act_inspire.py:220-231](../../scripts/simulation/examples/eval_act_inspire.py#L220-L231) | Inverts offset when computing the 41-D hold vector fed to `policy.set_default_action`. |
 
 Any new trainer, new recorder, new scatter path, or new debugging notebook that **moves data between "joint position" and "raw action" spaces must account for this shift at the elbow dims.**
 

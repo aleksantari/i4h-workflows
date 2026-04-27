@@ -76,12 +76,12 @@ violated in practice, something is broken.
 ## Layer 1 — Embodiment & Environment
 
 > The *physical* contract: robot, sim, actions, observations, task.
-> Source of truth: [`g1_grasp_policy_inspire_env_cfg.py`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
+> Source of truth: [`g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
 
 ### Gym registrations
 
 All three are registered in
-[`grasp_policy_inspire/__init__.py`](../scripts/simulation/tasks/grasp_policy_inspire/__init__.py):
+[`grasp_policy_inspire/__init__.py`](../../scripts/simulation/tasks/grasp_policy_inspire/__init__.py):
 
 | Gym ID | Action space | Used by |
 |---|---|---|
@@ -91,7 +91,7 @@ All three are registered in
 
 ### Action space — 41D joint positions
 
-Defined in [`ActionsCfg`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L253-L264):
+Defined in [`ActionsCfg`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L253-L264):
 
 ```python
 joint_pos = mdp.InspireFTPJointPositionActionCfg(
@@ -105,17 +105,17 @@ joint_pos = mdp.InspireFTPJointPositionActionCfg(
 ```
 
 - **41 joints** = 29 body joints + 12 actuated hand joints. See
-  `actuated_joint_names` ([env_cfg.py:139](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L139)),
+  `actuated_joint_names` ([env_cfg.py:139](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L139)),
   which is `joint_names` minus the 12 mimic joints in `_MIMIC_JOINT_NAMES`.
 - **Order**: USD articulation tree traversal (interleaved L/R). See the full
   53-entry `joint_names` list at
-  [env_cfg.py:53-110](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L53-L110).
+  [env_cfg.py:53-110](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L53-L110).
 - **Elbow `−0.3` offset** is applied here, at rollout time, before the command
   reaches the articulation. Source:
-  [env_cfg.py:112-115](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115).
+  [env_cfg.py:112-115](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112-L115).
   This is the **−0.3 side** of the elbow offset chain.
 - **Mimic joints (12 passive)** are driven inside
-  [`InspireFTPJointPositionAction.apply_actions()`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
+  [`InspireFTPJointPositionAction.apply_actions()`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py).
   They are **not part of the 41D action** — the action manager commands only
   the 12 actuated hand joints (`*_{index,middle,ring,little}_1_joint`,
   `*_thumb_1_joint`, `*_thumb_2_joint`), and mimic targets are derived from
@@ -145,15 +145,15 @@ joint_pos = mdp.InspireFTPJointPositionActionCfg(
 ### Observation space — `obs["policy"]`
 
 Defined in
-[`ObservationsCfg`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L267-L291).
+[`ObservationsCfg`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L267-L291).
 The actual observation functions live in
-[`mdp/observations.py`](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
+[`mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
 
 **`robot_joint_state` — shape `(B, 87)`:**
 
 Layout: `[pos(29) | vel(29) | torque(29)]`, where the 29 body joints are
 arranged in the **canonical body order** defined by `_BODY_JOINT_NAMES_CANONICAL`
-([observations.py:39-69](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L39-L69)).
+([observations.py:39-69](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L39-L69)).
 Crucially, this is **NOT** the USD order — the observation function gathers
 the positions/velocities/torques at explicit name-resolved indices so that
 arm joints are always at fixed, contiguous slices:
@@ -166,7 +166,7 @@ arm joints are always at fixed, contiguous slices:
 | **22–28** | **right arm** (same 7) |
 
 The Dex3 body observation uses the same canonical order, which is why the
-shared joint-index constants in [`inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py)
+shared joint-index constants in [`inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py)
 (`STATE_26_BODY_COL_LEFT_ARM = range(15, 22)`,
 `STATE_26_BODY_COL_RIGHT_ARM = range(22, 29)`) work identically across the
 two hand variants.
@@ -175,7 +175,7 @@ two hand variants.
 
 Layout: `[L_thumb_1, L_thumb_2, L_index_1, L_middle_1, L_ring_1, L_little_1, R_thumb_1, R_thumb_2, R_index_1, R_middle_1, R_ring_1, R_little_1]`.
 Source: `_INSPIRE_ACTUATED_NAMES` at
-[observations.py:72-85](../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85).
+[observations.py:72-85](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85).
 Indices 0–5 are the left hand, 6–11 are the right hand.
 
 **`obs["camera_images"]`:**
@@ -184,15 +184,15 @@ Three keys — `front_camera`, `left_wrist_camera`, `right_wrist_camera` — all
 RGB, unnormalized. Configured via `CameraPresets.g1_front_camera(focal_length=10.5)`,
 `CameraPresets.left_inspire_wrist_camera(focal_length=12.0)`, and
 `CameraPresets.right_inspire_wrist_camera(focal_length=12.0)` in
-[env_cfg.py](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
-`act_config_inspire_ftp.yaml` currently declares only `observation.images.cam_room`;
+[env_cfg.py](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
+`act_config_inspire.yaml` currently declares only `observation.images.cam_room`;
 the wrist cameras exist in the dataset and can be added to ACT `input_features`
 when training with wrist vision.
 
 ### Frame rate & control
 
 Set in `__post_init__` at
-[env_cfg.py:390-401](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L390-L401):
+[env_cfg.py:390-401](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L390-L401):
 
 - `sim.dt = 1/200` → 200 Hz physics
 - `decimation = 4` → **50 Hz** effective control
@@ -205,7 +205,7 @@ match 50 Hz. If you change any of these, re-record demos.
 ### Task stage machine
 
 Stages 0→3 defined in
-[`grasp_policy/mdp/rewards.py:35-95`](../scripts/simulation/tasks/grasp_policy/mdp/rewards.py#L35-L95)
+[`grasp_policy/mdp/rewards.py:35-95`](../../scripts/simulation/tasks/grasp_policy/mdp/rewards.py#L35-L95)
 (shared with the Dex3 task). State cached on `env._task_stage`; `check_success`
 and `eval_act_inspire.py`'s progress logger both read it directly.
 
@@ -217,7 +217,7 @@ and `eval_act_inspire.py`'s progress logger both read it directly.
 
 Stages advance **forward only** — no regressions. Success termination is
 `env._task_stage >= success_stage`; the env config sets
-`success_stage=3` at [env_cfg.py:303](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L303).
+`success_stage=3` at [env_cfg.py:303](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L303).
 
 ### Reset behavior
 
@@ -225,9 +225,9 @@ Stages advance **forward only** — no regressions. Success termination is
   90° CW rotation `TRAY_ROT`.
 - **Tools** share `TOOL_ROT` with the tray (they're rotated before placement).
 - **`TRAY_SLOT_POSITIONS`**: 6 slots, a 2×3 grid
-  ([env_cfg.py:165-178](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L165-L178)).
+  ([env_cfg.py:165-178](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L165-L178)).
   Env default is **slot 4** (`ACTIVE_SLOT_IDX = 4`).
-- **Reset event** `reset_block_to_tray_slot` ([env_cfg.py:355-365](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L355-L365))
+- **Reset event** `reset_block_to_tray_slot` ([env_cfg.py:355-365](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L355-L365))
   teleports the block to `slot_pos` with **XY noise ±0.02 m** and **yaw
   noise ±15°**. `eval_act_inspire.py` overrides `slot_pos` at runtime based on
   `--slot`.
@@ -241,13 +241,13 @@ Stages advance **forward only** — no regressions. Success termination is
 > The *representation* contract: how embodiment state and actions become
 > something the model can train on.
 > Source of truth:
-> [`inspire_ftp_lerobot_fields.py`](../scripts/utils/inspire_ftp_lerobot_fields.py)
-> and [`convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py).
+> [`inspire_ftp_lerobot_fields.py`](../../scripts/utils/inspire_ftp_lerobot_fields.py)
+> and [`convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).
 
 ### AVP → teleop action (38D)
 
 The Inspire FTP Teleop env cfg
-([`g1_grasp_policy_inspire_teleop_env_cfg.py:228-243`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L228-L243))
+([`g1_grasp_policy_inspire_teleop_env_cfg.py:228-243`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L228-L243))
 registers its own `"handtracking"` device directly with a
 `UnitreeG1RetargeterCfg`. When `record_demos.py --teleop_device handtracking`
 runs, it finds this key in `env_cfg.teleop_devices.devices` and uses it —
@@ -266,7 +266,7 @@ skeletal joints, 2 hands × 26 bone poses each) and produces **38D**:
   observed human hand shape, given the robot hand's kinematic model
 
 The retargeter config at
-[`teleop_env_cfg.py:232-237`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L232-L237)
+[`teleop_env_cfg.py:232-237`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L232-L237)
 bridges the two sides: `num_open_xr_hand_joints=52` tells the retargeter how
 many skeletal poses to expect from AVP, and `hand_joint_names` (24 entries in
 Nucleus-style naming) tells it which robot joints to produce values for.
@@ -276,7 +276,7 @@ The retargeter output is the **38D teleop command**:
 `[L_wrist_pos(3) | L_wrist_quat(4) | R_wrist_pos(3) | R_wrist_quat(4) | hand_joints(24)]`.
 
 **PinkIK is a separate, downstream step** — it lives in `TeleopActionsCfg`
-([`teleop_env_cfg.py:100-162`](../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L100-L162)),
+([`teleop_env_cfg.py:100-162`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py#L100-L162)),
 not in the retargeter. It takes the 14D Cartesian wrist poses and solves
 inverse kinematics → 14D arm joint angles (7 per arm). The 24D hand joints
 pass through unchanged. The result is what actually commands the articulation.
@@ -287,7 +287,7 @@ post-IK joint angles).
 
 ### HDF5 recording format
 
-[`record_demos.py`](../scripts/simulation/record_demos.py) saves per-trajectory
+[`record_demos.py`](../../scripts/simulation/record_demos.py) saves per-trajectory
 HDF5 with these keys for the Inspire FTP Teleop variant:
 
 | Key | Shape | Meaning |
@@ -321,12 +321,12 @@ hand boundaries.
 ### HDF5 → LeRobot conversion
 
 Entry point:
-[`convert_hdf5_to_lerobot.py`](../scripts/utils/convert_hdf5_to_lerobot.py) →
+[`convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) →
 `convert_trajectory_to_df_rheo()`. Per-row state/action construction is in
-[`convert_g1_state_action_to_lerobot_26d()`](../scripts/utils/inspire_ftp_lerobot_fields.py#L270-L301).
+[`convert_g1_state_action_to_lerobot_26d()`](../../scripts/utils/inspire_ftp_lerobot_fields.py#L270-L301).
 
 **Canonical 26D layout** (`STATE_26_NAMES_ENV_ORDER`,
-[inspire_ftp_lerobot_fields.py:30-61](../scripts/utils/inspire_ftp_lerobot_fields.py#L30-L61)):
+[inspire_ftp_lerobot_fields.py:30-61](../../scripts/utils/inspire_ftp_lerobot_fields.py#L30-L61)):
 
 | Slice | Joints |
 |---|---|
@@ -358,7 +358,7 @@ That is:
    targets directly.
 2. Then **`+0.3`** is added to indices **3** (left elbow) and **10** (right
    elbow) via `STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA`
-   ([inspire_ftp_lerobot_fields.py:77-79](../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79))
+   ([inspire_ftp_lerobot_fields.py:77-79](../../scripts/utils/inspire_ftp_lerobot_fields.py#L77-L79))
    so the saved action compensates the env's `offset_dict -0.3` at rollout
    time. This is the **+0.3 side** of the elbow offset chain.
 
@@ -444,7 +444,7 @@ Video: h264 at **50 fps**, **480 × 640** RGB.
 
 **`meta/episodes_stats.jsonl` drives training normalization.** Mean/std are
 computed per episode at conversion time and aggregated by LeRobot at training
-start; `act_config_inspire_ftp.yaml` uses `MEAN_STD` for `STATE`, `ACTION`,
+start; `act_config_inspire.yaml` uses `MEAN_STD` for `STATE`, `ACTION`,
 and `VISUAL`. If you regenerate the parquet, these stats change; if you then
 resume training from an old checkpoint, the normalization shift can silently
 corrupt rollouts. **Regenerate = retrain.**
@@ -455,12 +455,12 @@ corrupt rollouts. **Regenerate = retrain.**
 
 > The *learning* contract: model, inputs, outputs, inference wrapper.
 > Source of truth:
-> [`act_config_inspire_ftp.yaml`](../scripts/policy/act_config_inspire_ftp.yaml),
-> [`act_closedloop_policy.py`](../scripts/simulation/act_closedloop_policy.py),
+> [`act_config_inspire.yaml`](../../scripts/policy/act_config_inspire.yaml),
+> [`act_closedloop_policy.py`](../../scripts/simulation/act_closedloop_policy.py),
 > and the experiment config module
-> [`inspire_ftp_experiment_config.py`](../scripts/utils/inspire_ftp_experiment_config.py).
+> [`inspire_ftp_experiment_config.py`](../../scripts/utils/inspire_ftp_experiment_config.py).
 
-### Base config — `act_config_inspire_ftp.yaml`
+### Base config — `act_config_inspire.yaml`
 
 The `experiment:` section is **not** a LeRobot key — it's a rheo-local block
 that the training launcher strips out and the inference wrapper re-reads.
@@ -484,9 +484,9 @@ The rest is standard LeRobot:
 
 ### Training launcher
 
-[`train_act_grasp_policy_inspire.sh`](../scripts/policy/train_act_grasp_policy_inspire.sh):
+[`train_act_grasp_policy_inspire.sh`](../../scripts/policy/train_act_grasp_policy_inspire.sh):
 
-1. Reads `act_config_inspire_ftp.yaml`.
+1. Reads `act_config_inspire.yaml`.
 2. **Strips the `experiment:` block** into a temp file (LeRobot's
    `TrainPipelineConfig` rejects unknown keys).
 3. Exports `INSPIRE_FTP_EXPERIMENT_CONFIG` pointing back to the original so
@@ -507,7 +507,7 @@ Any LeRobot CLI override works without editing the script, e.g.:
 
 ### Closed-loop inference wrapper
 
-[`ACTClosedloopPolicy`](../scripts/simulation/act_closedloop_policy.py) loads
+[`ACTClosedloopPolicy`](../../scripts/simulation/act_closedloop_policy.py) loads
 the LeRobot checkpoint (`ACTPolicy.from_pretrained`), picks the Inspire FTP
 experiment config, and exposes two observation paths:
 

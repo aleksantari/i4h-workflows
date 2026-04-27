@@ -190,15 +190,15 @@ if context rolls over again.
 **Fixes already applied:**
 
 1. **Elbow offset compensation** — 38-D branch of
-   [scripts/utils/inspire_ftp_lerobot_fields.py](../scripts/utils/inspire_ftp_lerobot_fields.py)
+   [scripts/utils/inspire_ftp_lerobot_fields.py](../../scripts/utils/inspire_ftp_lerobot_fields.py)
    now adds `+0.3` to elbow columns (matching the 53-D/41-D branches). Context and
    rationale: [elbow_offset.md](elbow_offset.md). Required re-converting the
    dataset and rebuilding `demo_ep28`, then retraining the smoketest.
-2. **Middle/pinky scatter swap** — [scripts/utils/inspire_ftp_experiment_config.py](../scripts/utils/inspire_ftp_experiment_config.py)
+2. **Middle/pinky scatter swap** — [scripts/utils/inspire_ftp_experiment_config.py](../../scripts/utils/inspire_ftp_experiment_config.py)
    `GROUP_SIM_INDICES` for both hands now respects the env's `actuated_joint_names`
    order (`little_1` before `middle_1`). No retraining needed — training labels were
    correct, only eval-time scatter was wrong. Full writeup:
-   [inspire_scatter_indices.md](inspire_scatter_indices.md).
+   [scatter_indices.md](scatter_indices.md).
 
 After both fixes + re-eval of the `005000` smoketest checkpoint, fingers look
 better but the policy still does not reproduce the recorded motion. Remaining
@@ -218,7 +218,7 @@ hypotheses below.
 - ~~**D5 — Training loss floor.**~~ **Checked 2026-04-19. Clean.**
   `train/l1_loss` reached 0.034 at step 5000 (still decreasing slowly). To verify
   memorization quality in real units, wrote
-  [scripts/utils/offline_replay_mae.py](../scripts/utils/offline_replay_mae.py)
+  [scripts/utils/offline_replay_mae.py](../../scripts/utils/offline_replay_mae.py)
   and replayed ep28 through the checkpoint. Results: overall raw MAE
   **0.0138 rad (~0.79°/joint/step)**, uniform across arm and finger dims. The
   model memorized the trajectory tightly. This means the failure must be at
@@ -283,7 +283,7 @@ This is counter-intuitive — the fix should make the model command the recorded
 trajectory exactly, while the pre-fix should systematically under-reach.
 
 **Diagnostic E1:** Ran
-[scripts/utils/offline_replay_mae.py](../scripts/utils/offline_replay_mae.py)
+[scripts/utils/offline_replay_mae.py](../../scripts/utils/offline_replay_mae.py)
 against both checkpoints using the current (post-fix) `demo_ep28` parquet.
 
 | Dim | Pre-fix raw MAE | Post-fix raw MAE |
@@ -331,16 +331,16 @@ control cadence, or recording quality).
 ### Inference pattern — chunk-exhaustion vs temporal ensembling — 2026-04-20
 
 **Current pattern (chunk-exhaustion).** Our wrapper
-[scripts/simulation/act_closedloop_policy.py](../scripts/simulation/act_closedloop_policy.py)
+[scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py)
 calls `self.policy.predict_action_chunk(obs)` once per inference and returns a
 `(1, 100, 13)` chunk. The eval loop in
-[scripts/simulation/examples/eval_act_inspire.py](../scripts/simulation/examples/eval_act_inspire.py)
+[scripts/simulation/examples/eval_act_inspire.py](../../scripts/simulation/examples/eval_act_inspire.py)
 buffers the first `--action_chunk_size` (default 50) actions from that chunk,
 pops one per env step, and re-queries only when the buffer is empty. Net
 behavior: **one inference per 50 env steps (~1 s at 50 Hz), fully open-loop
 within each chunk, no blending across chunks.** `select_action` is explicitly
 bypassed (see comment at
-[scripts/simulation/act_closedloop_policy.py:280-282](../scripts/simulation/act_closedloop_policy.py#L280-L282))
+[scripts/simulation/act_closedloop_policy.py:280-282](../../scripts/simulation/act_closedloop_policy.py#L280-L282))
 because with the default LeRobot config (`temporal_ensemble_coeff=None`) it
 would just pop from an `n_action_steps`-deep queue and collapse each chunk to
 a single repeated action.
@@ -373,7 +373,7 @@ the ACT paper designed the ensembler to address.
 **Implementation landed 2026-04-20 (pre-A/B).** Added `temporal_ensemble_coeff`
 plumbing:
 - Wrapper
-  [scripts/simulation/act_closedloop_policy.py](../scripts/simulation/act_closedloop_policy.py):
+  [scripts/simulation/act_closedloop_policy.py](../../scripts/simulation/act_closedloop_policy.py):
   when the YAML config sets `temporal_ensemble_coeff`, after loading the
   checkpoint we mutate `self.policy.config.temporal_ensemble_coeff`,
   `n_action_steps=1`, attach a fresh `ACTTemporalEnsembler(coeff, chunk_size)`,
@@ -382,7 +382,7 @@ plumbing:
   `predict_action_chunk` (returning the full chunk). `action_chunk_length`
   drops to 1 so the eval buffer triggers a fresh inference every env step.
 - CLI flag
-  [scripts/simulation/examples/eval_act_inspire.py](../scripts/simulation/examples/eval_act_inspire.py):
+  [scripts/simulation/examples/eval_act_inspire.py](../../scripts/simulation/examples/eval_act_inspire.py):
   `--temporal_ensemble_coeff FLOAT` (default `None`). Passed through the
   temp YAML into the wrapper. Mode is logged at run start.
 - The weights are identical across paths — ensembling is purely inference-time,

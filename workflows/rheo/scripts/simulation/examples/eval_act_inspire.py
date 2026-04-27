@@ -21,7 +21,7 @@ observations directly (bypasses process_observation() entirely).
 
 Usage:
     # ACT evaluation
-    python eval_act_inspire.py --model_path /models/act_inspire_ftp
+    python eval_act_inspire.py --model_path /models/act_inspire
 
     # Test mode (dummy zero-action policy)
     python eval_act_inspire.py --test --max_steps 100
@@ -291,9 +291,9 @@ def main():
         # Resolve experiment config for policy_action_dim.
         # --arm selects dual-arm (26D) vs single-arm (13D) training recipe.
         _arm_to_yaml = {
-            "dual": "act_config_inspire_ftp.yaml",
-            "left": "act_config_inspire_ftp_left_arm.yaml",
-            "right": "act_config_inspire_ftp_right_arm.yaml",
+            "dual": "act_config_inspire.yaml",
+            "left": "act_config_inspire_left_arm.yaml",
+            "right": "act_config_inspire_right_arm.yaml",
         }
         _act_cfg_path = Path(_SCRIPTS_DIR) / "policy" / _arm_to_yaml[args_cli.arm]
         _exp_policy_dim = 26 if args_cli.arm == "dual" else 13
