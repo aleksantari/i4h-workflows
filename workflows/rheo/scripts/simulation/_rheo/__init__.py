@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from simulation.embodiments.cameras import CameraBaseCfg, CameraPresets
+"""Borrowed-rheo simulation infrastructure.
 
-from .robot_config import G1RobotPresets
-
-__all__ = ["G1RobotPresets", "CameraBaseCfg", "CameraPresets"]
+Files in this package are inherited from the upstream NVIDIA Rheo workflow and
+support the GR00T trocar / Arena locomanip tracks. They are kept available for
+those tracks but are not part of the active G1 + Inspire FTP grasp policy
+pipeline. Treat with care; refactor only when broken.
+"""

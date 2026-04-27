@@ -25,7 +25,7 @@ class G1LocomanipPushCartEnvironment(ExampleEnvironmentBase):
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
         from isaaclab_arena.utils.pose import Pose
-        from simulation.tasks.g1_push_cart_task import G1PushCartTask
+        from simulation.tasks._rheo_arena.push_cart_task import G1PushCartTask
 
         background = self.asset_registry.get_asset_by_name("pre_op")()
         pick_up_object = self.asset_registry.get_asset_by_name("surgical_tray")()

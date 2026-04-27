@@ -89,7 +89,7 @@ def create_policy(args: argparse.Namespace) -> tuple[PolicyBase, int]:
             num_steps = policy.get_trajectory_length(policy.get_trajectory_index())
 
     elif args.policy_type == "gr00t_closedloop":
-        from simulation.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
+        from simulation._rheo.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
 
         policy = CustomGr00tClosedloopPolicy(
             args.policy_config_yaml_path, num_envs=args.num_envs, device=args.policy_device

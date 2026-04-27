@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from simulation.tasks.assemble_trocar.config import CameraBaseCfg, CameraPresets
+from simulation.embodiments.cameras import CameraBaseCfg, CameraPresets
+
 from simulation.tasks.grasp_policy_inspire.config.robot_config import G1InspireRobotPresets
 
 __all__ = ["G1InspireRobotPresets", "CameraBaseCfg", "CameraPresets"]

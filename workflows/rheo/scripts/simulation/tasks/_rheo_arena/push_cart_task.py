@@ -27,7 +27,7 @@ from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.tasks.g1_locomanip_pick_and_place_task import G1LocomanipPickAndPlaceTask
 from isaaclab_arena.utils.cameras import get_viewer_cfg_look_at_object
 from isaaclab_tasks.manager_based.manipulation.stack.mdp import franka_stack_events
-from simulation.tasks.terminations import object_at_destination
+from simulation.tasks._rheo_arena.terminations import object_at_destination
 
 
 class G1PushCartTask(G1LocomanipPickAndPlaceTask):

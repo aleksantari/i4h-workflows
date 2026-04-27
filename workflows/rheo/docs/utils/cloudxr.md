@@ -64,7 +64,7 @@ docker stop cloudxr-runtime 2>/dev/null
 
 # Run rheo trocar task with XR (Quest controllers)
 ./workflows/rheo/docker/run_docker.sh -g1.5 \
-  python scripts/simulation/record_demos_assemble_trocar.py \
+  python scripts/simulation/_rheo/record_demos_assemble_trocar.py \
   --task Isaac-Assemble-Trocar-G129-Dex3-Teleop \
   --teleop_device motion_controllers \
   --enable_pinocchio \
@@ -312,11 +312,11 @@ For the rheo workflow's G1 tasks, use the workflow-specific teleop scripts:
 
 ```bash
 # Loco-manipulation data collection with XR
-python workflows/rheo/scripts/simulation/record_demos_locomanip.py \
+python workflows/rheo/scripts/simulation/_rheo/record_demos_locomanip.py \
     --teleop_device motion_controllers --xr
 
 # Trocar assembly data collection (XR only, default device: motion_controllers)
-python workflows/rheo/scripts/simulation/record_demos_assemble_trocar.py --xr
+python workflows/rheo/scripts/simulation/_rheo/record_demos_assemble_trocar.py --xr
 ```
 
 **Docs:**
@@ -534,6 +534,6 @@ NVIDIA-blessed path used in official GR00T demos.
 - CloudXR Docker Compose: `third_party/IsaacLab/docker/docker-compose.cloudxr-runtime.patch.yaml`
 - CloudXR teleop docs: `third_party/IsaacLab/docs/source/how-to/cloudxr_teleoperation.rst`
 - Rheo motion controllers: `workflows/rheo/scripts/teleop_devices/motion_controllers.py`
-- Rheo locomanip recording: `workflows/rheo/scripts/simulation/record_demos_locomanip.py`
-- Rheo trocar recording: `workflows/rheo/scripts/simulation/record_demos_assemble_trocar.py`
+- Rheo locomanip recording: `workflows/rheo/scripts/simulation/_rheo/record_demos_locomanip.py`
+- Rheo trocar recording: `workflows/rheo/scripts/simulation/_rheo/record_demos_assemble_trocar.py`
 - WebRTC streaming: `workflows/rheo/scripts/simulation/examples/webrtc_runner_cli.py`

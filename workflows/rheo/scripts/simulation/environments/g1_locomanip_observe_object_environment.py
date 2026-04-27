@@ -25,7 +25,7 @@ class ObserveObjectEnvironment(ExampleEnvironmentBase):
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
         from isaaclab_arena.utils.pose import Pose
-        from simulation.tasks.g1_observe_object_task import ObserveObjectTask
+        from simulation.tasks._rheo_arena.observe_object_task import ObserveObjectTask
 
         background = self.asset_registry.get_asset_by_name("pre_op")()
         pick_up_object = self.asset_registry.get_asset_by_name(args_cli.object)()

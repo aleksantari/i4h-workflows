@@ -25,7 +25,7 @@ from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppCont
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli
 from scripts.utils.policy_tasks import create_success_hold_wrapper
 from simulation.examples.policy_runner_cli import create_policy, setup_policy_argument_parser, validate_policy_args
-from simulation.register_and_patch import register_workflow_assets, register_workflow_cli
+from simulation._rheo.register_and_patch import register_workflow_assets, register_workflow_cli
 
 register_workflow_cli()
 

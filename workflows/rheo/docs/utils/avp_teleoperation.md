@@ -13,7 +13,7 @@ docker stop cloudxr-runtime 2>/dev/null
 
 # Run trocar task with AVP hand tracking
 ./workflows/rheo/docker/run_docker.sh -g1.5 \
-  python scripts/simulation/record_demos_assemble_trocar.py \
+  python scripts/simulation/_rheo/record_demos_assemble_trocar.py \
   --task Isaac-Assemble-Trocar-G129-Dex3-Teleop \
   --teleop_device handtracking \
   --enable_pinocchio \
@@ -176,7 +176,7 @@ detection). All 26 joints are available for future individual finger control.
 | `scripts/teleop_devices/handtracking.py` | AVP hand tracking device + gripper retargeter |
 | `scripts/teleop_devices/motion_controllers.py` | Quest controller device + gripper retargeter |
 | `scripts/simulation/tasks/assemble_trocar/g1_assemble_trocar_teleop_env_cfg.py` | Trocar env config (registers both devices) |
-| `scripts/simulation/record_demos_assemble_trocar.py` | Demo recording script |
+| `scripts/simulation/_rheo/record_demos_assemble_trocar.py` | Demo recording script |
 
 ### IsaacLab (third_party)
 

@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from simulation.embodiments.cameras import CameraBaseCfg, CameraPresets
+"""Borrowed-rheo Arena locomanipulation task definitions.
 
-from .robot_config import G1RobotPresets
-
-__all__ = ["G1RobotPresets", "CameraBaseCfg", "CameraPresets"]
+Tasks in this package back the IsaacLab-Arena locomanip variants (tray
+pick-and-place, push cart, observe object). They are inherited from the
+upstream NVIDIA Rheo workflow and not part of the active G1 + Inspire FTP
+grasp policy pipeline.
+"""

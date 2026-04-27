@@ -55,13 +55,13 @@ Host mounts: `$HOME/datasets` → `/datasets`, `$HOME/models` → `/models`, `$H
 | **IsaacLab-Arena** | Locomanipulation (tray pick-and-place, cart push) | N1.6 (`-g1.6`) | `policy_runner.py` | `scripts/simulation/environments/` |
 | **IsaacLab** | Precision manipulation (trocar assembly, grasp policy) | N1.5 (`-g1.5`) | `eval_assemble_trocar.py`, `eval_act_inspire.py` | `scripts/simulation/tasks/` |
 
-Arena environments are registered via `register_and_patch.py` into an `ExampleEnvironments` dict before the sim starts. IsaacLab-track environments use standard `gymnasium.register()` with gym IDs like `Isaac-Grasp-Policy-G129-InspireFTP-Joint` or `Isaac-Assemble-Trocar-G129-Dex3-Joint`.
+Arena environments are registered via `_rheo/register_and_patch.py` into an `ExampleEnvironments` dict before the sim starts. IsaacLab-track environments use standard `gymnasium.register()` with gym IDs like `Isaac-Grasp-Policy-G129-InspireFTP-Joint` or `Isaac-Assemble-Trocar-G129-Dex3-Joint`.
 
 ## Policy Types
 
 | Policy | Model | Action dims | Chunk size | Wrapper / Config |
 |--------|-------|-------------|------------|------------------|
-| **GR00T** | DiT (TensorRT) | 43 DOF | 16 | `gr00t_closedloop_policy.py` (trocar) |
+| **GR00T** | DiT (TensorRT) | 43 DOF | 16 | `_rheo/gr00t_closedloop_policy.py` (trocar) |
 | **ACT (Inspire FTP)** | CVAE (LeRobot) | 26 DOF dual-arm or 13 DOF single-arm (scattered to 41D sim) | 50 | `act_closedloop_policy.py` + `act_config_inspire.yaml` (dim_model=256) |
 
 Both extend `BaseClosedloopPolicy`, which manages per-env action chunk state (current chunk, index, exhaustion tracking). Subclasses implement `_load_model()` and `_get_action_chunk()`.
@@ -86,24 +86,31 @@ scripts/
 │   ├── act_config_inspire.yaml          # LeRobot ACT training config — Inspire FTP grasp (chunk=50, dim_model=256)
 │   └── train_act_grasp_policy_inspire.sh # LeRobot ACT training launcher (Inspire FTP)
 ├── simulation/
-│   ├── base_closedloop_policy.py  # Abstract base: shared action chunking for GR00T + ACT
-│   ├── gr00t_closedloop_policy.py # GR00T policy wrapper (43 DOF, action_horizon=16) — trocar
+│   ├── base_closedloop_policy.py  # Abstract base: shared action chunking for policy wrappers
 │   ├── act_closedloop_policy.py   # ACT policy wrapper (26D/13D → 41D scatter, action_horizon=50) — Inspire FTP
 │   ├── obs_processor.py           # Model-agnostic observation extraction (ProcessedObservation dataclass)
-│   ├── register_and_patch.py      # Registers Arena envs + assets before sim starts
 │   ├── record_demos.py            # Generic IsaacLab demo recording (auto-success, VR gestures)
 │   ├── replay_demos_isaaclab.py   # Generic demo replay with success rate validation
+│   ├── _rheo/                     # Borrowed-rheo simulation infra (GR00T + Arena/locomanip pipeline)
+│   │   ├── gr00t_closedloop_policy.py
+│   │   ├── register_and_patch.py        # Arena env / asset registration
+│   │   ├── record_demos_assemble_trocar.py
+│   │   ├── record_demos_locomanip.py
+│   │   ├── replay_demos.py              # locomanip replay (the generic one is replay_demos_isaaclab.py at sim/ root)
+│   │   ├── annotate_demos.py
+│   │   └── generate_dataset.py          # Cosmos synthetic data
 │   ├── environments/              # Arena-track env definitions (ExampleEnvironmentBase subclasses)
 │   ├── tasks/
 │   │   ├── assemble_trocar/       # Trocar assembly task (gym registration, env cfg, mdp/, config/)
-│   │   └── grasp_policy_inspire/  # Inspire FTP block-grasp task (gym ids, mimic action, mdp, robot/camera config)
+│   │   ├── grasp_policy_inspire/  # Inspire FTP block-grasp task (gym ids, mimic action, mdp, robot/camera config)
+│   │   └── _rheo_arena/           # Borrowed-rheo Arena locomanip tasks (observe_object, push_cart, tray_pick_and_place, terminations)
 │   ├── examples/                  # Runnable entry points
 │   │   ├── policy_runner.py             # GR00T N1.6 Arena evaluation
 │   │   ├── eval_assemble_trocar.py      # GR00T N1.5 trocar evaluation (--rl_ckpt flag)
 │   │   ├── eval_act_inspire.py          # Inspire FTP ACT evaluator (the active eval entry point)
 │   │   └── triggered_policy_runner.py   # HTTP-triggered for VLM agents
 │   ├── assets/                    # USD path constants + Arena asset/background library registration
-│   ├── embodiments/               # Patched G1 robot embodiment
+│   ├── embodiments/               # G1 robot embodiment patches + shared camera presets (cameras.py)
 │   └── rl/
 │       ├── rlinf_ext/             # RLinf extension (env registration, obs/action converters, model patches)
 │       │   ├── act_policy.py      # ACT wrapper for RLinf RL post-training (ValueHead for critic)
@@ -151,7 +158,7 @@ For the GR00T trocar path, policy output (43 DOF, body-group order) is remapped 
 When evaluating an RL-trained GR00T checkpoint, you **must** pass `--rl_ckpt` to `eval_assemble_trocar.py`. This applies `tools/env_setup/patches/gr00t_policy_padding_dropout.patch` via `git apply` (eagle input padding to 850 tokens + dropout→Identity replacement). The patch is auto-reverted via context manager. Without this flag on an RL checkpoint, inference silently produces wrong results.
 
 ### Arena Environment Registration
-For Arena-track tasks, `register_and_patch.py` must run before the simulation app starts. It registers environment classes into `ExampleEnvironments` and registers asset libraries (objects, backgrounds, embodiments) via side-effect imports. The `policy_runner.py` entry point handles this automatically.
+For Arena-track tasks, `_rheo/register_and_patch.py` must run before the simulation app starts. It registers environment classes into `ExampleEnvironments` and registers asset libraries (objects, backgrounds, embodiments) via side-effect imports. The `policy_runner.py` entry point handles this automatically.
 
 ### RLinf Extension Module
 RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rlinf_ext/__init__.py:register()`. This registers gym IDs (`Isaac-Assemble-Trocar-G129-Dex3-*` for GR00T trocar and `Isaac-Grasp-Policy-G129-InspireFTP-*` for ACT Inspire FTP grasp) into RLinf's env map, registers obs/action converters (GR00T `dex3` for trocar, ACT `act_inspire_ftp` for Inspire FTP grasp), monkeypatches `get_model` for the `new_embodiment` tag, and imports policy configs. `act_policy.py` wraps ACT with a `ValueHead` for RL critic estimation.
@@ -183,7 +190,7 @@ Tests run inside Docker. Conditional decorators in `tests/helpers.py`:
 
 ### Arena-track (locomanipulation)
 1. Create env class in `scripts/simulation/environments/` extending `ExampleEnvironmentBase`
-2. Register in `register_and_patch.py` → `register_workflow_cli()`
+2. Register in `_rheo/register_and_patch.py` → `register_workflow_cli()`
 3. Add policy config YAML in `scripts/config/`
 
 ### IsaacLab-track (precision manipulation)

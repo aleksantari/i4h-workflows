@@ -24,7 +24,7 @@ from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppCont
 from isaaclab_arena_environments.cli import add_example_environments_cli_args, get_arena_builder_from_cli
 from scripts.utils.webrtc_cam import setup_webrtc_cam
 from simulation.examples.webrtc_runner_cli import add_webrtc_cli_args
-from simulation.register_and_patch import register_workflow_assets, register_workflow_cli
+from simulation._rheo.register_and_patch import register_workflow_assets, register_workflow_cli
 
 register_workflow_cli()
 

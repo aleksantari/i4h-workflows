@@ -21,7 +21,7 @@ import numpy as np
 import torch
 from huggingface_hub import snapshot_download
 from simulation.examples.policy_runner_cli import create_policy, setup_policy_argument_parser
-from simulation.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
+from simulation._rheo.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
 from tests.helpers import create_temp_closedloop_policy_config, requires_groot, requires_isaac_sim
 
 

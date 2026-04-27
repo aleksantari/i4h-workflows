@@ -30,8 +30,8 @@ from scripts.utils.keyboard_env_reseter import KeyboardHandler, disable_terminat
 from scripts.utils.trigger_server import RemoteTrigger
 from scripts.utils.webrtc_cam import setup_webrtc_cam
 from simulation.examples.webrtc_runner_cli import add_trigger_cli_args, add_webrtc_cli_args
-from simulation.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
-from simulation.register_and_patch import register_workflow_assets, register_workflow_cli
+from simulation._rheo.gr00t_closedloop_policy import CustomGr00tClosedloopPolicy
+from simulation._rheo.register_and_patch import register_workflow_assets, register_workflow_cli
 
 
 class RunnerState(enum.Enum):
