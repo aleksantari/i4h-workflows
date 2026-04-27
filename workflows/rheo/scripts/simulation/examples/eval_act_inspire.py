@@ -70,6 +70,13 @@ parser.add_argument(
          "Use --pin_demo_key to select which demo inside the file.",
 )
 parser.add_argument(
+    "--pin_block_frame_idx", type=int, default=0,
+    help="Frame index into states/rigid_object/block/root_pose to pin from. "
+         "0 (default) uses initial_state (pre-settle). >0 uses the per-timestep "
+         "states trajectory at that index — pick a settled frame via "
+         "scripts/utils/inspect_block_settle.py.",
+)
+parser.add_argument(
     "--pin_demo_key", type=str, default="demo_0",
     help="HDF5 demo key (e.g. 'demo_28') used with --pin_block_from_hdf5.",
 )
@@ -91,6 +98,12 @@ parser.add_argument(
          "When set, the policy is queried every env step and overlapping chunks "
          "are exponentially blended; --action_chunk_size is ignored.",
 )
+parser.add_argument(
+    "--dump_first_obs", type=str, default=None,
+    help="Directory to dump t=0 diagnostics (state_13d.npy, pred_action_*.npy, "
+         "front_camera.png, right_wrist_camera.png, meta.json) before the first "
+         "step. Used to isolate reset/initial-obs mismatch from closed-loop drift.",
+)
 
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -109,6 +122,85 @@ from simulation.examples.utils import (  # noqa: E402
     set_viewport_camera,
 )
 from simulation.tasks import grasp_policy_inspire  # noqa: F401
+
+
+def _dump_first_obs(env, policy, obs, out_dir: Path, args_cli) -> None:
+    """Write reset-time state, images, and first prediction for diagnostics.
+
+    Captures the exact tensors the policy sees at t=0 plus its first action
+    prediction (before scatter and after scatter). Paired with
+    scripts/utils/extract_ep28_frame0.py + diff_first_obs.py to decompose
+    the t=0 MAE offset into reset-pose / image / prediction components.
+    """
+    import json
+
+    from PIL import Image
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Policy-space 13D state + CHW float [0,1] image tensors the model sees.
+    act_obs = policy._extract_observations_from_raw(obs)
+    state_13d = act_obs["observation.state"][0].detach().cpu().numpy()
+    np.save(out_dir / "state_13d.npy", state_13d)
+
+    for act_key, img_tensor in act_obs.items():
+        if not act_key.startswith("observation.images."):
+            continue
+        # (1, C, H, W) float [0,1] -> (H, W, C) uint8
+        img_np = img_tensor[0].detach().cpu().numpy()
+        img_np = np.transpose(img_np, (1, 2, 0))
+        img_np = np.clip(img_np * 255.0, 0, 255).astype(np.uint8)
+        cam_short = act_key.split("observation.images.")[-1]
+        Image.fromarray(img_np).save(out_dir / f"{cam_short}.png")
+
+    # Probe first prediction without advancing the env or ensembler state.
+    # Use predict_action_chunk directly (not select_action) so the temporal
+    # ensembler buffer is not populated by this diagnostic call.
+    with torch.no_grad():
+        single_obs = {k: v[0:1] for k, v in act_obs.items()}
+        pred_chunk = policy.policy.predict_action_chunk(single_obs)
+        if isinstance(pred_chunk, np.ndarray):
+            pred_chunk = torch.from_numpy(pred_chunk)
+        if pred_chunk.ndim == 3:
+            pred_chunk = pred_chunk.squeeze(0)  # (chunk, policy_dim)
+    pred_action_13d = pred_chunk[0].detach().cpu().numpy()
+    np.save(out_dir / "pred_action_13d.npy", pred_action_13d)
+
+    # Scatter to the 41D sim-action space as eval would apply it.
+    pred_policy = pred_chunk.unsqueeze(0).to(policy.device)  # (1, chunk, 13)
+    scatter_kwargs = {}
+    if policy._base_action is not None and policy.sim_action_dim == 41:
+        scatter_kwargs["base_action"] = policy._base_action
+    pred_41d_chunk = policy.exp_config.scatter_to_sim(pred_policy, **scatter_kwargs)
+    pred_action_41d = pred_41d_chunk[0, 0].detach().cpu().numpy()
+    np.save(out_dir / "pred_action_41d.npy", pred_action_41d)
+
+    # If ensembling is on, the probe populated the ensembler buffer — undo it
+    # so the real rollout starts clean.
+    if getattr(policy, "_use_temporal_ensemble", False):
+        policy.policy.reset()
+
+    sim_cfg = env.cfg.sim if hasattr(env, "cfg") else None
+    meta = {
+        "timestamp": time.strftime("%Y%m%d_%H%M%S"),
+        "pin_demo_key": getattr(args_cli, "pin_demo_key", None),
+        "pin_block_from_hdf5": getattr(args_cli, "pin_block_from_hdf5", None),
+        "temporal_ensemble_coeff": getattr(args_cli, "temporal_ensemble_coeff", None),
+        "model_path": str(args_cli.model_path),
+        "arm": args_cli.arm,
+        "render_interval": getattr(sim_cfg, "render_interval", None),
+        "decimation": getattr(env.cfg, "decimation", None) if hasattr(env, "cfg") else None,
+        "sim_dt": getattr(sim_cfg, "dt", None),
+        "state_shape": list(state_13d.shape),
+        "pred_action_13d_shape": list(pred_action_13d.shape),
+        "pred_action_41d_shape": list(pred_action_41d.shape),
+    }
+    with open(out_dir / "meta.json", "w") as f:
+        json.dump(meta, f, indent=2, default=str)
+
+    print(f"[dump_first_obs] wrote diagnostics to {out_dir}")
+    print(f"  state_13d {state_13d.shape}  pred_action_13d {pred_action_13d.shape}  "
+          f"pred_action_41d {pred_action_41d.shape}")
 
 
 def main():
@@ -143,8 +235,16 @@ def main():
     if args_cli.pin_block_from_hdf5:
         import h5py
 
+        idx = args_cli.pin_block_frame_idx
         with h5py.File(args_cli.pin_block_from_hdf5, "r") as _hf:
-            _root_pose = _hf[f"data/{args_cli.pin_demo_key}/initial_state/rigid_object/block/root_pose"][()]
+            if idx > 0:
+                _pin_path = f"data/{args_cli.pin_demo_key}/states/rigid_object/block/root_pose"
+                _root_pose = _hf[_pin_path][idx]
+                _src = f"{_pin_path}[{idx}]"
+            else:
+                _pin_path = f"data/{args_cli.pin_demo_key}/initial_state/rigid_object/block/root_pose"
+                _root_pose = _hf[_pin_path][()]
+                _src = _pin_path
         _p = np.asarray(_root_pose).reshape(-1)
         slot_pos = (float(_p[0]), float(_p[1]), float(_p[2]))
         slot_rot = (float(_p[3]), float(_p[4]), float(_p[5]), float(_p[6]))
@@ -153,7 +253,7 @@ def main():
         env_cfg.events.reset_block_position.params["slot_pos"] = slot_pos
         env_cfg.events.reset_block_position.params["slot_rot"] = slot_rot
         print(
-            f"  Tool: {args_cli.object}  |  Block pinned from {args_cli.pin_demo_key}: "
+            f"  Tool: {args_cli.object}  |  Block pinned from {_src}: "
             f"pos={slot_pos}, rot={slot_rot}"
         )
     else:
@@ -285,6 +385,13 @@ def main():
         chunk_idx = 0
         applied_actions = [] if args_cli.log_actions else None
 
+        # t=0 diagnostic dump — run once per-episode before the first step.
+        # Captures the state/images the policy actually sees at reset + the
+        # first predicted 13D and 41D actions, so we can decompose the t=0
+        # MAE offset into (reset-pose, image, prediction) components.
+        if ep == 0 and args_cli.dump_first_obs and not test_mode:
+            _dump_first_obs(env, policy, obs, Path(args_cli.dump_first_obs), args_cli)
+
         for step in range(args_cli.max_steps):
             # Get new action chunk if buffer empty
             if not action_buffer:
@@ -321,6 +428,8 @@ def main():
 
             # Pop and apply action
             action = action_buffer.pop(0)
+            if applied_actions is not None:
+                applied_actions.append(np.asarray(action, dtype=np.float32).copy())
             action_tensor = torch.as_tensor(action, device=env.device, dtype=torch.float32).unsqueeze(0)
             obs, reward, terminated, truncated, _info = env.step(action_tensor)
 
@@ -369,6 +478,13 @@ def main():
             "total_reward": total_reward,
             "chunks_used": chunk_idx,
         })
+
+        if applied_actions is not None and len(applied_actions) > 0:
+            actions_dir = Path("./eval_results")
+            actions_dir.mkdir(exist_ok=True)
+            actions_path = actions_dir / f"actions_{timestamp}_ep{ep:02d}.npy"
+            np.save(actions_path, np.stack(applied_actions, axis=0))
+            print(f"  Applied actions saved to: {actions_path}  shape={np.stack(applied_actions).shape}")
 
     # --- Summary ---
     print(f"\n{'=' * 60}")
