@@ -134,9 +134,6 @@ The Docker container mounts these host directories:
 | `~/models` | `/models` | Trained model checkpoints |
 | `~/eval` | `/eval` | Evaluation results and videos |
 
-See [`docs/grasp_policy_guide.md`](grasp_policy_guide.md) Section 1 for full
-prerequisites details (shared with Dex3).
-
 ---
 
 ## 2. Architecture — Key Differences from Dex3
@@ -211,7 +208,7 @@ Three cameras are mounted on the robot, matching the Dex3 setup:
 All three are published in `ObservationsCfg.CameraImagesCfg` and recorded into the
 HDF5. Wrist camera mount links live in the `g1-29dof-inspire-ftp-usd-wrist_cam/`
 USD variant; presets are `CameraPresets.left_inspire_wrist_camera` /
-`right_inspire_wrist_camera` in `camera_config.py`.
+`right_inspire_wrist_camera` in [`simulation/embodiments/cameras.py`](../../scripts/simulation/embodiments/cameras.py).
 
 ### Teleop: PinkIK with Per-Finger Dex-Retargeting
 
@@ -623,20 +620,21 @@ Train an ACT policy on the converted LeRobot dataset.
 - Images: 1 camera at 480x640 (front/room only)
 - Action output: 26D
 
-### Key Differences from Dex3 Config
+### Inspire FTP Config Highlights
 
-The Inspire FTP config (`act_config_inspire.yaml`) differs from the Dex3 config
-(`act_config_dex3.yaml`) in:
+Notable values in `act_config_inspire.yaml`:
 
-- **`experiment.cameras`**: Currently front only (dataset also has both wrist
-  cameras; wire them in when training with wrist vision)
-- **`experiment.joint_groups`**: Hand groups have 6 DOF (not 7)
-- **`input_features.observation.state.shape`**: [26] (not [28])
-- **`output_features.action.shape`**: [26] (not [28])
-- **`input_features`**: Currently no wrist camera features (can be added)
+- **`experiment.cameras`**: Currently `front_camera` only (the LeRobot dataset
+  also has both wrist cameras; wire them in when training with wrist vision).
+- **`experiment.joint_groups`**: 4 groups — `left_arm` (7), `right_arm` (7),
+  `left_hand` (6 actuated), `right_hand` (6 actuated) → 26D total.
+- **`input_features.observation.state.shape`**: `[26]`.
+- **`output_features.action.shape`**: `[26]`.
+- **`input_features`**: No wrist-camera features by default (add them when
+  training with wrist vision).
 
-All other hyperparameters (chunk_size=100, dim_model=512, kl_weight=10, etc.)
-remain the same as Dex3.
+Standard ACT hyperparameters (chunk_size=100, dim_model=512, kl_weight=10, etc.)
+are unchanged.
 
 ### Training Command
 
@@ -671,12 +669,6 @@ The script automatically:
 ---
 
 ## 7. What You Can and Cannot Change Between IL and RL
-
-The same principles from the Dex3 guide apply. See
-[`docs/grasp_policy_guide.md`](grasp_policy_guide.md) Section 6 for the full
-explanation.
-
-Updated for Inspire FTP:
 
 ### Locked After IL Demo Collection
 
@@ -882,12 +874,12 @@ policy, 41D sim scatter, front camera by default).
 
 | File | Description |
 |------|-------------|
-| [`utils/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
-| [`utils/inspire_lerobot_fields.py`](../../scripts/utils/inspire/inspire_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
+| [`utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
+| [`utils/inspire/inspire_lerobot_fields.py`](../../scripts/utils/inspire/inspire_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
 | [`utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
 | [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
 | [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |
-| [`utils/inspect_inspire_joints.py`](../../scripts/utils/inspire/inspect_inspire_joints.py) | Debug tool: USD joint ordering verification |
+| [`utils/inspire/inspect_inspire_joints.py`](../../scripts/utils/inspire/inspect_inspire_joints.py) | Debug tool: USD joint ordering verification |
 
 ### ACT Training
 
@@ -904,7 +896,7 @@ policy, 41D sim scatter, front camera by default).
 | [`rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py) | Inspire env wrapper (L565-636) + ACT converters (L644-705) |
 | [`rl/rlinf_ext/act_policy.py`](../../scripts/simulation/rl/rlinf_ext/act_policy.py) | ACT wrapper with ValueHead for RL (generic) |
 | [`rl/rlinf_ext/config/model/act_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/model/act_inspire.yaml) | RLinf model config (action_dim=26) |
-| [`rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | RLinf env config (InspireFTP gym ID) |
+| [`rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/env/isaaclab_grasp_policy_inspire.yaml) | RLinf env config (Inspire gym ID; InspireFTP alias retained) |
 | [`rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml`](../../scripts/simulation/rl/rlinf_ext/config/isaaclab_ppo_act_grasp_policy_inspire.yaml) | RLinf PPO top-level config |
 
 ### Docker
@@ -923,7 +915,7 @@ policy, 41D sim scatter, front camera by default).
 | Issue | Fix |
 |-------|-----|
 | `ValueError: Not all regular expressions matched -- L_.*: []` | Joint names use URDF convention (`left_index_1_joint`), not Nucleus (`L_index_proximal_joint`). Check `robot_config.py` actuator patterns. |
-| `KeyError: 'robot_dex3_joint_state'` | Wrong task ID. Ensure you're on the `InspireFTP` gym variant — the Dex3 grasp task is no longer registered. |
+| `KeyError: 'robot_dex3_joint_state'` | Wrong task ID. Ensure you're on the `Inspire` gym variant (the legacy `InspireFTP-*` aliases still resolve) — the Dex3 grasp task is no longer registered. |
 | `ValueError: Invalid action shape, expected: 38, received: 41` | You're running the eval script against the Teleop env. Use the `Joint` variant for eval, or `record_demos.py` for teleop. |
 | `ValueError: Invalid action shape, expected: 41, received: 43` | Stale policy config left over from the Dex3 era. `ACTClosedloopPolicy` is now Inspire-FTP-only and always emits a 41D action — regenerate the policy config YAML by re-running the eval script. |
 | `FileExistsError: Output directory ... already exists` | LeRobot rejects pre-existing output dirs. Delete the old run: `rm -rf scripts/simulation/rl/results/act_grasp_policy_inspire/` |

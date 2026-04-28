@@ -7,7 +7,7 @@ This document is a **contract reference**, not a tutorial. It pins down, per
 pipeline stage, exactly what the data looks like, what the joint/action
 conventions are, where offsets are applied and cancelled, and how to
 sanity-check each stage in isolation. If you are learning the pipeline for the
-first time, read [`grasp_policy_guide.md`](grasp_policy) first, then come back
+first time, read [`grasp_policy_guide.md`](grasp_policy_guide.md) first, then come back
 here.
 
 The mental model is **three layers** — Embodiment, Data, Policy. Most bugs in
@@ -207,8 +207,8 @@ match 50 Hz. If you change any of these, re-record demos.
 ### Task stage machine
 
 Stages 0→3 defined in
-[`grasp_policy/mdp/rewards.py:35-95`](../../scripts/simulation/tasks/grasp_policy/mdp/rewards.py#L35-L95)
-(shared with the Dex3 task). State cached on `env._task_stage`; `check_success`
+[`grasp_policy_inspire/mdp/rewards.py:35-95`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/rewards.py#L35-L95).
+State cached on `env._task_stage`; `check_success`
 and `eval_act_inspire.py`'s progress logger both read it directly.
 
 | From | To | Trigger |
@@ -626,7 +626,7 @@ In the log, within each `[Chunk N]` block:
 
 ## What this doc is not
 
-- **Not a tutorial.** First-time readers use [`grasp_policy_guide.md`](grasp_policy).
+- **Not a tutorial.** First-time readers use [`grasp_policy_guide.md`](grasp_policy_guide.md).
 - **Not a changelog.** Bug fixes and commit history live in git.
 - **Not a style guide.** No opinions on how the pipeline *should* work — only
   on how it currently does.
