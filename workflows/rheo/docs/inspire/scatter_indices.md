@@ -4,7 +4,7 @@
 
 ## 1. Runtime evidence
 
-Inside `./docker/run_docker_grasp.sh`, `python scripts/utils/verify_scatter_indices.py --headless --enable_cameras` boots the `Isaac-Grasp-Policy-G129-InspireFTP-Joint` env and prints `actuated_joint_names` in the order the env actually uses (JointPositionActionCfg has `preserve_order=True`, so this is authoritative):
+Inside `./docker/run_docker_grasp.sh`, `python scripts/utils/inspire/verify_scatter_indices.py --headless --enable_cameras` boots the `Isaac-Grasp-Policy-G129-Inspire-Joint` env and prints `actuated_joint_names` in the order the env actually uses (JointPositionActionCfg has `preserve_order=True`, so this is authoritative):
 
 ```
  29: left_index_1_joint
@@ -21,7 +21,7 @@ Inside `./docker/run_docker_grasp.sh`, `python scripts/utils/verify_scatter_indi
  40: right_thumb_2_joint
 ```
 
-Current `GROUP_SIM_INDICES` at [scripts/utils/inspire_experiment_config.py:68-73](../../scripts/utils/inspire_experiment_config.py#L68-L73):
+Current `GROUP_SIM_INDICES` at [scripts/utils/inspire/inspire_experiment_config.py:68-73](../../scripts/utils/inspire/inspire_experiment_config.py#L68-L73):
 
 ```python
 GROUP_SIM_INDICES = {
@@ -47,7 +47,7 @@ Symmetric bug on the left hand (positions 30 ↔ 31). Arms and thumbs are unaffe
 
 ## 2. Why training still looks fine
 
-The training-time state/action labeling is self-consistent. `_extract_13d` in [scripts/utils/inspire_lerobot_fields.py:226-232](../../scripts/utils/inspire_lerobot_fields.py#L226-L232) reads `state_inspire[:, 6:12]`, and `state_inspire` is produced by `get_robot_inspire_joint_states` in [scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py:72-85](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85). The observation list `_INSPIRE_ACTUATED_NAMES` is written in canonical order:
+The training-time state/action labeling is self-consistent. `_extract_13d` in [scripts/utils/inspire/inspire_lerobot_fields.py:226-232](../../scripts/utils/inspire/inspire_lerobot_fields.py#L226-L232) reads `state_inspire[:, 6:12]`, and `state_inspire` is produced by `get_robot_inspire_joint_states` in [scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py:72-85](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85). The observation list `_INSPIRE_ACTUATED_NAMES` is written in canonical order:
 
 ```python
 _INSPIRE_ACTUATED_NAMES = [
@@ -100,12 +100,12 @@ Also update the inline comments on those two lines (they currently assert `mid@3
 
 ## 6. Files touched by the investigation
 
-- [scripts/utils/verify_scatter_indices.py](../../scripts/utils/verify_scatter_indices.py) — the runtime D1 check. Keep this; rerun any time `GROUP_SIM_INDICES`, `actuated_joint_names`, or the env cfg joint order changes. Invoke as:
+- [scripts/utils/inspire/verify_scatter_indices.py](../../scripts/utils/inspire/verify_scatter_indices.py) — the runtime D1 check. Keep this; rerun any time `GROUP_SIM_INDICES`, `actuated_joint_names`, or the env cfg joint order changes. Invoke as:
   ```bash
-  ./docker/run_docker_grasp.sh python scripts/utils/verify_scatter_indices.py --headless --enable_cameras
+  ./docker/run_docker_grasp.sh python scripts/utils/inspire/verify_scatter_indices.py --headless --enable_cameras
   ```
-- [scripts/utils/inspire_experiment_config.py](../../scripts/utils/inspire_experiment_config.py) — holds `GROUP_SIM_INDICES`. The file to edit.
-- [scripts/utils/inspire_lerobot_fields.py](../../scripts/utils/inspire_lerobot_fields.py) — HDF5→LeRobot conversion. Verified correct for this bug (training-side state labeling is fine). Still carries the elbow offset compensation (see `elbow_offset.md`).
+- [scripts/utils/inspire/inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) — holds `GROUP_SIM_INDICES`. The file to edit.
+- [scripts/utils/inspire/inspire_lerobot_fields.py](../../scripts/utils/inspire/inspire_lerobot_fields.py) — HDF5→LeRobot conversion. Verified correct for this bug (training-side state labeling is fine). Still carries the elbow offset compensation (see `elbow_offset.md`).
 - [scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py) — `joint_names` and `actuated_joint_names` in this file define the env's 41-D action layout.
 - [scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py) — `_INSPIRE_ACTUATED_NAMES` defines the 12-D inspire obs ordering. Canonical. Do not change without a coordinated converter update.
 

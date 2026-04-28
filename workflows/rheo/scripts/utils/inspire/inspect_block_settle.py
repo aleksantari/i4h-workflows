@@ -9,7 +9,7 @@ magnitudes for the first N frames, and recommends a `--pin_block_frame_idx`
 based on a velocity threshold.
 
 Usage (host, grasp conda env):
-    python scripts/utils/inspect_block_settle.py \
+    python scripts/utils/inspire/inspect_block_settle.py \
         --hdf5 datasets/inspire_right_arm/demo.hdf5 \
         --demo_key demo_28
 """

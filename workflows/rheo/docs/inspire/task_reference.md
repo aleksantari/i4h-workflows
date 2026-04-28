@@ -41,9 +41,9 @@ Three gym variants exist:
 
 | Variant | Gym ID | Action Dim | Episode | Purpose |
 |---------|--------|------------|---------|---------|
-| **RL Training** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint` | 41D | 20 s | Random block placement |
-| **RL Evaluation** | `Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval` | 41D | 20 s | Deterministic block placement |
-| **Teleoperation** | `Isaac-Grasp-Policy-G129-InspireFTP-Teleop` | 38D | 300 s | PinkIK + AVP hand tracking |
+| **RL Training** | `Isaac-Grasp-Policy-G129-Inspire-Joint` | 41D | 20 s | Random block placement |
+| **RL Evaluation** | `Isaac-Grasp-Policy-G129-Inspire-Joint-Eval` | 41D | 20 s | Deterministic block placement |
+| **Teleoperation** | `Isaac-Grasp-Policy-G129-Inspire-Teleop` | 38D | 300 s | PinkIK + AVP hand tracking |
 
 Key differences from the Dex3 variant: 41D actions (vs 43D), 12D hand observation (vs 14D),
 26D policy dim (vs 28D). Cameras match Dex3 (front + left/right wrist). The 12 mimic hand
@@ -56,13 +56,15 @@ joints are driven internally by the action class — they are not part of the ac
 **File:** `scripts/simulation/tasks/grasp_policy_inspire/__init__.py`
 
 ```python
-"Isaac-Grasp-Policy-G129-InspireFTP-Joint"       # G1GraspPolicyInspireEnvCfg
-"Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval"   # G1GraspPolicyInspireEvalEnvCfg
-"Isaac-Grasp-Policy-G129-InspireFTP-Teleop"        # G1GraspPolicyInspireTeleopEnvCfg
+"Isaac-Grasp-Policy-G129-Inspire-Joint"       # G1GraspPolicyInspireEnvCfg
+"Isaac-Grasp-Policy-G129-Inspire-Joint-Eval"   # G1GraspPolicyInspireEvalEnvCfg
+"Isaac-Grasp-Policy-G129-Inspire-Teleop"        # G1GraspPolicyInspireTeleopEnvCfg
 ```
 
 All three register with `entry_point="isaaclab.envs:ManagerBasedRLEnv"`.
 The Eval variant inherits the RL config but uses deterministic block placement.
+
+> **Deprecated alias:** the legacy `Isaac-Grasp-Policy-G129-InspireFTP-{Joint,Joint-Eval,Teleop}` IDs are still registered (mapped to the same env cfgs) so HDF5 demos and ACT checkpoints recorded under the old names still load. They will be dropped once all on-disk artifacts have been re-keyed.
 
 ---
 
@@ -586,7 +588,7 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 
 | Property | Inspire FTP | Dex3 |
 |----------|-------------|------|
-| **Gym ID prefix** | `Isaac-Grasp-Policy-G129-InspireFTP-*` | `Isaac-Grasp-Policy-G129-Dex3-*` |
+| **Gym ID prefix** | `Isaac-Grasp-Policy-G129-Inspire-*` | `Isaac-Grasp-Policy-G129-Dex3-*` |
 | **Action dim (RL)** | 41 | 43 |
 | **Body joints** | 29 | 29 |
 | **Hand joints (total)** | 24 (12 actuated + 12 mimic) | 14 (7 per hand) |
@@ -612,8 +614,8 @@ Hands use `ImplicitActuatorCfg` (not PD). Mimic enforcement is handled by
 
 ```python
 IsaaclabGraspPolicyInspireEnv = _get_grasp_policy_inspire_env_class()
-REGISTER_ISAACLAB_ENVS["Isaac-Grasp-Policy-G129-InspireFTP-Joint"] = IsaaclabGraspPolicyInspireEnv
-REGISTER_ISAACLAB_ENVS["Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval"] = IsaaclabGraspPolicyInspireEnv
+REGISTER_ISAACLAB_ENVS["Isaac-Grasp-Policy-G129-Inspire-Joint"] = IsaaclabGraspPolicyInspireEnv
+REGISTER_ISAACLAB_ENVS["Isaac-Grasp-Policy-G129-Inspire-Joint-Eval"] = IsaaclabGraspPolicyInspireEnv
 ```
 
 ### Observation Wrapping

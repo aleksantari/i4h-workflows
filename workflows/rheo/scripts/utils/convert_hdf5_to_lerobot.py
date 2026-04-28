@@ -39,9 +39,9 @@ from isaaclab_arena_gr00t.data_utils.convert_hdf5_to_lerobot import (
 from isaaclab_arena_gr00t.data_utils.image_conversion import resize_frames_with_padding
 from isaaclab_arena_gr00t.data_utils.io_utils import create_config_from_yaml, dump_json, dump_jsonl, load_json
 from tqdm import tqdm
-from utils.assemble_trocar_lerobot_fields import STATE_28_NAMES_ENV_ORDER, convert_g1_state_action_to_lerobot_28d
+from utils._rheo.assemble_trocar_lerobot_fields import STATE_28_NAMES_ENV_ORDER, convert_g1_state_action_to_lerobot_28d
 from utils.extended_dataset_config import ExtendedDatasetConfig
-from utils.inspire_lerobot_fields import (
+from utils.inspire.inspire_lerobot_fields import (
     STATE_13_LEFT_NAMES_ENV_ORDER,
     STATE_13_NAMES_ENV_ORDER,
     STATE_26_NAMES_ENV_ORDER,

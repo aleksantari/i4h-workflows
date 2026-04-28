@@ -69,8 +69,11 @@ def _register_isaaclab_envs() -> None:
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Assemble-Trocar-G129-Dex3-Joint", IsaaclabG129Dx3Env)
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Assemble-Trocar-G129-Dex3-Joint-Eval", IsaaclabG129Dx3Env)
 
-    # Inspire FTP grasp policy task
+    # Inspire FTP grasp policy task — canonical Inspire-* IDs + deprecated
+    # InspireFTP-* aliases (kept so old HDF5 demos / ACT checkpoints still load).
     IsaaclabGraspPolicyInspireEnv = _get_grasp_policy_inspire_env_class()
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Inspire-Joint", IsaaclabGraspPolicyInspireEnv)
+    REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-Inspire-Joint-Eval", IsaaclabGraspPolicyInspireEnv)
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-InspireFTP-Joint", IsaaclabGraspPolicyInspireEnv)
     REGISTER_ISAACLAB_ENVS.setdefault("Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval", IsaaclabGraspPolicyInspireEnv)
 
@@ -473,7 +476,7 @@ def _convert_inspire_obs_to_act_format(env_obs: dict[str, Any]) -> dict[str, Any
       - observation.images.cam_room: (B, C, H, W) float tensor
       - observation.state: (B, 26) float tensor
     """
-    from utils.inspire_experiment_config import InspireExperimentConfig
+    from utils.inspire.inspire_experiment_config import InspireExperimentConfig
 
     exp_config = InspireExperimentConfig.from_env_or_default()
 
@@ -498,7 +501,7 @@ def _convert_inspire_act_action_to_sim(action_chunk: dict[str, Any] | np.ndarray
 
     Uses InspireExperimentConfig to scatter 26D policy actions into 53D sim space.
     """
-    from utils.inspire_experiment_config import InspireExperimentConfig
+    from utils.inspire.inspire_experiment_config import InspireExperimentConfig
 
     if isinstance(action_chunk, dict):
         action = action_chunk.get("action", action_chunk.get("actions"))

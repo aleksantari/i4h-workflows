@@ -9,7 +9,7 @@ between predicted and recorded actions in both normalized (loss-space) and
 raw (radian) units. Runs inside the grasp docker — no Isaac Sim needed.
 
 Usage:
-    ./docker/run_docker_grasp.sh python scripts/utils/offline_replay_mae.py \
+    ./docker/run_docker_grasp.sh python scripts/utils/inspire/offline_replay_mae.py \
         --model_path /workspaces/workflows/rheo/scripts/simulation/rl/results/act_grasp_policy_inspire/right_arm_smoketest_20260419-203926/checkpoints/005000/pretrained_model \
         --dataset_path /datasets/inspire_right_arm/demo_ep28/lerobot
 """

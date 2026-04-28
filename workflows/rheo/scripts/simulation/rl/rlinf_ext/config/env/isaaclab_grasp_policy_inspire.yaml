@@ -16,7 +16,7 @@ video_cfg:
     video_base_dir: ${runner.logger.log_path}/video/train
 
 init_params:
-    id: "Isaac-Grasp-Policy-G129-InspireFTP-Joint"
+    id: "Isaac-Grasp-Policy-G129-Inspire-Joint"
     num_envs: null
     max_episode_steps: ${env.train.max_episode_steps}
     task_description: "pick up block and place in bin"

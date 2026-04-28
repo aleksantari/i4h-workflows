@@ -9,15 +9,15 @@ and writes the front + wrist camera frames to disk as PNGs.
 
 Usage:
     # Production eval cadence (default)
-    ./docker/run_docker_grasp.sh python scripts/utils/capture_reset_frame.py \
+    ./docker/run_docker_grasp.sh python scripts/utils/inspire/capture_reset_frame.py \
         --headless --enable_cameras --render_interval 4 --out_dir /tmp/frame_ri4
 
     # Teleop-recording cadence
-    ./docker/run_docker_grasp.sh python scripts/utils/capture_reset_frame.py \
+    ./docker/run_docker_grasp.sh python scripts/utils/inspire/capture_reset_frame.py \
         --headless --enable_cameras --render_interval 2 --out_dir /tmp/frame_ri2
 
 Then compare:
-    python scripts/utils/capture_reset_frame.py --diff /tmp/frame_ri4 /tmp/frame_ri2
+    python scripts/utils/inspire/capture_reset_frame.py --diff /tmp/frame_ri4 /tmp/frame_ri2
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _diff_mode(dir_a: Path, dir_b: Path) -> int:
 
 def _capture_mode() -> int:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval")
+    parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-Inspire-Joint-Eval")
     parser.add_argument("--render_interval", type=int, default=None,
                         help="Override sim.render_interval after env_cfg is loaded.")
     parser.add_argument("--out_dir", type=str, required=True)

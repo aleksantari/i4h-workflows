@@ -20,7 +20,7 @@ import argparse
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint")
+parser.add_argument("--task", type=str, default="Isaac-Grasp-Policy-G129-Inspire-Joint")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 

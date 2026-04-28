@@ -9,7 +9,7 @@ map the 13 policy dims into the 41-D sim space via the Inspire FTP scatter
 indices from inspire_experiment_config.py, then compare per-dim.
 
 Usage (host, grasp conda env):
-    python scripts/utils/plot_rollout_vs_gt.py \
+    python scripts/utils/inspire/plot_rollout_vs_gt.py \
         --rollout eval_results/actions_20260420_133933_ep00.npy \
         --gt_parquet datasets/inspire_right_arm/demo_ep28/lerobot/data/chunk-000/episode_000000.parquet \
         --out eval_results/rollout_vs_ep28.png

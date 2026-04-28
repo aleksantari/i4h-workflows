@@ -46,7 +46,7 @@ from simulation.tasks.grasp_policy_inspire.config import CameraPresets, G1Inspir
 # ---------------------------------------------------------------------------
 # 53-joint name list: 29 body + 24 Inspire FTP hand joints.
 # NOTE: The exact ordering MUST match the USD articulation ordering.
-# Run scripts/utils/inspect_inspire_joints.py to verify/update.
+# Run scripts/utils/inspire/inspect_inspire_joints.py to verify/update.
 # The body joints (indices 0-28) are the same as the Dex3 task.
 # Hand joints (indices 29-52) follow the USD's tree traversal order.
 # ---------------------------------------------------------------------------

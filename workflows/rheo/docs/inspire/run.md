@@ -19,10 +19,10 @@ As of 2026-04-20 the default eval setup is:
 - `--pin_block_frame_idx 10` — pin from the per-timestep `states/...` trajectory
   at the given frame instead of the pre-settle `initial_state` pose. Default
   `0` keeps legacy behavior. Find a good index by running
-  `scripts/utils/inspect_block_settle.py --hdf5 ... --demo_key demo_28`.
+  `scripts/utils/inspire/inspect_block_settle.py --hdf5 ... --demo_key demo_28`.
 - `--log_actions` — dump per-step applied 41-D action to
   `eval_results/actions_<timestamp>_ep<NN>.npy` for offline rollout-vs-GT
-  plotting via `scripts/utils/plot_rollout_vs_gt.py`.
+  plotting via `scripts/utils/inspire/plot_rollout_vs_gt.py`.
 
 ## Right-arm smoketest (5K steps, kl_weight=0, 1 demo)
 
@@ -47,7 +47,7 @@ mkdir -p eval_logs
 Compare the logged actions against ep28 ground truth:
 
 ```bash
-bash -ic 'use_conda grasp && python scripts/utils/plot_rollout_vs_gt.py \
+bash -ic 'use_conda grasp && python scripts/utils/inspire/plot_rollout_vs_gt.py \
     --rollout eval_results/actions_<TIMESTAMP>_ep00.npy \
     --gt_parquet datasets/inspire_right_arm/demo_ep28/lerobot/data/chunk-000/episode_000000.parquet \
     --out eval_results/rollout_vs_ep28_<TIMESTAMP>.png'

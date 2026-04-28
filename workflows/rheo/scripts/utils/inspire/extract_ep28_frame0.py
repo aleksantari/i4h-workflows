@@ -11,7 +11,7 @@ Writes to an output dir:
   - gt_meta.json            fps, resolution, shapes
 
 Usage (host, grasp conda env):
-    python scripts/utils/extract_ep28_frame0.py \
+    python scripts/utils/inspire/extract_ep28_frame0.py \
         --lerobot_root datasets/inspire_right_arm/demo_ep28/lerobot \
         --out /tmp/ep28_frame0
 """

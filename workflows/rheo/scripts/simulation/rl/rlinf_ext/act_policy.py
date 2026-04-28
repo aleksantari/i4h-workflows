@@ -210,7 +210,7 @@ class ACTForRLActionPrediction(BasePolicy, nn.Module):
         act_obs = {}
 
         # Concatenate state parts into flat vector (config-driven joint groups)
-        from utils.inspire_experiment_config import InspireExperimentConfig
+        from utils.inspire.inspire_experiment_config import InspireExperimentConfig
 
         exp_config = InspireExperimentConfig.from_env_or_default()
 

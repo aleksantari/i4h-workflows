@@ -59,7 +59,7 @@ Host mounts: `$HOME/datasets` → `/datasets`, `$HOME/models` → `/models`, `$H
 | **IsaacLab-Arena** | Locomanipulation (tray pick-and-place, cart push) | N1.6 (`-g1.6`) | `policy_runner.py` | `scripts/simulation/environments/` |
 | **IsaacLab** | Precision manipulation (trocar assembly, grasp policy) | N1.5 (`-g1.5`) | `eval_assemble_trocar.py`, `eval_act_inspire.py` | `scripts/simulation/tasks/` |
 
-Arena environments are registered via `_rheo/register_and_patch.py` into an `ExampleEnvironments` dict before the sim starts. IsaacLab-track environments use standard `gymnasium.register()` with gym IDs like `Isaac-Grasp-Policy-G129-InspireFTP-Joint` or `Isaac-Assemble-Trocar-G129-Dex3-Joint`.
+Arena environments are registered via `_rheo/register_and_patch.py` into an `ExampleEnvironments` dict before the sim starts. IsaacLab-track environments use standard `gymnasium.register()` with gym IDs like `Isaac-Grasp-Policy-G129-Inspire-Joint` or `Isaac-Assemble-Trocar-G129-Dex3-Joint`.
 
 ## Policy Types
 
@@ -123,13 +123,28 @@ scripts/
 │       │   └── config/            # RLinf YAML configs (env, PPO hyperparams, model architecture)
 │       └── train_gr00t_assemble_trocar.sh  # GR00T RL training launcher (trocar)
 ├── utils/
-│   ├── joint_conversion.py        # Policy-to-sim joint remapping (43 DOF, GR00T trocar)
-│   ├── inspire_lerobot_fields.py # Inspire FTP 26D + 13D state/action conversion (handles 38D teleop, 41D, 53D)
-│   ├── inspire_experiment_config.py # 26D joint groups + scatter_to_sim (26D→41D)
-│   ├── policy_tasks.py            # TensorRT DiT wrapper, success-hold wrapper
-│   ├── webrtc_cam.py              # WebRTC video streaming (aiortc)
-│   ├── trigger_server.py          # HTTP trigger server for remote policy activation
-│   └── convert_hdf5_to_lerobot.py # Dataset format conversion
+│   ├── inspire/                   # Inspire-track helpers + debug
+│   │   ├── inspire_experiment_config.py # 26D joint groups + scatter_to_sim (26D/13D → 41D)
+│   │   ├── inspire_lerobot_fields.py    # 26D + 13D HDF5→LeRobot conversion fields
+│   │   ├── inspect_inspire_joints.py    # Debug: USD joint ordering verification
+│   │   ├── convert_inspire_urdf_to_usd.py  # URDF → USD converter
+│   │   ├── verify_scatter_indices.py    # Verify GROUP_SIM_INDICES against running env
+│   │   ├── diff_first_obs.py            # t=0 MAE three-way decomposition
+│   │   ├── extract_ep28_frame0.py       # Frame-0 ground truth from a LeRobot episode
+│   │   ├── inspect_block_settle.py      # Find block-settle frame in HDF5 demos
+│   │   ├── capture_reset_frame.py       # Single-frame reset render for pixel diffs
+│   │   ├── offline_replay_mae.py        # Offline ACT memorization-quality check
+│   │   └── plot_rollout_vs_gt.py        # Rollout vs ground-truth action overlay
+│   ├── _rheo/                     # Borrowed-rheo helpers (only used by borrowed entry points)
+│   │   ├── joint_conversion.py          # Policy-to-sim joint remapping (43 DOF, GR00T)
+│   │   ├── assemble_trocar_lerobot_fields.py # Trocar HDF5 fields
+│   │   ├── policy_tasks.py              # TensorRT DiT wrapper, success-hold wrapper
+│   │   ├── webrtc_cam.py                # WebRTC video streaming (aiortc)
+│   │   ├── trigger_server.py            # HTTP trigger server for remote policy activation
+│   │   └── keyboard_env_reseter.py      # Arena env reset shim
+│   ├── convert_hdf5_to_lerobot.py # Dispatcher (imports from utils/inspire/ and utils/_rheo/)
+│   ├── extended_dataset_config.py # Root conversion config dataclass (used by both paths)
+│   └── extract_single_episode.py  # LeRobot v2.1 generic episode extractor
 └── teleop_devices/
     ├── keyboard_23d_adapter.py    # 23-DOF keyboard control
     ├── motion_controllers.py      # Meta Quest controller support
@@ -167,7 +182,7 @@ When evaluating an RL-trained GR00T checkpoint, you **must** pass `--rl_ckpt` to
 For Arena-track tasks, `_rheo/register_and_patch.py` must run before the simulation app starts. It registers environment classes into `ExampleEnvironments` and registers asset libraries (objects, backgrounds, embodiments) via side-effect imports. The `policy_runner.py` entry point handles this automatically.
 
 ### RLinf Extension Module
-RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rlinf_ext/__init__.py:register()`. This registers gym IDs (`Isaac-Assemble-Trocar-G129-Dex3-*` for GR00T trocar and `Isaac-Grasp-Policy-G129-InspireFTP-*` for ACT Inspire FTP grasp) into RLinf's env map, registers obs/action converters (GR00T `dex3` for trocar, ACT `act_inspire` for Inspire FTP grasp), monkeypatches `get_model` for the `new_embodiment` tag, and imports policy configs. `act_policy.py` wraps ACT with a `ValueHead` for RL critic estimation.
+RL training sets `RLINF_EXT_MODULE=rlinf_ext` to load `scripts/simulation/rl/rlinf_ext/__init__.py:register()`. This registers gym IDs (`Isaac-Assemble-Trocar-G129-Dex3-*` for GR00T trocar and `Isaac-Grasp-Policy-G129-Inspire-*` for ACT Inspire FTP grasp) into RLinf's env map, registers obs/action converters (GR00T `dex3` for trocar, ACT `act_inspire` for Inspire FTP grasp), monkeypatches `get_model` for the `new_embodiment` tag, and imports policy configs. `act_policy.py` wraps ACT with a `ValueHead` for RL critic estimation.
 
 ### Demo Recording
 `record_demos.py` is the generic IsaacLab demo recording script (replaces task-specific scripts). Features: auto-success detection (saves after N consecutive success frames), VR gesture controls (OpenXR hand-tracking START/STOP/RESET), and XR UI overlays. `replay_demos_isaaclab.py` replays and validates recorded demos with optional success rate checking.

@@ -101,7 +101,7 @@ class ACTClosedloopPolicy(PolicyBase):
         self.target_image_size = tuple(self.config.get("target_image_size", [480, 640, 3]))
 
         # Load the Inspire FTP experiment config (26D / 13D policy → 41D sim).
-        _mod = _import_from_utils("inspire_experiment_config")
+        _mod = _import_from_utils("inspire.inspire_experiment_config")
         InspireExperimentConfig = _mod.InspireExperimentConfig
 
         exp_cfg_path = self.config.get("experiment_config_path")

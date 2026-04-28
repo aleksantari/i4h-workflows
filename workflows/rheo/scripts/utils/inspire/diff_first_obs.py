@@ -14,7 +14,7 @@ Prints per-dim tables, camera image stats, and a rule-based verdict on
 which of (reset-pose / image / model) dominates the t=0 offset.
 
 Usage:
-    python scripts/utils/diff_first_obs.py \
+    python scripts/utils/inspire/diff_first_obs.py \
         --rollout /tmp/first_obs_ri4 \
         --gt /tmp/ep28_frame0
 """

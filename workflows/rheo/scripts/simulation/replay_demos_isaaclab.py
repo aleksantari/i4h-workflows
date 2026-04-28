@@ -22,11 +22,11 @@ task registration (grasp_policy_inspire, assemble_trocar).
 
 Usage:
     # Replay all episodes
-    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-InspireFTP-Joint \
+    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-Inspire-Joint \
         --dataset_file /datasets/grasp_policy_inspire/demo.hdf5 --enable_cameras
 
     # Replay specific episodes with success validation
-    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-InspireFTP-Joint \
+    python replay_demos_isaaclab.py --task Isaac-Grasp-Policy-G129-Inspire-Joint \
         --dataset_file /datasets/grasp_policy_inspire/demo.hdf5 --enable_cameras \
         --select_episodes 0 2 4 --validate_success_rate
 

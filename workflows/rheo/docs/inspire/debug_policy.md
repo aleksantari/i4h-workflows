@@ -66,7 +66,7 @@ data/demo_0/
 ```
 
 **The conversion's `else` branch fires for every episode.** In
-`scripts/utils/inspire_lerobot_fields.py:270-300`:
+`scripts/utils/inspire/inspire_lerobot_fields.py:270-300`:
 
 ```python
 if action_full.shape[1] == 53:
@@ -128,7 +128,7 @@ This is consistent with "arm flailing, never reaches the tool" as the dominant s
 
 Add the elbow compensation to the 38-D else branch so the training contract is
 symmetric across all three HDF5 widths. One line in
-`scripts/utils/inspire_lerobot_fields.py` around line 294:
+`scripts/utils/inspire/inspire_lerobot_fields.py` around line 294:
 
 ```python
 else:
@@ -190,11 +190,11 @@ if context rolls over again.
 **Fixes already applied:**
 
 1. **Elbow offset compensation** — 38-D branch of
-   [scripts/utils/inspire_lerobot_fields.py](../../scripts/utils/inspire_lerobot_fields.py)
+   [scripts/utils/inspire/inspire_lerobot_fields.py](../../scripts/utils/inspire/inspire_lerobot_fields.py)
    now adds `+0.3` to elbow columns (matching the 53-D/41-D branches). Context and
    rationale: [elbow_offset.md](elbow_offset.md). Required re-converting the
    dataset and rebuilding `demo_ep28`, then retraining the smoketest.
-2. **Middle/pinky scatter swap** — [scripts/utils/inspire_experiment_config.py](../../scripts/utils/inspire_experiment_config.py)
+2. **Middle/pinky scatter swap** — [scripts/utils/inspire/inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py)
    `GROUP_SIM_INDICES` for both hands now respects the env's `actuated_joint_names`
    order (`little_1` before `middle_1`). No retraining needed — training labels were
    correct, only eval-time scatter was wrong. Full writeup:
@@ -218,7 +218,7 @@ hypotheses below.
 - ~~**D5 — Training loss floor.**~~ **Checked 2026-04-19. Clean.**
   `train/l1_loss` reached 0.034 at step 5000 (still decreasing slowly). To verify
   memorization quality in real units, wrote
-  [scripts/utils/offline_replay_mae.py](../../scripts/utils/offline_replay_mae.py)
+  [scripts/utils/inspire/offline_replay_mae.py](../../scripts/utils/inspire/offline_replay_mae.py)
   and replayed ep28 through the checkpoint. Results: overall raw MAE
   **0.0138 rad (~0.79°/joint/step)**, uniform across arm and finger dims. The
   model memorized the trajectory tightly. This means the failure must be at
@@ -283,7 +283,7 @@ This is counter-intuitive — the fix should make the model command the recorded
 trajectory exactly, while the pre-fix should systematically under-reach.
 
 **Diagnostic E1:** Ran
-[scripts/utils/offline_replay_mae.py](../../scripts/utils/offline_replay_mae.py)
+[scripts/utils/inspire/offline_replay_mae.py](../../scripts/utils/inspire/offline_replay_mae.py)
 against both checkpoints using the current (post-fix) `demo_ep28` parquet.
 
 | Dim | Pre-fix raw MAE | Post-fix raw MAE |

@@ -29,7 +29,7 @@ Features over the old ``record_demos_assemble_trocar.py``:
 
 Usage:
     # AVP hand-tracking (Inspire FTP grasp)
-    python record_demos.py --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \\
+    python record_demos.py --task Isaac-Grasp-Policy-G129-Inspire-Teleop \\
         --teleop_device handtracking --enable_pinocchio --enable_cameras \\
         --dataset_file ./datasets/grasp_policy_inspire/demo.hdf5 --num_demos 5
 
@@ -39,7 +39,7 @@ Usage:
         --dataset_file ./datasets/trocar/demo.hdf5 --num_demos 5
 
     # Keyboard (desktop, any task)
-    python record_demos.py --task Isaac-Grasp-Policy-G129-InspireFTP-Teleop \\
+    python record_demos.py --task Isaac-Grasp-Policy-G129-Inspire-Teleop \\
         --teleop_device keyboard --enable_pinocchio \\
         --dataset_file ./datasets/grasp_policy_inspire/test.hdf5 --num_demos 1
 """

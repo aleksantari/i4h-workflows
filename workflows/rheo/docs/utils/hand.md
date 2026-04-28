@@ -380,7 +380,7 @@ Index  Group       Joint
 ```
 
 > **Code:**
-> [`scripts/utils/assemble_trocar_lerobot_fields.py`](../scripts/utils/assemble_trocar_lerobot_fields.py)
+> [`scripts/utils/_rheo/assemble_trocar_lerobot_fields.py`](../scripts/utils/_rheo/assemble_trocar_lerobot_fields.py)
 > — `STATE_28_NAMES_ENV_ORDER`.
 
 ---
@@ -816,5 +816,5 @@ else:
 ```
 
 > **Code:**
-> [`scripts/utils/inspire_lerobot_fields.py`](../../scripts/utils/inspire_lerobot_fields.py),
+> [`scripts/utils/inspire/inspire_lerobot_fields.py`](../../scripts/utils/inspire/inspire_lerobot_fields.py),
 > [`scripts/utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py).

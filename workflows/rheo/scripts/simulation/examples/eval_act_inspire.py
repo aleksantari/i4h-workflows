@@ -45,7 +45,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="ACT Evaluation — Inspire FTP Grasp Task")
 parser.add_argument(
-    "--task", type=str, default="Isaac-Grasp-Policy-G129-InspireFTP-Joint-Eval",
+    "--task", type=str, default="Isaac-Grasp-Policy-G129-Inspire-Joint-Eval",
     help="gym id. Default -Joint-Eval has zero block XY/yaw noise — use -Joint for noisy training env.",
 )
 parser.add_argument("--model_path", type=str, default=None, help="path to ACT checkpoint")
@@ -74,7 +74,7 @@ parser.add_argument(
     help="Frame index into states/rigid_object/block/root_pose to pin from. "
          "0 (default) uses initial_state (pre-settle). >0 uses the per-timestep "
          "states trajectory at that index — pick a settled frame via "
-         "scripts/utils/inspect_block_settle.py.",
+         "scripts/utils/inspire/inspect_block_settle.py.",
 )
 parser.add_argument(
     "--pin_demo_key", type=str, default="demo_0",
@@ -129,7 +129,7 @@ def _dump_first_obs(env, policy, obs, out_dir: Path, args_cli) -> None:
 
     Captures the exact tensors the policy sees at t=0 plus its first action
     prediction (before scatter and after scatter). Paired with
-    scripts/utils/extract_ep28_frame0.py + diff_first_obs.py to decompose
+    scripts/utils/inspire/extract_ep28_frame0.py + diff_first_obs.py to decompose
     the t=0 MAE offset into reset-pose / image / prediction components.
     """
     import json
