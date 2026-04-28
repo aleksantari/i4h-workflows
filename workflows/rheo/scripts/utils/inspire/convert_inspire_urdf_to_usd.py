@@ -73,7 +73,7 @@ cfg = UrdfConverterCfg(
     # Mimic enforcement is handled by our custom InspireJointPositionAction,
     # not by the USD/physics engine.
     convert_mimic_joints_to_normal_joints=False,
-    self_collision=False,
+    self_collision=True,
     make_instanceable=True,
     # PD gains set to 0 — actual control gains come from robot_config.py
     # actuator definitions (IdealPDActuatorCfg / ImplicitActuatorCfg).

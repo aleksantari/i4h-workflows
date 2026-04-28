@@ -13,14 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Inspect the joint ordering of the G1 + Inspire FTP nucleus USD.
+"""Inspect the joint ordering of the active Inspire FTP USD.
+
+Loads the local URDF-converted USD that ``robot_config.py`` points at
+(``UNITREE_G1_29DOF_INSPIRE_FTP_USD``) and prints the full joint list with
+indices plus body / hand / actuated / mimic classification.
+
+This is a one-off introspection tool. Primary use cases:
+
+  - **Bootstrapping a new embodiment.** When ``env_cfg.joint_names`` does not
+    yet exist for a USD (e.g. a hardware revision or different hand variant),
+    use this output to author the canonical joint-name list.
+  - **Deep-debugging a grounding-test failure.** When
+    ``test_inspire_urdf_grounding`` reports a confusing mismatch, dump the
+    full articulation here for human eyeballing.
+
+For ongoing regression coverage of the URDF ↔ code contract, see
+``tests/test_sim/test_inspire_urdf_grounding.py`` — that's the steady-state
+check; this script is for one-off use.
 
 Run inside Docker:
-    ./docker/run_docker.sh -g1.5 python scripts/utils/inspire/inspect_inspire_joints.py
-
-Prints the full joint list with indices, and identifies body vs hand joints,
-actuated vs mimic hand joints. Use this output to set hardcoded indices in
-the grasp_policy_inspire observation functions.
+    ./docker/run_docker_grasp.sh python scripts/utils/inspire/inspect_inspire_joints.py
 """
 
 from isaaclab.app import AppLauncher
@@ -28,28 +41,37 @@ from isaaclab.app import AppLauncher
 app_launcher = AppLauncher(headless=True)
 simulation_app = app_launcher.app
 
-import gymnasium as gym  # noqa: E402
-
 import isaaclab.sim as sim_utils  # noqa: E402
+from isaaclab.actuators import ImplicitActuatorCfg  # noqa: E402
 from isaaclab.assets import ArticulationCfg  # noqa: E402
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg  # noqa: E402
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg  # noqa: E402
 from isaaclab.utils import configclass  # noqa: E402
-from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR  # noqa: E402
-from isaaclab.actuators import ImplicitActuatorCfg  # noqa: E402
 
-USD_PATH = f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/G1/g1_29dof_inspire_hand.usd"
+from simulation.tasks.grasp_policy_inspire.config.robot_config import (  # noqa: E402
+    UNITREE_G1_29DOF_INSPIRE_FTP_USD,
+)
 
-# Inspire FTP actuated joints (6 per hand)
+# The active local USD — the same one robot_config.py loads at sim startup.
+# Audit doc §4.7 (workflows/rheo/docs/inspire/joint_spaces.md) explains why
+# this must NOT be the Nucleus USD: that one merges fixed joints and drops
+# d435_link, the wrist_cam mounts, and the IMU.
+USD_PATH = UNITREE_G1_29DOF_INSPIRE_FTP_USD
+
+# Inspire FTP actuated joints, by URDF naming suffix (6 per hand).
+# Thumb has two actuated DOF (yaw=_1, pitch=_2); the other four fingers
+# have one actuated proximal DOF (=_1).
 ACTUATED_KEYWORDS = [
-    "thumb_proximal_yaw", "thumb_proximal_pitch",
-    "index_proximal", "middle_proximal", "ring_proximal", "pinky_proximal",
+    "_thumb_1_joint", "_thumb_2_joint",
+    "_index_1_joint", "_middle_1_joint", "_ring_1_joint", "_little_1_joint",
 ]
 
-# Inspire FTP mimic joints (6 per hand)
+# Inspire FTP mimic joints, by URDF naming suffix (6 per hand).
+# Thumb chains _3 (intermediate) → _4 (distal); other fingers have one
+# mimic distal DOF (=_2). See mimic_action.py for the multipliers.
 MIMIC_KEYWORDS = [
-    "thumb_intermediate", "thumb_distal",
-    "index_intermediate", "middle_intermediate", "ring_intermediate", "pinky_intermediate",
+    "_thumb_3_joint", "_thumb_4_joint",
+    "_index_2_joint", "_middle_2_joint", "_ring_2_joint", "_little_2_joint",
 ]
 
 
@@ -176,18 +198,6 @@ def main():
     for name in joint_names:
         print(f'    "{name}",')
     print("]")
-
-    # Compare body indices with Dex3
-    dex3_body_indices = [
-        0, 3, 6, 9, 13, 17, 1, 4, 7, 10, 14, 18,
-        2, 5, 8, 11, 15, 19, 21, 23, 25, 27,
-        12, 16, 20, 22, 24, 26, 28,
-    ]
-    print(f"\nDex3 body_joint_indices (for observation reorder): {dex3_body_indices}")
-    print("Check if body joints are at the same indices in this USD.")
-    print("Body joint names in this USD (first 29):")
-    for idx in sorted(body_indices[:29]):
-        print(f"  {idx}: {joint_names[idx]}")
 
     simulation_app.close()
 

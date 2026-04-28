@@ -77,6 +77,7 @@ violated in practice, something is broken.
 
 > The *physical* contract: robot, sim, actions, observations, task.
 > Source of truth: [`g1_grasp_policy_inspire_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py).
+> See [`joint_spaces.md`](joint_spaces.md) for the full joint-ordering / naming-convention audit (anchor, derivations, drift hotspots) that underpins this section and Layer 2.
 
 ### Gym registrations
 

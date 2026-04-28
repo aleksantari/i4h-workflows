@@ -1,6 +1,8 @@
 # Inspire FTP 41-D Scatter Index Audit
 
 > **Status (2026-04-19):** Middle/pinky slots in `GROUP_SIM_INDICES` are swapped on both hands. Training-side labels are correct, so the policy learns valid input→output pairs, but at eval the scatter routes the "middle" command to the physical pinky joint (and vice versa). Single-episode memorization cannot reproduce a recorded trajectory until this is fixed.
+>
+> **See also:** [`joint_spaces.md`](joint_spaces.md) §4.6 covers `GROUP_SIM_INDICES` as a drift hotspot with the recommended derivation rule from `actuated_joint_names`.
 
 ## 1. Runtime evidence
 
