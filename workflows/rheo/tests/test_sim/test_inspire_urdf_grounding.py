@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Joint-space grounding test — Layer 1 (URDF spec ↔ code) + Layer 2 (USD ↔ code).
+"""Joint-space grounding test — Layer 1 (URDF spec ↔ code), Layer 2 (USD ↔ code), Layer 3 (runtime behavior).
 
 Layer 1 (9 checks): parses the active Inspire FTP URDF as XML and asserts that
 the joint-space constants in env_cfg, mimic_action, robot_config, and the
@@ -12,14 +12,19 @@ teleop env_cfg agree with it. Catches drift in:
   - URDF ↔ Nucleus bridge (`_URDF_TO_NUCLEUS`): domain, bijection, finger / side consistency
   - PinkIK ``pink_controlled_joint_names`` regex coverage of the 14 arm joints
 
-Layer 2 (1 check): spawns the articulation via `G129_CFG_WITH_INSPIRE_BASE_FIX`
-and asserts `articulation.data.joint_names` matches `env_cfg.joint_names`
-*list-wise* (order matters). This is the order-sensitive check that Layer 1
-explicitly cannot do — URDF XML order is an arbitrary authoring artifact;
-USD articulation order is determined by the converter's tree traversal.
+Layer 2 (1 check): asserts the loaded USD's articulation order matches
+``env_cfg.joint_names`` list-wise. URDF XML order is an arbitrary authoring
+artifact; USD articulation order is determined by the converter's tree
+traversal. This is the order-sensitive check Layer 1 explicitly cannot do.
 
-Boots IsaacLab Kit at module load (~5-10s) so the imported modules and the
-articulation spawning work. Run inside Docker:
+Layer 3 (1 check): runtime behavioral check that
+``InspireJointPositionAction.apply_actions()`` drives mimic joints to
+``multiplier × parent`` after a real ``env.step``. Catches:
+  - Refactor regressions in apply_actions ordering (super before mimic computation)
+  - Future PhysX behavior changes that silently enable native mimic constraint enforcement
+
+Boots IsaacLab Kit at module load (~10s) and constructs the Joint-Eval gym
+env (~10s). Run inside Docker:
 
     ./docker/run_docker_grasp.sh python -m unittest tests.test_sim.test_inspire_urdf_grounding -v
 
@@ -27,9 +32,12 @@ See docs/inspire/joint_spaces.md for the full audit this test pins.
 """
 
 # AppLauncher MUST be called before importing most isaaclab.* modules.
+# enable_cameras=True is required because the Inspire FTP env's observation
+# manager has camera obs terms; without it, IsaacLab strips cameras from the
+# scene but leaves the obs term, leading to "front_camera does not exist".
 from isaaclab.app import AppLauncher
 
-_app_launcher = AppLauncher(headless=True)
+_app_launcher = AppLauncher(headless=True, enable_cameras=True)
 _simulation_app = _app_launcher.app
 
 # Standard library — safe before or after Kit boot.
@@ -38,17 +46,21 @@ import unittest  # noqa: E402
 import xml.etree.ElementTree as ET  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-# IsaacLab + project imports — must come AFTER AppLauncher.
-import isaaclab.sim as sim_utils  # noqa: E402
-from isaaclab.assets import AssetBaseCfg  # noqa: E402
-from isaaclab.scene import InteractiveScene, InteractiveSceneCfg  # noqa: E402
-from isaaclab.utils import configclass  # noqa: E402
+# Third-party — must come AFTER AppLauncher.
+import gymnasium as gym  # noqa: E402
+import torch  # noqa: E402
+
+# Project imports — must come AFTER AppLauncher.
+# Importing the package triggers gym.register(...) for the Inspire-* gym IDs,
+# which the Layer 2 + Layer 3 tests need via gym.make.
+import simulation.tasks.grasp_policy_inspire  # noqa: E402, F401
 
 from simulation.tasks.grasp_policy_inspire.config.robot_config import (  # noqa: E402
     G129_CFG_WITH_INSPIRE_BASE_FIX,
 )
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (  # noqa: E402
     _MIMIC_JOINT_NAMES,
+    actuated_joint_names as ACTUATED_JOINT_NAMES,
     joint_names as ENV_CFG_JOINT_NAMES,
 )
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
@@ -114,44 +126,50 @@ _PINK_CONTROLLED_PATTERNS: list[str] = list(
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 scaffolding — minimal scene that spawns just the robot articulation.
+# Layer 2 + Layer 3 scaffolding — gym.make the Joint-Eval env so we can both
+# read the loaded articulation's joint_names (Layer 2) and call env.step to
+# exercise InspireJointPositionAction.apply_actions (Layer 3).
 # ---------------------------------------------------------------------------
 
-@configclass
-class _GroundingSceneCfg(InteractiveSceneCfg):
-    """Minimal scene: ground plane + dome light + the Inspire FTP G1."""
+# Settling: number of env.step() calls after sending a target before reading
+# joint_pos. Each step is one decimation block (4 physics ticks at 200Hz =
+# 50Hz control). 20 steps ≈ 0.4s of simulated time, plenty for a finger
+# joint with our PD gains to converge to within a few percent of target.
+_MIMIC_SETTLE_STEPS = 20
 
-    num_envs: int = 1
-    env_spacing: float = 2.0
-
-    ground = AssetBaseCfg(
-        prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(),
-    )
-    light = AssetBaseCfg(
-        prim_path="/World/light",
-        spawn=sim_utils.DomeLightCfg(intensity=2000.0),
-    )
-    robot = G129_CFG_WITH_INSPIRE_BASE_FIX.replace(
-        prim_path="/World/envs/env_.*/Robot"
-    )
+# Tolerance on the |observed - expected| absolute joint position error
+# at steady state. Generous enough to absorb finite-stiffness PD lag for both
+# the parent and the mimic; tight enough to catch a missing or wrong-sign
+# multiplier (the historical bug class this test targets).
+_MIMIC_TOL_RAD = 0.05
 
 
 class InspireGroundingTests(unittest.TestCase):
-    """Nine Layer-1 checks (URDF → code) + one Layer-2 check (USD → code)."""
+    """Nine Layer-1 checks (URDF → code) + one Layer-2 + one Layer-3."""
 
-    # Set in setUpClass after the articulation has been spawned + initialized.
+    # Set in setUpClass after the env is built.
+    _env: gym.Env = None
+    _robot = None
     _ARTICULATION_JOINT_NAMES: list[str] = []
 
     @classmethod
     def setUpClass(cls):
-        """Spawn the articulation once and capture its joint_names list."""
-        sim_cfg = sim_utils.SimulationCfg(dt=0.005)
-        cls._sim = sim_utils.SimulationContext(sim_cfg)
-        scene_cfg = _GroundingSceneCfg(num_envs=1, env_spacing=2.0)
-        cls._scene = InteractiveScene(scene_cfg)
-        cls._sim.reset()
-        cls._ARTICULATION_JOINT_NAMES = list(cls._scene["robot"].data.joint_names)
+        """gym.make the Joint-Eval env once and capture the articulation."""
+        # Joint-Eval is the deterministic variant — reset noise is zeroed,
+        # so the steady-state pose under a given action is reproducible.
+        cls._env = gym.make(
+            "Isaac-Grasp-Policy-G129-Inspire-Joint-Eval", num_envs=1
+        )
+        cls._env.reset()
+        cls._robot = cls._env.unwrapped.scene["robot"]
+        cls._ARTICULATION_JOINT_NAMES = list(cls._robot.data.joint_names)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Cleanly close the env so Kit's stage teardown doesn't warn."""
+        if cls._env is not None:
+            cls._env.close()
+            cls._env = None
 
     # -- Layer 1: 1. Joint count parity ---------------------------------------
 
@@ -422,7 +440,76 @@ class InspireGroundingTests(unittest.TestCase):
             f"PinkIK patterns matched zero joints (dead patterns): {dead}",
         )
 
-    # -- Layer 2: 10. Articulation order matches env_cfg.joint_names list-wise
+    # -- Layer 3: 10. Runtime mimic enforcement -----------------------------
+
+    def test_mimic_enforcement_at_runtime(self):
+        """``apply_actions()`` drives mimic joints to ``multiplier × parent``.
+
+        Sends a 41-D action with one specific actuated hand joint at a known
+        nonzero target, settles for a few env.step() calls, then reads the
+        actual joint positions and asserts the URDF mimic ratio is met
+        within tolerance.
+
+        Catches:
+          - Refactor regressions in apply_actions ordering (super before mimic
+            computation; reverse the order and the mimic reads stale data).
+          - Future PhysX behavior changes that silently enable native mimic
+            constraint enforcement — would compete with our manual writes.
+          - Bypass: if anything writes to the actuated parent joint without
+            triggering apply_actions, the mimic stays at its current value
+            and this test fires.
+
+        Tolerance is moderate (a few hundredths of a radian) to absorb PD
+        finite-stiffness lag, which affects both the parent and the mimic.
+        Tight enough to catch a wrong / missing multiplier (the historical
+        bug class).
+        """
+        # Pick a single non-thumb finger so the chain is one-deep
+        # (left_index_2_joint mimics left_index_1_joint at 1.0843×).
+        parent_joint_name = "left_index_1_joint"
+        mimic_joint_name = "left_index_2_joint"
+        expected_multiplier = 1.0843
+
+        # Target value chosen to be well within joint limits but big enough
+        # that PD lag is small relative to the value (avoids divide-by-near-
+        # zero amplification in the assertion's relative-error interpretation).
+        target_value = 0.5
+
+        # Build the 41-D action (the env's action space size).
+        device = self._env.unwrapped.device
+        action = torch.zeros(1, 41, device=device)
+        parent_action_idx = ACTUATED_JOINT_NAMES.index(parent_joint_name)
+        action[0, parent_action_idx] = target_value
+
+        # Step several times to settle.
+        for _ in range(_MIMIC_SETTLE_STEPS):
+            self._env.step(action)
+
+        # Read achieved joint positions and verify the URDF ratio.
+        pos = self._robot.data.joint_pos[0].cpu().numpy()
+        parent_art_idx = self._ARTICULATION_JOINT_NAMES.index(parent_joint_name)
+        mimic_art_idx = self._ARTICULATION_JOINT_NAMES.index(mimic_joint_name)
+        parent_pos = float(pos[parent_art_idx])
+        mimic_pos = float(pos[mimic_art_idx])
+        expected_mimic = expected_multiplier * parent_pos
+
+        self.assertAlmostEqual(
+            mimic_pos, expected_mimic, delta=_MIMIC_TOL_RAD,
+            msg=(
+                f"\nMimic enforcement failed at runtime.\n"
+                f"  parent ({parent_joint_name}) pos: {parent_pos:.4f} rad\n"
+                f"  mimic ({mimic_joint_name}) pos:  {mimic_pos:.4f} rad\n"
+                f"  expected mimic = {expected_multiplier} × parent = {expected_mimic:.4f} rad\n"
+                f"  abs error: {abs(mimic_pos - expected_mimic):.4f} rad "
+                f"(tolerance: {_MIMIC_TOL_RAD})\n"
+                f"Likely causes: (a) apply_actions ordering broken — super() before "
+                f"mimic write, (b) mimic write skipped (bypass), (c) PhysX is "
+                f"competing with our writes via native mimic constraint, "
+                f"(d) MIMIC_RULES has a wrong multiplier or parent."
+            ),
+        )
+
+    # -- Layer 2: 11. Articulation order matches env_cfg.joint_names list-wise
 
     def test_articulation_order_matches_env_cfg(self):
         """USD articulation order matches env_cfg.joint_names list-wise.

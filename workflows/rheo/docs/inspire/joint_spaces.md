@@ -41,13 +41,24 @@ The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic 
 
 ## 1.5 Grounding status (2026-04-28)
 
-The L0 + L1 anchor layer is pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). The test runs inside Docker (boots Kit, ~10s) and verifies, on every invocation:
+The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the runtime action-class behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). The test runs inside Docker (boots Kit + constructs the Joint-Eval gym env, ~20s) and verifies, on every invocation:
+
+**Layer 1 — URDF spec ↔ code (9 checks):**
 
 - URDF has 53 articulated joints; env_cfg `joint_names` matches in count and name-set.
-- env_cfg `joint_names` matches the loaded USD's articulation list-wise — *the* order check.
 - URDF's mimic children == `_MIMIC_JOINT_NAMES`.
 - URDF's `(child, parent, multiplier)` triples match `MIMIC_RULES`; offset is asserted zero.
 - Every articulated joint matches exactly one actuator regex group in `G129_CFG_WITH_INSPIRE_BASE_FIX`; no dead patterns.
+- `_URDF_TO_NUCLEUS` covers the full `HAND_JOINT_NAMES` domain, is bijective, and maintains side / finger consistency (catches the *finger-mix-up* bug class — the historical motivator).
+- PinkIK `pink_controlled_joint_names` matches exactly the 14 arm joints.
+
+**Layer 2 — USD ↔ code (1 check):**
+
+- env_cfg `joint_names` matches the loaded USD's articulation list-wise — *the* order check Layer 1 explicitly cannot do.
+
+**Layer 3 — runtime behavior (1 check):**
+
+- `InspireJointPositionAction.apply_actions()` drives mimic joints to `multiplier × parent` after a real `env.step`. Catches refactor regressions in the action class (super()/mimic ordering), future PhysX changes that silently enable native mimic constraint enforcement, and bypass-write scenarios within the action class.
 
 Run with:
 
@@ -266,7 +277,7 @@ Three things look like duplication but are deliberate. Leave them alone.
 
 ## 6. Implications for tests
 
-**Landed (2026-04-28):** [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) pins the L0 + L1 anchor layer — joint name set, joint count, articulation order, mimic relationships and multipliers, actuator regex partition. Six tests, runs inside Docker (~10s for Kit boot, ~2s for the asserts).
+**Landed (2026-04-28):** [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) — eleven tests across three layers. **Layer 1 (URDF → code, 9 checks)** pins the joint anchor and immediate derivations including the URDF↔Nucleus bridge and PinkIK arm partition. **Layer 2 (USD → code, 1 check)** pins the articulation order via gym.make + reset. **Layer 3 (runtime behavior, 1 check)** pins `InspireJointPositionAction.apply_actions()` by sending a known target, settling, and asserting the mimic ratio is met within tolerance.
 
 **Next — L2/L3 derivation checks for the §4 hotspots.** They follow the same pattern: given the now-test-pinned foundation (`joint_names`, `_MIMIC_JOINT_NAMES`, `MIMIC_RULES`, `_URDF_TO_NUCLEUS`), do the higher-layer constants encode the same fact? Examples:
 
@@ -282,7 +293,7 @@ Hotspot 4.4 (`_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`) is
 
 ## 7. Implications for refactor
 
-The follow-up refactor (separate plan, separate PR) replaces every ⚠️ / 🔁 entry in §3 with a code-derivation, computed at module load. **Behavior must not change** — the eval smoketest (`./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py --test`), the **grounding test** (`test_inspire_urdf_grounding`), and a parquet round-trip on a known-good HDF5 are the canaries. The grounding test is the most informative of the three: any L0/L1 regression introduced by the refactor fails loudly with a localized message, instead of surfacing as silent data corruption later in the pipeline. Hand-authored constants that *should* survive: `joint_names` (anchor), `_BODY_JOINT_NAMES_CANONICAL` (deliberate reorder, see §5), `_URDF_TO_NUCLEUS` (bridge), `_MIMIC_RULES_PER_SIDE` (semantic content), `offset_dict` (load-bearing magnitudes), the canonical group-order specs, multipliers from the URDF.
+The follow-up refactor (separate plan, separate PR) replaces every ⚠️ / 🔁 entry in §3 with a code-derivation, computed at module load. **Behavior must not change** — the eval smoketest (`./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py --test`), the **grounding test** (`test_inspire_urdf_grounding`), and a parquet round-trip on a known-good HDF5 are the canaries. The grounding test is the most informative of the three: any L1 regression introduced by the refactor fails loudly with a localized message instead of surfacing as silent data corruption later in the pipeline. The Layer 3 runtime check additionally guards the action class itself — any reorder of `super().apply_actions()` vs the mimic write loop in `InspireJointPositionAction` fails the runtime assertion before the refactor PR can land. Hand-authored constants that *should* survive: `joint_names` (anchor), `_BODY_JOINT_NAMES_CANONICAL` (deliberate reorder, see §5), `_URDF_TO_NUCLEUS` (bridge), `_MIMIC_RULES_PER_SIDE` (semantic content), `offset_dict` (load-bearing magnitudes), the canonical group-order specs, multipliers from the URDF.
 
 Concretely, the refactor would:
 
