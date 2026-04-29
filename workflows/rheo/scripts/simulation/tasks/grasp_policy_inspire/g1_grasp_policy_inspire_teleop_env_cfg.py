@@ -183,13 +183,20 @@ class G1GraspPolicyInspireTeleopEnvCfg(G1GraspPolicyInspireEnvCfg):
 
     temp_urdf_dir: str = tempfile.gettempdir()
 
-    # Idle action to hold robot in default pose (38D).
+    # Idle action (38D) — used by replay_demos_isaaclab.py multi-env path
+    # when an env has no next action. record_demos.py single-arm path also
+    # reads this but only uses the hand_joints slice (idx 14-37); the locked
+    # arm's wrist pose is overridden by FK at episode start, so the wrist
+    # values below are dead in that path.
+    #
     # Format: [left_wrist_pos(3), left_wrist_quat(4),
     #          right_wrist_pos(3), right_wrist_quat(4),
     #          hand_joints(24)]
-    # NOTE: Wrist positions are approximate for our robot at
-    # (-1.84919, 1.94, 0.81168) with rot (1,0,0,0). May need
-    # empirical tuning at first run via FK at default joint pose.
+    #
+    # NOTE: Wrist positions below are approximate (eyeballed, not derived
+    # from FK). Acceptable today because the dead-code consumer dominates
+    # in practice; revisit by computing FK at the robot's default joint pose
+    # if multi-env replay precision starts to matter.
     idle_action: torch.Tensor = torch.tensor(
         [
             # Left wrist pose (7D) — approximate world-frame FK

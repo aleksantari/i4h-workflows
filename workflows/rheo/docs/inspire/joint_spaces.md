@@ -39,6 +39,28 @@ The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic 
 
 ---
 
+## 1.5 Grounding status (2026-04-28)
+
+The L0 + L1 anchor layer is pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). The test runs inside Docker (boots Kit, ~10s) and verifies, on every invocation:
+
+- URDF has 53 articulated joints; env_cfg `joint_names` matches in count and name-set.
+- env_cfg `joint_names` matches the loaded USD's articulation list-wise — *the* order check.
+- URDF's mimic children == `_MIMIC_JOINT_NAMES`.
+- URDF's `(child, parent, multiplier)` triples match `MIMIC_RULES`; offset is asserted zero.
+- Every articulated joint matches exactly one actuator regex group in `G129_CFG_WITH_INSPIRE_BASE_FIX`; no dead patterns.
+
+Run with:
+
+```bash
+./docker/run_docker_grasp.sh python -m unittest tests.test_sim.test_inspire_urdf_grounding -v
+```
+
+Entries in §3 marked **🛡️** are inside this safety net. Drift hotspots in §4 are individually annotated **Monitored** / **Open** depending on whether the test catches them today.
+
+Incidentally fixed during the grounding pass: deprecated `effort_limit` / `velocity_limit` fields on `ImplicitActuatorCfg` in [`robot_config.py`](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) (waist + hands groups). `effort_limit` renamed to `effort_limit_sim`; `velocity_limit` deleted as it was silently ignored on implicit actuators. No behavior change.
+
+---
+
 ## 2. Naming conventions
 
 Three naming conventions coexist. Each is fixed by an external interface and **cannot be unified**.
@@ -64,24 +86,25 @@ Side-prefix bridge: `left_*` ↔ `L_*`, `right_*` ↔ `R_*`. The thumb segment n
 
 ## 3. Inventory of orderings
 
-Health legend: ✅ = derived in code from the anchor or another canonical · ⚠️ = re-authored (could drift; should later become a derivation) · 🔁 = duplicates another constant in the codebase.
+Health legend: ✅ = derived in code from the anchor or another canonical · ⚠️ = re-authored (could drift; should later become a derivation) · 🔁 = duplicates another constant in the codebase · **🛡️ = test-pinned** by `test_inspire_urdf_grounding.py` (regression-net coverage; see §1.5).
 
 ### L0 — Anchor and immediate derivations
 
 | Constant | File:line | Shape | Source / derivation | Health |
 |---|---|---|---|---|
-| `joint_names` | [env_cfg.py:53](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L53) | 53 (URDF) | The anchor — hand-authored, must match USD tree-traversal order. | (anchor) |
-| `_MIMIC_JOINT_NAMES` | [env_cfg.py:124](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L124) | 12 (URDF) | Set of 12 mimic joint names; could be derived as `set(joint_names) ∩ {*_2_joint excluding thumb_2, *_thumb_3_joint, *_thumb_4_joint}`. | ⚠️ |
-| `actuated_joint_names` | [env_cfg.py:139](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L139) | 41 (URDF) | `[n for n in joint_names if n not in _MIMIC_JOINT_NAMES]`. | ✅ |
+| `joint_names` | [env_cfg.py:53](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L53) | 53 (URDF) | The anchor — hand-authored, must match USD tree-traversal order. | (anchor) 🛡️ |
+| `_MIMIC_JOINT_NAMES` | [env_cfg.py:124](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L124) | 12 (URDF) | Set of 12 mimic joint names; could be derived as `set(joint_names) ∩ {*_2_joint excluding thumb_2, *_thumb_3_joint, *_thumb_4_joint}`. | ⚠️ 🛡️ |
+| `actuated_joint_names` | [env_cfg.py:139](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L139) | 41 (URDF) | `[n for n in joint_names if n not in _MIMIC_JOINT_NAMES]`. | ✅ 🛡️ (transitively, via the two above) |
 | `offset_dict` | [env_cfg.py:112](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L112) | 2 entries | Hand-authored: both elbows at `−0.3`. Cancels the `+0.3` baked into parquet `action`. See [`pipeline_contracts.md`](pipeline_contracts.md) elbow-chain section. | (load-bearing constant) |
+| Actuator regex patterns | [robot_config.py:109-221](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L109-L221) | 5 groups × 1-7 patterns each | `joint_names_expr` lists inside `G129_CFG_WITH_INSPIRE_BASE_FIX.actuators`. Every articulated joint must match exactly one (group, pattern); no dead patterns. | ⚠️ 🛡️ |
 
 ### L1 — Mimic chain
 
 | Constant | File:line | Shape | Source / derivation | Health |
 |---|---|---|---|---|
-| `_MIMIC_RULES_PER_SIDE` | [mimic_action.py:42](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py#L42-L51) | 6 (parent → mimic, mult) | Hand-authored. **Order is load-bearing**: `thumb_3` must precede `thumb_4` because `thumb_4`'s parent is itself a mimic. | (load-bearing constant) |
-| `MIMIC_RULES` | [mimic_action.py:54](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py#L54-L57) | 12 | Expansion of `_MIMIC_RULES_PER_SIDE` over `("left", "right")`. | ✅ |
-| Multipliers (`1.0843`, `0.8024`, `0.9487`) | mimic_action.py:42-50 | inline | Per the Inspire FTP URDF `<mimic>` tags. | (URDF-fixed constant) |
+| `_MIMIC_RULES_PER_SIDE` | [mimic_action.py:42](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py#L42-L51) | 6 (parent → mimic, mult) | Hand-authored. **Order is load-bearing**: `thumb_3` must precede `thumb_4` because `thumb_4`'s parent is itself a mimic. | (load-bearing constant) 🛡️ (via `MIMIC_RULES`) |
+| `MIMIC_RULES` | [mimic_action.py:54](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/mimic_action.py#L54-L57) | 12 | Expansion of `_MIMIC_RULES_PER_SIDE` over `("left", "right")`. | ✅ 🛡️ |
+| Multipliers (`1.0843`, `0.8024`, `0.9487`) | mimic_action.py:42-50 | inline | Per the Inspire FTP URDF `<mimic>` tags. | (URDF-fixed constant) 🛡️ |
 
 ### L1 — Observation canonical
 
@@ -160,6 +183,7 @@ These are the constants that *encode the same fact* as another constant in the c
 **Duplicate:** `RECORDED_ACTION_53_JOINT_NAMES` (inspire_lerobot_fields.py, body in URDF + hand in Nucleus) is a parallel hand-authored copy.
 **Derivation rule:** `tuple(n if i < 29 else _URDF_TO_NUCLEUS[n] for i, n in enumerate(joint_names))`.
 **Failure mode if desynced:** `ACTION_HDF5_TO_ENV_26` (and friends) compute index lookups against the duplicate; if its 53-entry order drifts from the env's, the converter routes recorded actions to the wrong joints. Symptom: the policy trains on cleanly-converted parquet, but the converted parquet is wrong. Hard to detect without a roundtrip test (parquet → 41-D scatter → compare to recorded).
+**Status:** **Open.** Foundation (`joint_names` + `_URDF_TO_NUCLEUS`) is now test-pinned, so a derivation-equality check is straightforward to add.
 
 ### 4.2 `_MIMIC_JOINT_NAMES_NUCLEUS` ↔ `_MIMIC_JOINT_NAMES`
 
@@ -167,6 +191,7 @@ These are the constants that *encode the same fact* as another constant in the c
 **Duplicate:** `_MIMIC_JOINT_NAMES_NUCLEUS` (inspire_lerobot_fields.py) — used to build `RECORDED_ACTION_41_JOINT_NAMES`.
 **Derivation rule:** `{_URDF_TO_NUCLEUS[n] for n in _MIMIC_JOINT_NAMES}`.
 **Failure mode if desynced:** the 53-D → 41-D filter on the data side excludes a different mimic set than the env action manager uses, so the recorded-action conversion writes to (or skips) the wrong joints. Same silent corruption mode as 4.1.
+**Status:** **Open.** `_MIMIC_JOINT_NAMES` is now test-pinned; one extra assertion against `_URDF_TO_NUCLEUS` closes this.
 
 ### 4.3 `_BODY_JOINT_NAMES_CANONICAL` ↔ `joint_names[:29]`
 
@@ -174,12 +199,14 @@ These are the constants that *encode the same fact* as another constant in the c
 **Relationship:** `_BODY_JOINT_NAMES_CANONICAL` is a **deliberate reorder spec**, not a duplicate. It must be the exact same *set* as `joint_names[:29]`, just permuted.
 **Derivation rule:** `set(_BODY_JOINT_NAMES_CANONICAL) == set(joint_names[:29])` is the invariant; the order is a hand-authored design choice (and load-bearing for downstream slicing).
 **Failure mode if desynced:** if a body joint is added/removed in the USD but the canonical-order list isn't updated, observation extraction silently produces zeros (or raises — the `_resolve_indices` lookup falls through to `KeyError`). Less silent than 4.1/4.2 but worth a set-equality test.
+**Status:** **Open.** `joint_names` is now test-pinned; a `set` equality check is one assertion away.
 
 ### 4.4 `_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`
 
 **Truth:** these are the same 12 actuated hand joints, in the same canonical order. `_INSPIRE_ACTUATED_NAMES` uses URDF; `STATE_26_NAMES_ENV_ORDER[14:26]` uses Nucleus.
 **Derivation rule:** `[_URDF_TO_NUCLEUS[n] for n in _INSPIRE_ACTUATED_NAMES] == STATE_26_NAMES_ENV_ORDER[14:26]`.
 **Failure mode if desynced:** the 12-D hand observation would slice to a different per-finger order than the LeRobot 26-D state, so observations and actions disagree about which dim is "left index" vs "left middle." Symptom at training: nontrivially-mistrained policy that fails on the same fingers it was trained on. This is exactly the class of bug the user has flagged historically.
+**Status:** **Open.** Highest-priority hotspot to ground next — directly maps to a historical bug class.
 
 ### 4.5 `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` ↔ side-prefix partition of `HAND_JOINT_NAMES`
 
@@ -187,6 +214,7 @@ These are the constants that *encode the same fact* as another constant in the c
 **Duplicate:** `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` are hand-authored partitions.
 **Derivation rule:** `_LEFT_HAND_38D_IDX = [14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]`; symmetric for right.
 **Failure mode if desynced:** single-arm teleop masking writes to the wrong hand or skips fingers — the bug class the user explicitly mentioned. Adding a hand joint to the USD without updating the partition would silently misroute teleop commands.
+**Status:** **Open.** `HAND_JOINT_NAMES` is `joint_names[29:]` (transitively pinned); the side-prefix derivation is a few lines of test code.
 
 ### 4.6 `GROUP_SIM_INDICES` ↔ `actuated_joint_names` lookup per canonical group order
 
@@ -194,6 +222,7 @@ These are the constants that *encode the same fact* as another constant in the c
 **Duplicate:** `GROUP_SIM_INDICES` is a hand-authored 4-list table giving the 41-D action index for each canonical-group entry.
 **Derivation rule:** for each group, `[actuated_joint_names.index(j) for j in canonical_group_order(group)]`.
 **Failure mode if desynced:** the policy's 26-D output scatters to the wrong 41-D positions — exactly the pinky/middle bug captured in [`scatter_indices.md`](scatter_indices.md) (April 2026). The current `GROUP_SIM_INDICES` values are runtime-verified; the hazard is future drift, e.g. someone reorders `actuated_joint_names` (via a USD or filter change) without re-verifying the scatter.
+**Status:** **Open.** `actuated_joint_names` is now test-pinned, so the index-lookup derivation is well-defined and a regression test would be tractable.
 
 ### 4.7 Asset-side hazards — converter / inspector point at the wrong USD
 
@@ -237,19 +266,23 @@ Three things look like duplication but are deliberate. Leave them alone.
 
 ## 6. Implications for tests
 
-The Inspire-task tests planned for after this audit will be **derivation checks** — given the anchor (`joint_names`) and the bridge (`_URDF_TO_NUCLEUS`), do the duplicated constants in §4 still encode the same fact? Examples:
+**Landed (2026-04-28):** [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) pins the L0 + L1 anchor layer — joint name set, joint count, articulation order, mimic relationships and multipliers, actuator regex partition. Six tests, runs inside Docker (~10s for Kit boot, ~2s for the asserts).
+
+**Next — L2/L3 derivation checks for the §4 hotspots.** They follow the same pattern: given the now-test-pinned foundation (`joint_names`, `_MIMIC_JOINT_NAMES`, `MIMIC_RULES`, `_URDF_TO_NUCLEUS`), do the higher-layer constants encode the same fact? Examples:
 
 - `set(_MIMIC_JOINT_NAMES_NUCLEUS) == {_URDF_TO_NUCLEUS[n] for n in _MIMIC_JOINT_NAMES}` (4.2)
 - `_LEFT_HAND_38D_IDX == [14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]` (4.5)
 - `set(_BODY_JOINT_NAMES_CANONICAL) == set(joint_names[:29])` and `len == 29` (4.3)
 
-These tests pin the contracts cheaply (no IsaacLab boot — just module imports). They cannot be authored cleanly *until* this doc declares which side of each pair is the truth, because otherwise you'd just be asserting two re-authored constants agree, and the test would be as fragile as the constants. That's why the audit is a prerequisite to the test pass, not the other way around.
+Each is a few lines of test code. **They are now safe to author** because the foundation they'd build on top of is already pinned — any regression in that foundation will fail loudly via the existing test before propagating to the higher-layer checks. Without that, every higher-level test would have to re-verify the foundation, making the test surface fragile.
+
+Hotspot 4.4 (`_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`) is the highest-priority next target — directly maps to the historical "fingers crossed" bug class.
 
 ---
 
 ## 7. Implications for refactor
 
-The follow-up refactor (separate plan, separate PR) replaces every ⚠️ / 🔁 entry in §3 with a code-derivation, computed at module load. **Behavior must not change** — the eval smoketest (`./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py --test`) and a parquet round-trip on a known-good HDF5 are the canaries. Hand-authored constants that *should* survive: `joint_names` (anchor), `_BODY_JOINT_NAMES_CANONICAL` (deliberate reorder, see §5), `_URDF_TO_NUCLEUS` (bridge), `_MIMIC_RULES_PER_SIDE` (semantic content), `offset_dict` (load-bearing magnitudes), the canonical group-order specs, multipliers from the URDF.
+The follow-up refactor (separate plan, separate PR) replaces every ⚠️ / 🔁 entry in §3 with a code-derivation, computed at module load. **Behavior must not change** — the eval smoketest (`./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py --test`), the **grounding test** (`test_inspire_urdf_grounding`), and a parquet round-trip on a known-good HDF5 are the canaries. The grounding test is the most informative of the three: any L0/L1 regression introduced by the refactor fails loudly with a localized message, instead of surfacing as silent data corruption later in the pipeline. Hand-authored constants that *should* survive: `joint_names` (anchor), `_BODY_JOINT_NAMES_CANONICAL` (deliberate reorder, see §5), `_URDF_TO_NUCLEUS` (bridge), `_MIMIC_RULES_PER_SIDE` (semantic content), `offset_dict` (load-bearing magnitudes), the canonical group-order specs, multipliers from the URDF.
 
 Concretely, the refactor would:
 
@@ -265,10 +298,11 @@ After the refactor, the §6 derivation tests become trivial (most asserting comp
 
 ## 8. Cross-links
 
+- [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) — the regression net for L0/L1 (this doc's §1.5).
 - [`pipeline_contracts.md`](pipeline_contracts.md) — pipeline by layer; this doc deepens its Layer 1 + Layer 2 coverage of joint plumbing.
 - [`scatter_indices.md`](scatter_indices.md) — runtime audit of `GROUP_SIM_INDICES` (the pinky/middle bug history).
 - [`task_reference.md`](task_reference.md) — gym IDs, action / obs spaces.
 - [`elbow_offset.md`](elbow_offset.md) — the `+0.3` / `−0.3` offset chain.
 - [`debug_policy.md`](debug_policy.md) — eval-time diagnostic playbook.
-- [`scripts/utils/inspire/inspect_inspire_joints.py`](../../scripts/utils/inspire/inspect_inspire_joints.py) — verify `joint_names` against the current USD.
+- [`scripts/utils/inspire/inspect_inspire_joints.py`](../../scripts/utils/inspire/inspect_inspire_joints.py) — one-off introspection of the active USD (bootstrap / deep debug; complements the test, not a replacement).
 - [`scripts/utils/inspire/verify_scatter_indices.py`](../../scripts/utils/inspire/verify_scatter_indices.py) — verify `GROUP_SIM_INDICES` against the running env.

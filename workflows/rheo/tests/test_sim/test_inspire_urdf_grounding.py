@@ -3,10 +3,14 @@
 
 """Joint-space grounding test — Layer 1 (URDF spec ↔ code) + Layer 2 (USD ↔ code).
 
-Layer 1 (5 checks): parses the active Inspire FTP URDF as XML and asserts that
-the joint-space constants in env_cfg, mimic_action, and robot_config agree with
-it. Catches drift in joint names, mimic relationships, multipliers, and
-actuator regex coverage. Pure Python apart from the constants imports.
+Layer 1 (9 checks): parses the active Inspire FTP URDF as XML and asserts that
+the joint-space constants in env_cfg, mimic_action, robot_config, and the
+teleop env_cfg agree with it. Catches drift in:
+  - Joint count, name set, mimic set
+  - Mimic relationship triples (parent / multiplier / offset==0)
+  - Actuator regex coverage in robot_config
+  - URDF ↔ Nucleus bridge (`_URDF_TO_NUCLEUS`): domain, bijection, finger / side consistency
+  - PinkIK ``pink_controlled_joint_names`` regex coverage of the 14 arm joints
 
 Layer 2 (1 check): spawns the articulation via `G129_CFG_WITH_INSPIRE_BASE_FIX`
 and asserts `articulation.data.joint_names` matches `env_cfg.joint_names`
@@ -46,6 +50,11 @@ from simulation.tasks.grasp_policy_inspire.config.robot_config import (  # noqa:
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (  # noqa: E402
     _MIMIC_JOINT_NAMES,
     joint_names as ENV_CFG_JOINT_NAMES,
+)
+from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
+    HAND_JOINT_NAMES,
+    TeleopActionsCfg,
+    _URDF_TO_NUCLEUS,
 )
 from simulation.tasks.grasp_policy_inspire.mdp.mimic_action import MIMIC_RULES  # noqa: E402
 
@@ -96,6 +105,13 @@ def _parse_urdf():
 # Parse once at module load — every Layer 1 method reads from these.
 _ARTICULATED, _MIMIC_TRIPLES, _ALL_JOINTS = _parse_urdf()
 
+# PinkIK arm-joint regex patterns, sourced from the active TeleopActionsCfg
+# default. Reading them at module load means a future refactor of the patterns
+# is automatically picked up by the partition test.
+_PINK_CONTROLLED_PATTERNS: list[str] = list(
+    TeleopActionsCfg().pink_ik_cfg.pink_controlled_joint_names
+)
+
 
 # ---------------------------------------------------------------------------
 # Layer 2 scaffolding — minimal scene that spawns just the robot articulation.
@@ -122,7 +138,7 @@ class _GroundingSceneCfg(InteractiveSceneCfg):
 
 
 class InspireGroundingTests(unittest.TestCase):
-    """Five Layer-1 checks (URDF → code) + one Layer-2 check (USD → code)."""
+    """Nine Layer-1 checks (URDF → code) + one Layer-2 check (USD → code)."""
 
     # Set in setUpClass after the articulation has been spawned + initialized.
     _ARTICULATION_JOINT_NAMES: list[str] = []
@@ -257,7 +273,156 @@ class InspireGroundingTests(unittest.TestCase):
             f"Actuator patterns matched zero joints (dead patterns): {dead}",
         )
 
-    # -- Layer 2: 6. Articulation order matches env_cfg.joint_names list-wise -
+    # -- Layer 1: 6. URDF → Nucleus domain coverage --------------------------
+
+    def test_urdf_to_nucleus_domain_coverage(self):
+        """Every URDF hand joint has a Nucleus mapping; no orphan keys.
+
+        ``_URDF_TO_NUCLEUS`` is the bridge dict that every Nucleus-named
+        constant downstream is supposed to derive *through*. If its key set
+        drifts from ``HAND_JOINT_NAMES`` (e.g. a hand joint is added or
+        renamed), downstream Nucleus translations silently produce
+        wrong / missing entries.
+        """
+        urdf_keys = set(_URDF_TO_NUCLEUS.keys())
+        hand_set = set(HAND_JOINT_NAMES)
+        only_in_hand = hand_set - urdf_keys
+        only_in_map = urdf_keys - hand_set
+        self.assertEqual(
+            urdf_keys, hand_set,
+            f"_URDF_TO_NUCLEUS domain disagrees with HAND_JOINT_NAMES.\n"
+            f"  Hand joints missing from mapping: {sorted(only_in_hand)}\n"
+            f"  Mapping keys not a hand joint: {sorted(only_in_map)}"
+        )
+
+    # -- Layer 1: 7. URDF → Nucleus bijection --------------------------------
+
+    def test_urdf_to_nucleus_bijective(self):
+        """No two URDF hand joints map to the same Nucleus name."""
+        values = list(_URDF_TO_NUCLEUS.values())
+        seen: dict[str, str] = {}
+        duplicates: list[tuple[str, str]] = []
+        for urdf_name, nucleus_name in _URDF_TO_NUCLEUS.items():
+            if nucleus_name in seen:
+                duplicates.append((seen[nucleus_name], urdf_name))
+            else:
+                seen[nucleus_name] = urdf_name
+        self.assertEqual(
+            len(set(values)), len(values),
+            f"_URDF_TO_NUCLEUS is not bijective; duplicate Nucleus values:\n"
+            f"  {duplicates}\n"
+            f"Two URDF joints mapping to the same Nucleus name corrupts the "
+            f"retargeter output."
+        )
+
+    # -- Layer 1: 8. URDF → Nucleus per-finger consistency -------------------
+
+    def test_urdf_to_nucleus_finger_consistency(self):
+        """Side prefix and finger token agree between URDF and Nucleus naming.
+
+        Catches the ``finger-mix-up`` bug class — an authoring error that pairs
+        e.g. ``left_index_1_joint`` with ``L_pinky_proximal_joint``. The dict
+        is the single source of truth for the bridge, so this self-consistency
+        check is the only way to catch a typo or a copy-paste shift.
+        """
+        # URDF prefix → Nucleus prefix.
+        side_map = {"left_": "L_", "right_": "R_"}
+        # URDF finger token → Nucleus finger token. Note the only rename:
+        # URDF's ``little`` is Nucleus's ``pinky``.
+        finger_map = {
+            "_index_": "_index_",
+            "_middle_": "_middle_",
+            "_ring_": "_ring_",
+            "_little_": "_pinky_",
+            "_thumb_": "_thumb_",
+        }
+        for urdf_name, nucleus_name in _URDF_TO_NUCLEUS.items():
+            with self.subTest(urdf=urdf_name):
+                # Side prefix must match.
+                u_side = next(
+                    (u_pref for u_pref in side_map if urdf_name.startswith(u_pref)),
+                    None,
+                )
+                self.assertIsNotNone(
+                    u_side,
+                    f"URDF name {urdf_name!r} has unrecognized side prefix "
+                    f"(expected one of {sorted(side_map.keys())})."
+                )
+                self.assertTrue(
+                    nucleus_name.startswith(side_map[u_side]),
+                    f"{urdf_name!r} starts with {u_side!r} but "
+                    f"Nucleus name {nucleus_name!r} does not start with "
+                    f"{side_map[u_side]!r}."
+                )
+                # Finger token must match (URDF's ``little`` ↔ Nucleus's ``pinky``).
+                u_finger = next(
+                    (u_tok for u_tok in finger_map if u_tok in urdf_name),
+                    None,
+                )
+                self.assertIsNotNone(
+                    u_finger,
+                    f"URDF name {urdf_name!r} has unrecognized finger token "
+                    f"(expected one of {sorted(finger_map.keys())})."
+                )
+                self.assertIn(
+                    finger_map[u_finger], nucleus_name,
+                    f"URDF {urdf_name!r} contains {u_finger!r} but Nucleus "
+                    f"{nucleus_name!r} does not contain {finger_map[u_finger]!r}. "
+                    f"This is the finger-mix-up bug class."
+                )
+
+    # -- Layer 1: 9. PinkIK arm-joint regex partition ------------------------
+
+    def test_pink_ik_arm_joint_partition(self):
+        """PinkIK ``pink_controlled_joint_names`` matches exactly the 14 arm joints.
+
+        Defends against:
+          - Pattern misses an arm joint → PinkIK doesn't solve for it → DOF freezes
+          - Pattern matches a non-arm joint → PinkIK tries to solve over an unrelated joint
+          - Dead pattern (matches zero joints) → typo or stale config
+        """
+        expected_arm_joints = {
+            "left_shoulder_pitch_joint", "left_shoulder_roll_joint",
+            "left_shoulder_yaw_joint", "left_elbow_joint",
+            "left_wrist_yaw_joint", "left_wrist_roll_joint", "left_wrist_pitch_joint",
+            "right_shoulder_pitch_joint", "right_shoulder_roll_joint",
+            "right_shoulder_yaw_joint", "right_elbow_joint",
+            "right_wrist_yaw_joint", "right_wrist_roll_joint", "right_wrist_pitch_joint",
+        }
+        # Sanity: the expected 14 arm joints exist in the URDF.
+        missing_from_urdf = expected_arm_joints - set(_ARTICULATED)
+        self.assertEqual(
+            missing_from_urdf, set(),
+            f"Expected arm joints not present in URDF: {sorted(missing_from_urdf)}"
+        )
+
+        pattern_hits: dict[str, int] = {p: 0 for p in _PINK_CONTROLLED_PATTERNS}
+        for joint in _ARTICULATED:
+            matches = [p for p in _PINK_CONTROLLED_PATTERNS if re.fullmatch(p, joint)]
+            for p in matches:
+                pattern_hits[p] += 1
+            is_arm = joint in expected_arm_joints
+            with self.subTest(joint=joint):
+                if is_arm:
+                    self.assertEqual(
+                        len(matches), 1,
+                        f"Arm joint {joint!r} matched {len(matches)} pink patterns "
+                        f"(expected exactly 1): {matches}"
+                    )
+                else:
+                    self.assertEqual(
+                        len(matches), 0,
+                        f"Non-arm joint {joint!r} unexpectedly matched pink "
+                        f"patterns: {matches}"
+                    )
+
+        dead = [p for p, c in pattern_hits.items() if c == 0]
+        self.assertEqual(
+            dead, [],
+            f"PinkIK patterns matched zero joints (dead patterns): {dead}",
+        )
+
+    # -- Layer 2: 10. Articulation order matches env_cfg.joint_names list-wise
 
     def test_articulation_order_matches_env_cfg(self):
         """USD articulation order matches env_cfg.joint_names list-wise.
