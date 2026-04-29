@@ -3,25 +3,26 @@
 
 """Joint-space grounding test — Layer 1 (URDF spec ↔ code), Layer 2 (USD ↔ code), Layer 3 (runtime behavior).
 
-Layer 1 (9 checks): parses the active Inspire FTP URDF as XML and asserts that
-the joint-space constants in env_cfg, mimic_action, robot_config, and the
-teleop env_cfg agree with it. Catches drift in:
+Layer 1 (13 checks): parses the active Inspire FTP URDF as XML and asserts that
+the joint-space constants in env_cfg, mimic_action, robot_config, the teleop
+env_cfg, and the canonical observation lists agree with it. Catches drift in:
   - Joint count, name set, mimic set
   - Mimic relationship triples (parent / multiplier / offset==0)
   - Actuator regex coverage in robot_config
   - URDF ↔ Nucleus bridge (`_URDF_TO_NUCLEUS`): domain, bijection, finger / side consistency
   - PinkIK ``pink_controlled_joint_names`` regex coverage of the 14 arm joints
+  - ``_BODY_JOINT_NAMES_CANONICAL`` set + arm slice contract ([15:22] left, [22:29] right)
+  - ``_INSPIRE_ACTUATED_NAMES`` set + hand slice contract ([0:6] left, [6:12] right)
 
-Layer 2 (1 check): asserts the loaded USD's articulation order matches
-``env_cfg.joint_names`` list-wise. URDF XML order is an arbitrary authoring
-artifact; USD articulation order is determined by the converter's tree
-traversal. This is the order-sensitive check Layer 1 explicitly cannot do.
+Layer 2 (3 checks): order-sensitive checks against the loaded USD articulation:
+  - env_cfg ``joint_names`` matches articulation list-wise.
+  - ``_resolve_indices`` produces correct articulation indices for body canonical names.
+  - ``_resolve_indices`` produces correct articulation indices for hand canonical names.
 
-Layer 3 (1 check): runtime behavioral check that
-``InspireJointPositionAction.apply_actions()`` drives mimic joints to
-``multiplier × parent`` after a real ``env.step``. Catches:
-  - Refactor regressions in apply_actions ordering (super before mimic computation)
-  - Future PhysX behavior changes that silently enable native mimic constraint enforcement
+Layer 3 (3 checks): runtime behavioral checks via ``env.step`` / obs functions:
+  - ``InspireJointPositionAction.apply_actions()`` drives mimic to multiplier × parent.
+  - ``get_robot_body_joint_states`` output matches ``DEFAULT_JOINT_POS`` at canonical slots.
+  - ``get_robot_inspire_joint_states`` output is all zeros at default pose.
 
 Boots IsaacLab Kit at module load (~10s) and constructs the Joint-Eval gym
 env (~10s). Run inside Docker:
@@ -50,6 +51,10 @@ from pathlib import Path  # noqa: E402
 import gymnasium as gym  # noqa: E402
 import torch  # noqa: E402
 
+# isaaclab_tasks.utils.parse_cfg.parse_env_cfg resolves the env_cfg_entry_point
+# registered with the gym ID into an actual cfg instance.
+from isaaclab_tasks.utils.parse_cfg import parse_env_cfg  # noqa: E402
+
 # Project imports — must come AFTER AppLauncher.
 # Importing the package triggers gym.register(...) for the Inspire-* gym IDs,
 # which the Layer 2 + Layer 3 tests need via gym.make.
@@ -69,6 +74,13 @@ from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cf
     _URDF_TO_NUCLEUS,
 )
 from simulation.tasks.grasp_policy_inspire.mdp.mimic_action import MIMIC_RULES  # noqa: E402
+from simulation.tasks.grasp_policy_inspire.mdp.observations import (  # noqa: E402
+    _BODY_JOINT_NAMES_CANONICAL,
+    _INSPIRE_ACTUATED_NAMES,
+    _resolve_indices,
+    get_robot_body_joint_states,
+    get_robot_inspire_joint_states,
+)
 
 # The active URDF — the wrist_cam variant, matching what robot_config.py loads.
 _URDF_PATH = (
@@ -145,7 +157,7 @@ _MIMIC_TOL_RAD = 0.05
 
 
 class InspireGroundingTests(unittest.TestCase):
-    """Nine Layer-1 checks (URDF → code) + one Layer-2 + one Layer-3."""
+    """Thirteen Layer-1 checks (URDF → code) + three Layer-2 + three Layer-3."""
 
     # Set in setUpClass after the env is built.
     _env: gym.Env = None
@@ -157,9 +169,12 @@ class InspireGroundingTests(unittest.TestCase):
         """gym.make the Joint-Eval env once and capture the articulation."""
         # Joint-Eval is the deterministic variant — reset noise is zeroed,
         # so the steady-state pose under a given action is reproducible.
-        cls._env = gym.make(
-            "Isaac-Grasp-Policy-G129-Inspire-Joint-Eval", num_envs=1
-        )
+        # Pattern mirrors eval_act_inspire.py: parse_env_cfg → gym.make(cfg=...)
+        # because IsaacLab's ManagerBasedRLEnv expects ``cfg`` positionally,
+        # not the registered ``env_cfg_entry_point`` class.
+        task_id = "Isaac-Grasp-Policy-G129-Inspire-Joint-Eval"
+        env_cfg = parse_env_cfg(task_id, device="cuda:0", num_envs=1)
+        cls._env = gym.make(task_id, cfg=env_cfg)
         cls._env.reset()
         cls._robot = cls._env.unwrapped.scene["robot"]
         cls._ARTICULATION_JOINT_NAMES = list(cls._robot.data.joint_names)
@@ -439,6 +454,244 @@ class InspireGroundingTests(unittest.TestCase):
             dead, [],
             f"PinkIK patterns matched zero joints (dead patterns): {dead}",
         )
+
+    # -- Layer 1: 10. Body canonical set matches URDF body joints ------------
+
+    def test_body_canonical_set_matches(self):
+        """``_BODY_JOINT_NAMES_CANONICAL`` covers exactly the 29 URDF body joints.
+
+        Set equality only — order is the slice contract test's job.
+        ``_BODY_JOINT_NAMES_CANONICAL`` is intentionally a *different order*
+        from ``joint_names[:29]`` (interleaved by body part for slice
+        stability) but must contain the same SET.
+        """
+        body_urdf = set(ENV_CFG_JOINT_NAMES[:29])
+        body_canonical = set(_BODY_JOINT_NAMES_CANONICAL)
+        only_in_urdf = body_urdf - body_canonical
+        only_in_canonical = body_canonical - body_urdf
+        self.assertEqual(
+            body_canonical, body_urdf,
+            f"_BODY_JOINT_NAMES_CANONICAL set disagrees with URDF body joints.\n"
+            f"  In URDF body, missing from canonical: {sorted(only_in_urdf)}\n"
+            f"  In canonical, missing from URDF body: {sorted(only_in_canonical)}"
+        )
+        self.assertEqual(
+            len(_BODY_JOINT_NAMES_CANONICAL), 29,
+            f"_BODY_JOINT_NAMES_CANONICAL has {len(_BODY_JOINT_NAMES_CANONICAL)} entries, "
+            f"expected 29."
+        )
+        self.assertEqual(
+            len(set(_BODY_JOINT_NAMES_CANONICAL)), len(_BODY_JOINT_NAMES_CANONICAL),
+            "_BODY_JOINT_NAMES_CANONICAL contains duplicate names."
+        )
+
+    # -- Layer 1: 11. Body canonical arm slice contract ----------------------
+
+    def test_body_canonical_arm_slice_contract(self):
+        """Slice [15:22] is left arm in canonical order; [22:29] is right arm.
+
+        Downstream consumers (``STATE_26_BODY_COL_LEFT_ARM = range(15, 22)``
+        in ``inspire_lerobot_fields.py``) hardcode these slice positions.
+        Reordering ``_BODY_JOINT_NAMES_CANONICAL`` silently breaks every
+        LeRobot conversion that follows — set equality alone won't catch it.
+        """
+        expected_left_arm = [
+            "left_shoulder_pitch_joint",
+            "left_shoulder_roll_joint",
+            "left_shoulder_yaw_joint",
+            "left_elbow_joint",
+            "left_wrist_roll_joint",
+            "left_wrist_pitch_joint",
+            "left_wrist_yaw_joint",
+        ]
+        expected_right_arm = [
+            "right_shoulder_pitch_joint",
+            "right_shoulder_roll_joint",
+            "right_shoulder_yaw_joint",
+            "right_elbow_joint",
+            "right_wrist_roll_joint",
+            "right_wrist_pitch_joint",
+            "right_wrist_yaw_joint",
+        ]
+        self.assertEqual(
+            _BODY_JOINT_NAMES_CANONICAL[15:22], expected_left_arm,
+            "Canonical[15:22] should be left arm in canonical order."
+        )
+        self.assertEqual(
+            _BODY_JOINT_NAMES_CANONICAL[22:29], expected_right_arm,
+            "Canonical[22:29] should be right arm in canonical order."
+        )
+
+    # -- Layer 1: 12. Inspire actuated set matches URDF actuated hand --------
+
+    def test_inspire_actuated_set_matches(self):
+        """``_INSPIRE_ACTUATED_NAMES`` covers exactly the 12 URDF actuated hand joints.
+
+        Set equality + length + 6/6 left-right balance.
+        """
+        urdf_actuated_hand = set(ENV_CFG_JOINT_NAMES[29:]) - _MIMIC_JOINT_NAMES
+        canonical_actuated = set(_INSPIRE_ACTUATED_NAMES)
+        only_in_urdf = urdf_actuated_hand - canonical_actuated
+        only_in_canonical = canonical_actuated - urdf_actuated_hand
+        self.assertEqual(
+            canonical_actuated, urdf_actuated_hand,
+            f"_INSPIRE_ACTUATED_NAMES set disagrees with URDF actuated hand joints.\n"
+            f"  In URDF actuated, missing from canonical: {sorted(only_in_urdf)}\n"
+            f"  In canonical, missing from URDF actuated: {sorted(only_in_canonical)}"
+        )
+        self.assertEqual(
+            len(_INSPIRE_ACTUATED_NAMES), 12,
+            f"_INSPIRE_ACTUATED_NAMES has {len(_INSPIRE_ACTUATED_NAMES)} entries, expected 12."
+        )
+        left_count = sum(1 for n in _INSPIRE_ACTUATED_NAMES if n.startswith("left_"))
+        right_count = sum(1 for n in _INSPIRE_ACTUATED_NAMES if n.startswith("right_"))
+        self.assertEqual(left_count, 6, f"Expected 6 left-hand entries, got {left_count}.")
+        self.assertEqual(right_count, 6, f"Expected 6 right-hand entries, got {right_count}.")
+
+    # -- Layer 1: 13. Inspire actuated hand slice contract -------------------
+
+    def test_inspire_actuated_hand_slice_contract(self):
+        """Slice [0:6] is left hand in canonical order; [6:12] is right hand.
+
+        Downstream consumers (``STATE_26_INSPIRE_COL_LEFT_HAND = range(0, 6)``
+        in ``inspire_lerobot_fields.py``) hardcode these slice positions.
+        Reordering ``_INSPIRE_ACTUATED_NAMES`` silently scrambles the
+        per-finger LeRobot mapping — exactly the historical "fingers crossed"
+        bug class.
+
+        Canonical hand order: thumb_yaw (=_1), thumb_pitch (=_2),
+        index_1, middle_1, ring_1, little_1.
+        """
+        expected_left_hand = [
+            "left_thumb_1_joint",
+            "left_thumb_2_joint",
+            "left_index_1_joint",
+            "left_middle_1_joint",
+            "left_ring_1_joint",
+            "left_little_1_joint",
+        ]
+        expected_right_hand = [
+            "right_thumb_1_joint",
+            "right_thumb_2_joint",
+            "right_index_1_joint",
+            "right_middle_1_joint",
+            "right_ring_1_joint",
+            "right_little_1_joint",
+        ]
+        self.assertEqual(
+            _INSPIRE_ACTUATED_NAMES[0:6], expected_left_hand,
+            "_INSPIRE_ACTUATED_NAMES[0:6] should be left hand in canonical order."
+        )
+        self.assertEqual(
+            _INSPIRE_ACTUATED_NAMES[6:12], expected_right_hand,
+            "_INSPIRE_ACTUATED_NAMES[6:12] should be right hand in canonical order."
+        )
+
+    # -- Layer 2: 12. Body canonical bridges to articulation correctly -------
+
+    def test_body_canonical_resolves_to_articulation(self):
+        """``_resolve_indices`` produces correct articulation indices for canonical body names.
+
+        Pins the bridge between the canonical (Ordering B) names and the
+        loaded USD's articulation positions (Ordering A). What the spec-only
+        checks (set equality, slice contract) cannot detect is the bridge
+        itself producing wrong indices for any reason — this test closes that.
+        """
+        art_names = self._ARTICULATION_JOINT_NAMES
+        expected = [art_names.index(n) for n in _BODY_JOINT_NAMES_CANONICAL]
+        actual = _resolve_indices(
+            art_names, _BODY_JOINT_NAMES_CANONICAL, torch.device("cpu")
+        ).tolist()
+        self.assertEqual(
+            actual, expected,
+            f"_resolve_indices produced wrong articulation indices for canonical body names.\n"
+            f"  expected: {expected}\n  actual:   {actual}"
+        )
+
+    # -- Layer 2: 13. Hand canonical bridges to articulation correctly -------
+
+    def test_inspire_actuated_resolves_to_articulation(self):
+        """``_resolve_indices`` produces correct articulation indices for canonical hand names."""
+        art_names = self._ARTICULATION_JOINT_NAMES
+        expected = [art_names.index(n) for n in _INSPIRE_ACTUATED_NAMES]
+        actual = _resolve_indices(
+            art_names, _INSPIRE_ACTUATED_NAMES, torch.device("cpu")
+        ).tolist()
+        self.assertEqual(
+            actual, expected,
+            f"_resolve_indices produced wrong articulation indices for canonical hand names.\n"
+            f"  expected: {expected}\n  actual:   {actual}"
+        )
+
+    # -- Layer 3: 11. Body obs layout at default pose ------------------------
+
+    def test_body_obs_layout_at_default_pose(self):
+        """``get_robot_body_joint_states`` output values at canonical slots
+        match ``DEFAULT_JOINT_POS``.
+
+        End-to-end test of the full chain: articulation → ``_resolve_indices``
+        → ``torch.gather`` → output. Catches bridge-level bugs that the
+        spec-only and bridge-only checks cannot detect (e.g. cache staleness,
+        wrong gather dim, batch handling regressions).
+        """
+        # Reset to ensure default joint positions — defensive against test ordering.
+        self._env.reset()
+        obs = get_robot_body_joint_states(self._env.unwrapped)
+        self.assertEqual(
+            tuple(obs.shape), (1, 87),
+            f"Body obs shape {tuple(obs.shape)} != expected (1, 87)."
+        )
+        pos_29 = obs[0, :29].cpu()
+
+        # Per DEFAULT_JOINT_POS in robot_config.py:
+        #   left/right shoulder_pitch = -0.5
+        #   left/right elbow         = -0.3
+        #   everything else (legs, waist, other arm joints) = 0.0
+        expected_at_canonical_idx = {
+            15: -0.5,  # left_shoulder_pitch_joint (start of left arm slice)
+            18: -0.3,  # left_elbow_joint
+            22: -0.5,  # right_shoulder_pitch_joint (start of right arm slice)
+            25: -0.3,  # right_elbow_joint
+            0:  0.0,   # left_hip_pitch_joint (a leg, default 0)
+            12: 0.0,   # waist_yaw_joint
+        }
+        for idx, expected_val in expected_at_canonical_idx.items():
+            with self.subTest(canonical_idx=idx, name=_BODY_JOINT_NAMES_CANONICAL[idx]):
+                self.assertAlmostEqual(
+                    pos_29[idx].item(), expected_val, places=3,
+                    msg=(
+                        f"Canonical pos[{idx}] ({_BODY_JOINT_NAMES_CANONICAL[idx]!r}) "
+                        f"= {pos_29[idx].item():.4f}, expected {expected_val:.4f}. "
+                        f"Likely cause: bridge reading from wrong articulation "
+                        f"position, or DEFAULT_JOINT_POS changed."
+                    )
+                )
+
+    # -- Layer 3: 12. Inspire hand obs layout at default pose ----------------
+
+    def test_inspire_obs_layout_at_default_pose(self):
+        """``get_robot_inspire_joint_states`` output is all zeros at default pose.
+
+        ``DEFAULT_JOINT_POS`` sets all hand joints to 0.0. End-to-end test
+        of the full chain for the 12-D hand obs.
+        """
+        # Reset to ensure default joint positions — defensive against test ordering.
+        self._env.reset()
+        obs = get_robot_inspire_joint_states(self._env.unwrapped)
+        self.assertEqual(
+            tuple(obs.shape), (1, 12),
+            f"Inspire obs shape {tuple(obs.shape)} != expected (1, 12)."
+        )
+        pos_12 = obs[0].cpu()
+        for idx in range(12):
+            with self.subTest(canonical_idx=idx, name=_INSPIRE_ACTUATED_NAMES[idx]):
+                self.assertAlmostEqual(
+                    pos_12[idx].item(), 0.0, places=3,
+                    msg=(
+                        f"Hand obs[{idx}] ({_INSPIRE_ACTUATED_NAMES[idx]!r}) "
+                        f"= {pos_12[idx].item():.4f}, expected 0.0 (default pose)."
+                    )
+                )
 
     # -- Layer 3: 10. Runtime mimic enforcement -----------------------------
 

@@ -39,11 +39,11 @@ The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic 
 
 ---
 
-## 1.5 Grounding status (2026-04-28)
+## 1.5 Grounding status (last updated 2026-04-29)
 
-The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the runtime action-class behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). The test runs inside Docker (boots Kit + constructs the Joint-Eval gym env, ~20s) and verifies, on every invocation:
+The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the canonical observation layer + the runtime action / obs behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). **19 tests, ~43s wall time** (~20s Kit boot, ~3s asserts, ~20s for the runtime mimic settle + obs resets), all green. Coverage on every invocation:
 
-**Layer 1 — URDF spec ↔ code (9 checks):**
+**Layer 1 — URDF spec ↔ code (13 checks):**
 
 - URDF has 53 articulated joints; env_cfg `joint_names` matches in count and name-set.
 - URDF's mimic children == `_MIMIC_JOINT_NAMES`.
@@ -51,14 +51,22 @@ The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the runtim
 - Every articulated joint matches exactly one actuator regex group in `G129_CFG_WITH_INSPIRE_BASE_FIX`; no dead patterns.
 - `_URDF_TO_NUCLEUS` covers the full `HAND_JOINT_NAMES` domain, is bijective, and maintains side / finger consistency (catches the *finger-mix-up* bug class — the historical motivator).
 - PinkIK `pink_controlled_joint_names` matches exactly the 14 arm joints.
+- `_BODY_JOINT_NAMES_CANONICAL` set equals URDF body joints; length 29; no dups.
+- `_BODY_JOINT_NAMES_CANONICAL[15:22]` is left arm in canonical order; `[22:29]` is right arm — *the slice contract* downstream consumers depend on.
+- `_INSPIRE_ACTUATED_NAMES` set equals URDF actuated hand joints; length 12; 6/6 left-right balance.
+- `_INSPIRE_ACTUATED_NAMES[0:6]` is left hand in canonical order; `[6:12]` is right hand.
 
-**Layer 2 — USD ↔ code (1 check):**
+**Layer 2 — USD ↔ code (3 checks):**
 
 - env_cfg `joint_names` matches the loaded USD's articulation list-wise — *the* order check Layer 1 explicitly cannot do.
+- `_resolve_indices` produces correct articulation indices for canonical body names.
+- `_resolve_indices` produces correct articulation indices for canonical hand names.
 
-**Layer 3 — runtime behavior (1 check):**
+**Layer 3 — runtime behavior (3 checks):**
 
-- `InspireJointPositionAction.apply_actions()` drives mimic joints to `multiplier × parent` after a real `env.step`. Catches refactor regressions in the action class (super()/mimic ordering), future PhysX changes that silently enable native mimic constraint enforcement, and bypass-write scenarios within the action class.
+- `InspireJointPositionAction.apply_actions()` drives mimic joints to `multiplier × parent` after a real `env.step`. Catches refactor regressions in the action class (super()/mimic ordering), future PhysX changes that silently enable native mimic constraint enforcement, and bypass-write scenarios.
+- `get_robot_body_joint_states` output values at canonical slots match `DEFAULT_JOINT_POS` (end-to-end body obs chain).
+- `get_robot_inspire_joint_states` output is all zeros at default pose (end-to-end hand obs chain).
 
 Run with:
 
@@ -66,7 +74,7 @@ Run with:
 ./docker/run_docker_grasp.sh python -m unittest tests.test_sim.test_inspire_urdf_grounding -v
 ```
 
-Entries in §3 marked **🛡️** are inside this safety net. Drift hotspots in §4 are individually annotated **Monitored** / **Open** depending on whether the test catches them today.
+Entries in §3 marked **🛡️** are inside this safety net. Drift hotspots in §4 are individually annotated **Monitored** / **Partially Monitored** / **Open** depending on whether the test catches them today.
 
 Incidentally fixed during the grounding pass: deprecated `effort_limit` / `velocity_limit` fields on `ImplicitActuatorCfg` in [`robot_config.py`](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py) (waist + hands groups). `effort_limit` renamed to `effort_limit_sim`; `velocity_limit` deleted as it was silently ignored on implicit actuators. No behavior change.
 
@@ -121,8 +129,8 @@ Health legend: ✅ = derived in code from the anchor or another canonical · ⚠
 
 | Constant | File:line | Shape | Source / derivation | Health |
 |---|---|---|---|---|
-| `_BODY_JOINT_NAMES_CANONICAL` | [observations.py:39](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L39-L69) | 29 (URDF) | Hand-authored body order **intentionally different from USD**. Interleaved L/R groups by body part (legs together, waist together, then arms), so arm joints land at fixed `[15:22]` (left) and `[22:29]` (right). | ⚠️ |
-| `_INSPIRE_ACTUATED_NAMES` | [observations.py:72](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85) | 12 (URDF) | Hand-authored 12-actuated-hand-joint order: `[L thumb_1, L thumb_2, L index_1, L middle_1, L ring_1, L little_1, R thumb_1 …]`. Same canonical hand order encoded in `STATE_26_NAMES_ENV_ORDER[14:26]` under Nucleus naming. | ⚠️ |
+| `_BODY_JOINT_NAMES_CANONICAL` | [observations.py:39](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L39-L69) | 29 (URDF) | Hand-authored body order **intentionally different from USD**. Interleaved L/R groups by body part (legs together, waist together, then arms), so arm joints land at fixed `[15:22]` (left) and `[22:29]` (right). | ⚠️ 🛡️ (set parity + slice contract + bridge + obs layout) |
+| `_INSPIRE_ACTUATED_NAMES` | [observations.py:72](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py#L72-L85) | 12 (URDF) | Hand-authored 12-actuated-hand-joint order: `[L thumb_1, L thumb_2, L index_1, L middle_1, L ring_1, L little_1, R thumb_1 …]`. Same canonical hand order encoded in `STATE_26_NAMES_ENV_ORDER[14:26]` under Nucleus naming. | ⚠️ 🛡️ (set parity + slice contract + bridge + obs layout) |
 
 ### L1 — Teleop retargeter
 
@@ -210,14 +218,14 @@ These are the constants that *encode the same fact* as another constant in the c
 **Relationship:** `_BODY_JOINT_NAMES_CANONICAL` is a **deliberate reorder spec**, not a duplicate. It must be the exact same *set* as `joint_names[:29]`, just permuted.
 **Derivation rule:** `set(_BODY_JOINT_NAMES_CANONICAL) == set(joint_names[:29])` is the invariant; the order is a hand-authored design choice (and load-bearing for downstream slicing).
 **Failure mode if desynced:** if a body joint is added/removed in the USD but the canonical-order list isn't updated, observation extraction silently produces zeros (or raises — the `_resolve_indices` lookup falls through to `KeyError`). Less silent than 4.1/4.2 but worth a set-equality test.
-**Status:** **Open.** `joint_names` is now test-pinned; a `set` equality check is one assertion away.
+**Status:** **Monitored** (2026-04-29). `test_body_canonical_set_matches` pins set parity + length 29 + no duplicates. `test_body_canonical_arm_slice_contract` additionally pins the slice positions (`[15:22]` left arm, `[22:29]` right arm) so a deliberate-reorder regression fails loudly. `test_body_canonical_resolves_to_articulation` and `test_body_obs_layout_at_default_pose` cover the bridge end-to-end.
 
 ### 4.4 `_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`
 
 **Truth:** these are the same 12 actuated hand joints, in the same canonical order. `_INSPIRE_ACTUATED_NAMES` uses URDF; `STATE_26_NAMES_ENV_ORDER[14:26]` uses Nucleus.
 **Derivation rule:** `[_URDF_TO_NUCLEUS[n] for n in _INSPIRE_ACTUATED_NAMES] == STATE_26_NAMES_ENV_ORDER[14:26]`.
 **Failure mode if desynced:** the 12-D hand observation would slice to a different per-finger order than the LeRobot 26-D state, so observations and actions disagree about which dim is "left index" vs "left middle." Symptom at training: nontrivially-mistrained policy that fails on the same fingers it was trained on. This is exactly the class of bug the user has flagged historically.
-**Status:** **Open.** Highest-priority hotspot to ground next — directly maps to a historical bug class.
+**Status:** **Partially Monitored** (2026-04-29). The URDF-side anchor `_INSPIRE_ACTUATED_NAMES` is now test-pinned: set equality with URDF actuated hand joints, hand slice contract (`[0:6]` left, `[6:12]` right), bridge correctness, and runtime obs layout — see `test_inspire_actuated_*` and `test_inspire_obs_layout_at_default_pose`. The cross-file derivation against `STATE_26_NAMES_ENV_ORDER[14:26]` (via `_URDF_TO_NUCLEUS`) is **not yet tested**; defer to the `inspire_lerobot_fields.py` audit pass when that file is reviewed.
 
 ### 4.5 `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` ↔ side-prefix partition of `HAND_JOINT_NAMES`
 
