@@ -93,6 +93,20 @@ _URDF_TO_NUCLEUS: dict[str, str] = {
 RETARGETER_HAND_JOINT_NAMES: list[str] = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
 
 
+# 38-D teleop action layout: [L wrist(7) | R wrist(7) | hand(24)]. The hand
+# block at indices 14:38 follows HAND_JOINT_NAMES (URDF-A) order, which
+# interleaves left/right per the USD traversal — so per-side masking can NOT
+# use a contiguous slice. These index lists are derived from the side prefix
+# of HAND_JOINT_NAMES so they automatically track any USD reorder picked up
+# by the joint_names anchor in env_cfg.py.
+LEFT_HAND_38D_IDX: list[int] = [
+    14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")
+]
+RIGHT_HAND_38D_IDX: list[int] = [
+    14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("right_")
+]
+
+
 @configclass
 class TeleopActionsCfg:
     """38D PinkIK action: arm IK (14D wrist poses) + direct hand joint targets (24D)."""

@@ -3,7 +3,7 @@
 
 """Joint-space grounding test — Layer 1 (URDF spec ↔ code), Layer 2 (USD ↔ code), Layer 3 (runtime behavior).
 
-Layer 1 (13 checks): parses the active Inspire FTP URDF as XML and asserts that
+Layer 1 (14 checks): parses the active Inspire FTP URDF as XML and asserts that
 the joint-space constants in env_cfg, mimic_action, robot_config, the teleop
 env_cfg, and the canonical observation lists agree with it. Catches drift in:
   - Joint count, name set, mimic set
@@ -13,11 +13,13 @@ env_cfg, and the canonical observation lists agree with it. Catches drift in:
   - PinkIK ``pink_controlled_joint_names`` regex coverage of the 14 arm joints
   - ``_BODY_JOINT_NAMES_CANONICAL`` set + arm slice contract ([15:22] left, [22:29] right)
   - ``_INSPIRE_ACTUATED_NAMES`` set + hand slice contract ([0:6] left, [6:12] right)
+  - 38-D teleop hand partition (``LEFT_HAND_38D_IDX`` / ``RIGHT_HAND_38D_IDX``) by side prefix
 
-Layer 2 (3 checks): order-sensitive checks against the loaded USD articulation:
+Layer 2 (4 checks): order-sensitive checks against the loaded USD articulation:
   - env_cfg ``joint_names`` matches articulation list-wise.
   - ``_resolve_indices`` produces correct articulation indices for body canonical names.
   - ``_resolve_indices`` produces correct articulation indices for hand canonical names.
+  - Wrist FK link names (``left_wrist_yaw_link`` / ``right_wrist_yaw_link``) exist on the articulation.
 
 Layer 3 (3 checks): runtime behavioral checks via ``env.step`` / obs functions:
   - ``InspireJointPositionAction.apply_actions()`` drives mimic to multiplier × parent.
@@ -70,6 +72,8 @@ from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg impor
 )
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
     HAND_JOINT_NAMES,
+    LEFT_HAND_38D_IDX,
+    RIGHT_HAND_38D_IDX,
     TeleopActionsCfg,
     _URDF_TO_NUCLEUS,
 )
@@ -157,7 +161,7 @@ _MIMIC_TOL_RAD = 0.05
 
 
 class InspireGroundingTests(unittest.TestCase):
-    """Thirteen Layer-1 checks (URDF → code) + three Layer-2 + three Layer-3."""
+    """Fourteen Layer-1 checks (URDF → code) + four Layer-2 + three Layer-3."""
 
     # Set in setUpClass after the env is built.
     _env: gym.Env = None
@@ -586,6 +590,98 @@ class InspireGroundingTests(unittest.TestCase):
             _INSPIRE_ACTUATED_NAMES[6:12], expected_right_hand,
             "_INSPIRE_ACTUATED_NAMES[6:12] should be right hand in canonical order."
         )
+
+    # -- Layer 1: 14. 38-D hand partition by side ----------------------------
+
+    def test_hand_38d_partition_by_side(self):
+        """``LEFT_HAND_38D_IDX`` / ``RIGHT_HAND_38D_IDX`` partition [14:38] by side.
+
+        These index lists drive single-arm teleop masking in
+        ``record_demos.py``: when the user passes ``--arm right``, the LEFT
+        hand finger slots in the 38-D action are overwritten with idle values
+        via ``LEFT_HAND_38D_IDX``. The partition correctness against
+        ``HAND_JOINT_NAMES``'s side prefix is the §4.5 hotspot.
+
+        Defends against:
+          - Side-prefix mismatch (a left-hand joint name at a RIGHT_HAND index
+            would silently mask the wrong hand during single-arm teleop)
+          - Coverage gap (some hand index unmasked → that finger drifts during
+            single-arm teleop because the locked-arm command leaks through)
+          - Overlap (an index in both lists → masking is ambiguous)
+        """
+        self.assertEqual(
+            len(LEFT_HAND_38D_IDX), 12,
+            f"LEFT_HAND_38D_IDX has {len(LEFT_HAND_38D_IDX)} entries; expected 12."
+        )
+        self.assertEqual(
+            len(RIGHT_HAND_38D_IDX), 12,
+            f"RIGHT_HAND_38D_IDX has {len(RIGHT_HAND_38D_IDX)} entries; expected 12."
+        )
+
+        left_set = set(LEFT_HAND_38D_IDX)
+        right_set = set(RIGHT_HAND_38D_IDX)
+
+        overlap = left_set & right_set
+        self.assertEqual(
+            overlap, set(),
+            f"LEFT and RIGHT hand 38-D index lists overlap on: {sorted(overlap)}"
+        )
+
+        union = left_set | right_set
+        expected_range = set(range(14, 38))
+        missing = expected_range - union
+        extra = union - expected_range
+        self.assertEqual(
+            union, expected_range,
+            f"Hand-38-D partition does not exactly cover [14, 38).\n"
+            f"  Missing from union: {sorted(missing)}\n"
+            f"  Extra (out of range): {sorted(extra)}"
+        )
+
+        # Side prefix correctness — the gold check. Each LEFT_HAND_38D_IDX entry
+        # must point at a HAND_JOINT_NAMES position whose joint starts with
+        # "left_". This is what makes single-arm masking actually mask the
+        # right side; reverse the lists and the locked hand is wrong.
+        for idx in LEFT_HAND_38D_IDX:
+            with self.subTest(side="left", idx=idx):
+                joint_name = HAND_JOINT_NAMES[idx - 14]
+                self.assertTrue(
+                    joint_name.startswith("left_"),
+                    f"LEFT_HAND_38D_IDX[{idx}] points at {joint_name!r}, "
+                    f"which does not start with 'left_'. Single-arm teleop "
+                    f"masking is the wrong side."
+                )
+        for idx in RIGHT_HAND_38D_IDX:
+            with self.subTest(side="right", idx=idx):
+                joint_name = HAND_JOINT_NAMES[idx - 14]
+                self.assertTrue(
+                    joint_name.startswith("right_"),
+                    f"RIGHT_HAND_38D_IDX[{idx}] points at {joint_name!r}, "
+                    f"which does not start with 'right_'. Single-arm teleop "
+                    f"masking is the wrong side."
+                )
+
+    # -- Layer 2: 14. Wrist link names exist on the articulation -------------
+
+    def test_wrist_link_names_exist(self):
+        """Both wrist FK link names referenced in record_demos exist on the robot.
+
+        ``_read_frozen_wrist_fk`` in record_demos.py looks up
+        ``left_wrist_yaw_link`` / ``right_wrist_yaw_link`` via
+        ``robot.data.body_names.index(...)``. A URDF rev that renames either
+        link would raise ValueError on the first single-arm reset; this test
+        catches it at grounding-test time instead.
+        """
+        body_names = list(self._robot.data.body_names)
+        for link_name in ("left_wrist_yaw_link", "right_wrist_yaw_link"):
+            with self.subTest(link=link_name):
+                self.assertIn(
+                    link_name, body_names,
+                    f"Body link {link_name!r} not found on the articulation. "
+                    f"`_read_frozen_wrist_fk` (record_demos.py) would raise "
+                    f"ValueError at first single-arm reset. Update the URDF "
+                    f"link name reference or revert the rename."
+                )
 
     # -- Layer 2: 12. Body canonical bridges to articulation correctly -------
 

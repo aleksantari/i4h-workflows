@@ -325,11 +325,14 @@ def process_success_condition(env: gym.Env, success_term: object | None, success
     return success_step_count, False
 
 
-# 38D hand joint indices per hand. The USD ordering interleaves left/right,
-# so a contiguous slice like [14:26] crosses hand boundaries. These explicit
-# index lists match the USD articulation order from joint_names[29:].
-_LEFT_HAND_38D_IDX = [14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 34, 36]
-_RIGHT_HAND_38D_IDX = [19, 20, 21, 22, 23, 29, 30, 31, 32, 33, 35, 37]
+# 38-D hand joint partition by side. Sourced from teleop_env_cfg.py so the
+# lists stay derived from HAND_JOINT_NAMES (= joint_names[29:]) — single
+# source of truth, no hardcoded duplicate. The partition contract is pinned
+# by tests/test_sim/test_inspire_urdf_grounding.py.
+from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
+    LEFT_HAND_38D_IDX as _LEFT_HAND_38D_IDX,
+    RIGHT_HAND_38D_IDX as _RIGHT_HAND_38D_IDX,
+)
 
 
 def _read_frozen_wrist_fk(env, arm: str) -> torch.Tensor | None:

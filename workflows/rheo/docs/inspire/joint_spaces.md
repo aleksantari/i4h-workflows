@@ -41,9 +41,9 @@ The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic 
 
 ## 1.5 Grounding status (last updated 2026-04-29)
 
-The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the canonical observation layer + the runtime action / obs behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). **19 tests, ~43s wall time** (~20s Kit boot, ~3s asserts, ~20s for the runtime mimic settle + obs resets), all green. Coverage on every invocation:
+The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the canonical observation layer + the 38-D teleop hand partition + the runtime action / obs behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). **21 tests, ~45s wall time** (~20s Kit boot, ~3s asserts, ~20s for the runtime mimic settle + obs resets), all green. Coverage on every invocation:
 
-**Layer 1 — URDF spec ↔ code (13 checks):**
+**Layer 1 — URDF spec ↔ code (14 checks):**
 
 - URDF has 53 articulated joints; env_cfg `joint_names` matches in count and name-set.
 - URDF's mimic children == `_MIMIC_JOINT_NAMES`.
@@ -55,12 +55,14 @@ The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the canoni
 - `_BODY_JOINT_NAMES_CANONICAL[15:22]` is left arm in canonical order; `[22:29]` is right arm — *the slice contract* downstream consumers depend on.
 - `_INSPIRE_ACTUATED_NAMES` set equals URDF actuated hand joints; length 12; 6/6 left-right balance.
 - `_INSPIRE_ACTUATED_NAMES[0:6]` is left hand in canonical order; `[6:12]` is right hand.
+- `LEFT_HAND_38D_IDX` / `RIGHT_HAND_38D_IDX` partition `[14, 38)` exactly once; per-entry side prefix matches `HAND_JOINT_NAMES`.
 
-**Layer 2 — USD ↔ code (3 checks):**
+**Layer 2 — USD ↔ code (4 checks):**
 
 - env_cfg `joint_names` matches the loaded USD's articulation list-wise — *the* order check Layer 1 explicitly cannot do.
 - `_resolve_indices` produces correct articulation indices for canonical body names.
 - `_resolve_indices` produces correct articulation indices for canonical hand names.
+- Wrist FK link names (`left_wrist_yaw_link` / `right_wrist_yaw_link`) referenced by `record_demos.py` exist on the articulation.
 
 **Layer 3 — runtime behavior (3 checks):**
 
@@ -144,8 +146,8 @@ Health legend: ✅ = derived in code from the anchor or another canonical · ⚠
 
 | Constant | File:line | Shape | Source / derivation | Health |
 |---|---|---|---|---|
-| `_LEFT_HAND_38D_IDX` | [record_demos.py:331](../../scripts/simulation/record_demos.py#L331) | 12 ints | Hand-authored — positions of `left_*` hand joints inside the 24-D hand block of the 38-D teleop action. **Should derive from `[i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]` offset by 14**. | ⚠️ |
-| `_RIGHT_HAND_38D_IDX` | [record_demos.py:332](../../scripts/simulation/record_demos.py#L332) | 12 ints | Hand-authored — symmetric for `right_*`. Same derivation rule. | ⚠️ |
+| `LEFT_HAND_38D_IDX` | [teleop_env_cfg.py](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | 12 ints | ✅ Derived: `[14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]`. `record_demos.py` imports this. | ✅ 🛡️ |
+| `RIGHT_HAND_38D_IDX` | [teleop_env_cfg.py](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) | 12 ints | ✅ Derived: symmetric for `"right_"`. | ✅ 🛡️ |
 
 ### L2 — LeRobot 26D dual-arm
 
@@ -230,10 +232,9 @@ These are the constants that *encode the same fact* as another constant in the c
 ### 4.5 `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` ↔ side-prefix partition of `HAND_JOINT_NAMES`
 
 **Truth:** `HAND_JOINT_NAMES` (= `joint_names[29:]`) is the source-of-truth ordering of the 24 hand joints inside the 38-D teleop action's hand block (which starts at index 14).
-**Duplicate:** `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` are hand-authored partitions.
-**Derivation rule:** `_LEFT_HAND_38D_IDX = [14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]`; symmetric for right.
+**Derivation:** [`teleop_env_cfg.py`](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_teleop_env_cfg.py) now defines `LEFT_HAND_38D_IDX` and `RIGHT_HAND_38D_IDX` as comprehensions: `[14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]` (and symmetric for right). `record_demos.py` imports these — no longer hardcoded.
 **Failure mode if desynced:** single-arm teleop masking writes to the wrong hand or skips fingers — the bug class the user explicitly mentioned. Adding a hand joint to the USD without updating the partition would silently misroute teleop commands.
-**Status:** **Open.** `HAND_JOINT_NAMES` is `joint_names[29:]` (transitively pinned); the side-prefix derivation is a few lines of test code.
+**Status:** **Monitored** (2026-04-29). The hardcoded duplicates in `record_demos.py` were replaced with imports of the comprehensions in `teleop_env_cfg.py`. `test_hand_38d_partition_by_side` pins the partition: lengths (12 each), no overlap, exact coverage of `[14, 38)`, and per-entry side-prefix correctness against `HAND_JOINT_NAMES`.
 
 ### 4.6 `GROUP_SIM_INDICES` ↔ `actuated_joint_names` lookup per canonical group order
 
@@ -270,6 +271,13 @@ There are *four* asset directories on disk:
 3. Delete the non-wrist-cam URDF/USD pair if it's not used anywhere — quick check: `grep -r "g1-29dof-inspire-ftp-usd[^-]" scripts/ tests/ docs/`.
 
 **Failure mode for both hazards:** silent. A USD swap that touches articulation order will pass through the inspector (because it inspects the wrong USD), the converter (because it produces the wrong variant), and `joint_names` (because the mirror is hand-authored and won't be re-verified) — and only manifest as misrouted joints at eval time, exactly the bug class the user has hit historically.
+
+### 4.8 `_URDF_TO_NUCLEUS` values not anchored against IsaacLab's hand URDF
+
+**Truth:** the values in `_URDF_TO_NUCLEUS` (Nucleus-named hand joints like `L_index_proximal_joint`) must exist as joint names in IsaacLab's internal Nucleus hand URDF — the one DexPilot loads inside `UnitreeG1RetargeterCfg`.
+**Current grounding:** the URDF *side* of the bridge is test-pinned (every key in `_URDF_TO_NUCLEUS` is a real `HAND_JOINT_NAMES` entry; bijective; per-finger consistent). The Nucleus *side* is **not** statically anchored — we don't import or parse the IsaacLab hand URDF anywhere in the test.
+**Failure mode if desynced:** a typo in a Nucleus value (e.g. `L_index_proximate_joint`) would cause `UnitreeG1RetargeterCfg` to raise at *retargeter init* when it can't find the joint in its internal URDF. That fires only when teleop actually starts — so the gap is "stale config sits silently until the next teleop session." Less dangerous than silent misrouting, but later in the cycle than the static tests catch.
+**Status:** **Open.** Optional — IsaacLab's runtime check already catches typos at init time, so the value is incremental belt-and-suspenders coverage. Would require finding IsaacLab's Nucleus hand URDF (somewhere under `isaaclab.devices.openxr.retargeters.humanoid.unitree.inspire`), parsing its joint names, and asserting `set(_URDF_TO_NUCLEUS.values()) ⊆ {names in IsaacLab hand URDF}`. Defer until a Nucleus typo bites in practice.
 
 ---
 
