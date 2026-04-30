@@ -40,9 +40,15 @@ The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic 
 
 ---
 
-## 1.5 Grounding status (last updated 2026-04-29)
+## 1.5 Grounding status (last updated 2026-04-30)
 
-The L0 + L1 anchor layer + the URDF↔Nucleus / PinkIK teleop layer + the canonical observation layer + the 38-D teleop hand partition + the runtime action / obs behavior are pinned by [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py). **21 tests, ~45s wall time** (~20s Kit boot, ~3s asserts, ~20s for the runtime mimic settle + obs resets), all green. Coverage on every invocation:
+Three test files cover the joint-space contract end-to-end:
+
+- [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) — **21 tests, ~45s wall time** inside Docker (Kit boot + 3 layers of grounding asserts).
+- [`tests/test_sim/test_inspire_lerobot_conversion.py`](../../tests/test_sim/test_inspire_lerobot_conversion.py) — **14 tests, ~3ms** on host (HDF5 → LeRobot conversion math: elbow offset, slice extraction, aliasing safety, recorded-action paths).
+- [`tests/test_sim/test_inspire_experiment_config.py`](../../tests/test_sim/test_inspire_experiment_config.py) — **16 tests, ~3ms** on host (L3 policy/scatter contract: §4.6 derivation parity + dataclass scatter shapes for dual-arm and both single-arm modes).
+
+**Total: 51 tests.** The grounding test runs only inside Docker (Kit-bound); the conversion + experiment-config tests run anywhere with stdlib + numpy. Coverage on every invocation of the URDF grounding test:
 
 **Layer 1 — URDF spec ↔ code (14 checks):**
 
@@ -186,12 +192,13 @@ Health legend: ✅ = derived in code from the anchor or another canonical · ⚠
 
 | Constant | File:line | Shape | Source / derivation | Health |
 |---|---|---|---|---|
-| `GROUP_SIZES` | [inspire_experiment_config.py:38](../../scripts/utils/inspire/inspire_experiment_config.py#L38-L43) | 4 entries | `{left_arm: 7, right_arm: 7, left_hand: 6, right_hand: 6}`. | (axiom of the 26D layout) |
-| `ARM_BODY_RANGES` | [inspire_experiment_config.py:46](../../scripts/utils/inspire/inspire_experiment_config.py#L46-L49) | 2 entries | `{left_arm: (15, 22), right_arm: (22, 29)}`. Mirrors `STATE_26_BODY_COL_*`. | ⚠️ (duplicates the slice constants) |
-| `HAND_INSPIRE_RANGES` | [inspire_experiment_config.py:52](../../scripts/utils/inspire/inspire_experiment_config.py#L52-L55) | 2 entries | `{left_hand: (0, 6), right_hand: (6, 12)}`. Mirrors `STATE_26_INSPIRE_COL_*`. | ⚠️ (duplicates the slice constants) |
-| `GROUP_SIM_INDICES` | [inspire_experiment_config.py:67](../../scripts/utils/inspire/inspire_experiment_config.py#L67-L76) | 4 lists, 26 ints total | Per-group scatter into the 41-D action space. **Runtime-verified** by `verify_scatter_indices.py`; see [`scatter_indices.md`](scatter_indices.md) for the audit trail (pinky/middle bug history). | ⚠️ — derivable from `actuated_joint_names.index(joint_name)` for each canonical group order |
-| `DEFAULT_JOINT_GROUPS` / `DEFAULT_CAMERAS` | inspire_experiment_config.py:100-104 | small lists/dicts | Defaults for `InspireExperimentConfig`. | (defaults) |
-| `SIM_ACTION_DIM` | inspire_experiment_config.py:78 | `41` | Constant. | ✅ (= `len(actuated_joint_names)`) |
+| `GROUP_NAMES` | [inspire_joint_constants.py](../../scripts/inspire_joint_constants.py) | 4 entries × ordered name list | Per-group joint name list (URDF naming): slices of `BODY_JOINT_NAMES_CANONICAL[15:22]` / `[22:29]` and `INSPIRE_ACTUATED_NAMES[0:6]` / `[6:12]`. Single anchor for the L3 dicts below. | ✅ (anchor) |
+| `GROUP_SIZES` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | 4 entries | Derived: `{g: len(GROUP_NAMES[g]) for g in GROUP_NAMES}`. | ✅ (derivation) |
+| `ARM_BODY_RANGES` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | 2 entries | Derived: contiguous range of `GROUP_NAMES[g]` inside `BODY_JOINT_NAMES_CANONICAL`. | ✅ (derivation) |
+| `HAND_INSPIRE_RANGES` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | 2 entries | Derived: contiguous range of `GROUP_NAMES[g]` inside `INSPIRE_ACTUATED_NAMES`. | ✅ (derivation) |
+| `GROUP_SIM_INDICES` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | 4 lists, 26 ints total | Derived: `[ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]]`. The 41-D scatter the historical pinky/middle bug lived in is now structurally pinned: a wrong name in `GROUP_NAMES` raises `ValueError` at module load, not silently miswires. | ✅ (derivation) |
+| `DEFAULT_JOINT_GROUPS` / `DEFAULT_CAMERAS` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | small lists/dicts | Defaults for `InspireExperimentConfig`. | (defaults) |
+| `SIM_ACTION_DIM` | [inspire_experiment_config.py](../../scripts/utils/inspire/inspire_experiment_config.py) | `41` | Derived: `len(ACTUATED_JOINT_NAMES)`. | ✅ (derivation) |
 
 ---
 
@@ -237,11 +244,10 @@ These are the constants that *encode the same fact* as another constant in the c
 
 ### 4.6 `GROUP_SIM_INDICES` ↔ `actuated_joint_names` lookup per canonical group order
 
-**Truth:** the 41-D `actuated_joint_names` ordering is the simulator's truth. Each canonical group (left_arm, right_arm, left_hand, right_hand) has a canonical per-joint order (shoulder_pitch / shoulder_roll / shoulder_yaw / elbow / wrist_roll / wrist_pitch / wrist_yaw for arms; thumb_yaw / thumb_pitch / index / middle / ring / pinky for hands).
-**Duplicate:** `GROUP_SIM_INDICES` is a hand-authored 4-list table giving the 41-D action index for each canonical-group entry.
-**Derivation rule:** for each group, `[actuated_joint_names.index(j) for j in canonical_group_order(group)]`.
-**Failure mode if desynced:** the policy's 26-D output scatters to the wrong 41-D positions — exactly the pinky/middle bug captured in [`scatter_indices.md`](scatter_indices.md) (April 2026). The current `GROUP_SIM_INDICES` values are runtime-verified; the hazard is future drift, e.g. someone reorders `actuated_joint_names` (via a USD or filter change) without re-verifying the scatter.
-**Status:** **Open.** `actuated_joint_names` is now test-pinned, so the index-lookup derivation is well-defined and a regression test would be tractable.
+**Truth:** the 41-D `actuated_joint_names` ordering is the simulator's truth. Each canonical group (left_arm, right_arm, left_hand, right_hand) has a canonical per-joint order anchored in `joint_constants.GROUP_NAMES`.
+**Was-duplicate:** `GROUP_SIM_INDICES` was a hand-authored 4-list table giving the 41-D action index for each group entry — the home of the pinky/middle bug captured in [`scatter_indices.md`](scatter_indices.md) (April 2026).
+**Derivation rule:** `{g: [ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]] for g in GROUP_NAMES}`. The same construction now produces `GROUP_SIZES`, `ARM_BODY_RANGES`, `HAND_INSPIRE_RANGES`, and `SIM_ACTION_DIM` — every L3 dict is derived from `GROUP_NAMES`.
+**Status:** **Resolved (2026-04-30).** [`inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py) now derives all five constants from `GROUP_NAMES` (added to [`inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py)). The bug class is structurally impossible: a wrong name in `GROUP_NAMES` raises `ValueError` at module load, and the runtime articulation order is independently pinned by the Layer-3 grounding test (`test_articulation_order`). Pure-Python regression coverage in [`tests/test_sim/test_inspire_experiment_config.py`](../../tests/test_sim/test_inspire_experiment_config.py) (16 tests) pins parity, slice contracts, mimic-avoidance, and dataclass scatter shapes for dual-arm + both single-arm modes — runs in milliseconds, no Kit boot required.
 
 ### 4.7 Asset-side hazards — converter / inspector point at the wrong USD
 
@@ -292,33 +298,25 @@ Three things look like duplication but are deliberate. Leave them alone.
 
 ## 6. Implications for tests
 
-**Landed (2026-04-28):** [`tests/test_sim/test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) — eleven tests across three layers. **Layer 1 (URDF → code, 9 checks)** pins the joint anchor and immediate derivations including the URDF↔Nucleus bridge and PinkIK arm partition. **Layer 2 (USD → code, 1 check)** pins the articulation order via gym.make + reset. **Layer 3 (runtime behavior, 1 check)** pins `InspireJointPositionAction.apply_actions()` by sending a known target, settling, and asserting the mimic ratio is met within tolerance.
+The three test files in §1.5 cover the contract end-to-end across L0–L3:
 
-**Next — L2/L3 derivation checks for the §4 hotspots.** They follow the same pattern: given the now-test-pinned foundation (`joint_names`, `_MIMIC_JOINT_NAMES`, `MIMIC_RULES`, `_URDF_TO_NUCLEUS`), do the higher-layer constants encode the same fact? Examples:
+- **L0/L1/L2 + runtime (Layer 3)** are pinned by [`test_inspire_urdf_grounding.py`](../../tests/test_sim/test_inspire_urdf_grounding.py) — anchor, mimic chain, URDF↔Nucleus bridge, PinkIK partition, canonical layouts, articulation order, and the `InspireJointPositionAction.apply_actions()` runtime behavior (Kit-bound; ~45s in Docker).
+- **L2 conversion math** (HDF5 → LeRobot) is pinned by [`test_inspire_lerobot_conversion.py`](../../tests/test_sim/test_inspire_lerobot_conversion.py) — elbow offsets, slice extraction, the in-place `+=` aliasing regression, and the recorded-action paths (host, ~3ms).
+- **L3 policy / scatter contract** is pinned by [`test_inspire_experiment_config.py`](../../tests/test_sim/test_inspire_experiment_config.py) — `GROUP_SIM_INDICES` parity vs `[ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]]`, mimic-avoidance, range slice contracts, and dataclass scatter shapes (host, ~3ms).
 
-- `set(_MIMIC_JOINT_NAMES_NUCLEUS) == {_URDF_TO_NUCLEUS[n] for n in _MIMIC_JOINT_NAMES}` (4.2)
-- `_LEFT_HAND_38D_IDX == [14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")]` (4.5)
-- `set(_BODY_JOINT_NAMES_CANONICAL) == set(joint_names[:29])` and `len == 29` (4.3)
-
-Each is a few lines of test code. **They are now safe to author** because the foundation they'd build on top of is already pinned — any regression in that foundation will fail loudly via the existing test before propagating to the higher-layer checks. Without that, every higher-level test would have to re-verify the foundation, making the test surface fragile.
-
-Hotspot 4.4 (`_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`) is the highest-priority next target — directly maps to the historical "fingers crossed" bug class.
+**Open items** (orthogonal to joint-identity): §4.7 Hazard B — the wrist-cam URDF needs a committed converter recipe so the asset-side anchor doesn't drift from the JOINT_NAMES mirror. §4.8 — Nucleus name validation against IsaacLab's hand URDF (the one DexPilot loads).
 
 ---
 
 ## 7. Implications for refactor
 
-The follow-up refactor (separate plan, separate PR) replaces every ⚠️ / 🔁 entry in §3 with a code-derivation, computed at module load. **Behavior must not change** — the eval smoketest (`./docker/run_docker_grasp.sh python scripts/simulation/examples/eval_act_inspire.py --test`), the **grounding test** (`test_inspire_urdf_grounding`), and a parquet round-trip on a known-good HDF5 are the canaries. The grounding test is the most informative of the three: any L1 regression introduced by the refactor fails loudly with a localized message instead of surfacing as silent data corruption later in the pipeline. The Layer 3 runtime check additionally guards the action class itself — any reorder of `super().apply_actions()` vs the mimic write loop in `InspireJointPositionAction` fails the runtime assertion before the refactor PR can land. Hand-authored constants that *should* survive: `joint_names` (anchor), `_BODY_JOINT_NAMES_CANONICAL` (deliberate reorder, see §5), `_URDF_TO_NUCLEUS` (bridge), `_MIMIC_RULES_PER_SIDE` (semantic content), `offset_dict` (load-bearing magnitudes), the canonical group-order specs, multipliers from the URDF.
+**Status: largely complete (2026-04-29 / 2026-04-30).** The follow-up refactor replaced every L1/L2/L3 ⚠️ / 🔁 entry in §3 with a code-derivation computed at module load. Hand-authored sources of truth now concentrate in [`scripts/inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py): `JOINT_NAMES`, `MIMIC_JOINT_NAMES`, `URDF_TO_NUCLEUS`, `BODY_JOINT_NAMES_CANONICAL`, `INSPIRE_ACTUATED_NAMES`, the per-side mimic rule template, and `GROUP_NAMES`. Everything else (`ACTUATED_JOINT_NAMES`, `HAND_JOINT_NAMES`, `RETARGETER_HAND_JOINT_NAMES`, `MIMIC_JOINT_NAMES_NUCLEUS`, `JOINT_NAMES_NUCLEUS_HAND`, `LEFT_HAND_38D_IDX` / `RIGHT_HAND_38D_IDX`, the expanded `MIMIC_RULES`, plus the L3 dicts `GROUP_SIZES` / `ARM_BODY_RANGES` / `HAND_INSPIRE_RANGES` / `GROUP_SIM_INDICES` / `SIM_ACTION_DIM`) is computed from those anchors.
 
-Concretely, the refactor would:
+Equivalence check before each step proved byte-identical values; behavior preservation is guarded by the grounding test, the conversion tests, and the experiment-config tests (51 tests total — see §1.5).
 
-1. Define `_BODY_JOINT_NAMES_CANONICAL` as the explicit reorder spec (kept hand-authored, but checked against `set(joint_names[:29])` at module load).
-2. Compute `_INSPIRE_ACTUATED_NAMES` as a slice of `STATE_26_NAMES_ENV_ORDER` after URDF↔Nucleus translation (or vice versa — whichever side is least-touched by external consumers).
-3. Compute `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` from `HAND_JOINT_NAMES` side-prefix.
-4. Compute `RECORDED_ACTION_53_JOINT_NAMES` and `_MIMIC_JOINT_NAMES_NUCLEUS` from `joint_names` and `_MIMIC_JOINT_NAMES` via `_URDF_TO_NUCLEUS`. (This requires `inspire_lerobot_fields.py` to import from `g1_grasp_policy_inspire_env_cfg.py` — fine, since the converter is run inside Docker where IsaacLab is available; alternatively, hoist the small set of needed constants into a host-importable module.)
-5. Compute `GROUP_SIM_INDICES` from `actuated_joint_names` lookups against the canonical group orders.
+A USD swap now requires editing only `JOINT_NAMES` (and running `inspect_inspire_joints.py` to reconfirm). All downstream consumers track automatically.
 
-After the refactor, the §6 derivation tests become trivial (most asserting computed equality against a frozen golden) and a USD swap requires editing only `joint_names` plus running `inspect_inspire_joints.py`.
+**Still open:** §4.7 Hazard B (asset-side wrist-cam variant has no committed converter recipe), §4.8 (Nucleus name validation against IsaacLab's hand URDF). Both are orthogonal to the joint-identity contract and are separate audits.
 
 ---
 

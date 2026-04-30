@@ -462,6 +462,11 @@ corrupt rollouts. **Regenerate = retrain.**
 > [`simulation/policies/act.py`](../../scripts/simulation/policies/act.py),
 > and the experiment config module
 > [`inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py).
+> Joint identity (which joints land in which 26D / 41D slots) is anchored in
+> [`inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py) — the
+> experiment config module's group-size, range, and scatter-index dicts are all
+> derived from `GROUP_NAMES` defined there. See
+> [`docs/inspire/joint_spaces.md`](joint_spaces.md) for the full audit.
 
 ### Base config — `act_config_inspire.yaml`
 

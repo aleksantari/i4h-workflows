@@ -30,54 +30,67 @@ from typing import Any
 
 import yaml
 
+from inspire_joint_constants import (
+    ACTUATED_JOINT_NAMES,
+    BODY_JOINT_NAMES_CANONICAL,
+    GROUP_NAMES,
+    INSPIRE_ACTUATED_NAMES,
+)
+
 # ---------------------------------------------------------------------------
-# Joint group constants
+# Joint group constants — all derived from inspire_joint_constants.GROUP_NAMES.
+# Hand-authoring is concentrated in joint_constants; this file only expresses
+# how the group name lists are projected into the various index spaces.
 # ---------------------------------------------------------------------------
 
 # Per-group DOF counts.
-GROUP_SIZES: dict[str, int] = {
-    "left_arm": 7,
-    "right_arm": 7,
-    "left_hand": 6,
-    "right_hand": 6,
-}
+GROUP_SIZES: dict[str, int] = {g: len(names) for g, names in GROUP_NAMES.items()}
 
-# Indices into the 87-D ``robot_joint_state`` for each arm group.
+
+def _contiguous_range(haystack: list[str], needle: list[str], group: str) -> tuple[int, int]:
+    """Return (start, end) such that haystack[start:end] == needle.
+
+    Raises if the group's names aren't contiguous in the host layout — this
+    is an invariant of how BODY_JOINT_NAMES_CANONICAL and INSPIRE_ACTUATED_NAMES
+    were authored, and the grounding tests pin it.
+    """
+    start = haystack.index(needle[0])
+    end = start + len(needle)
+    if haystack[start:end] != needle:
+        raise RuntimeError(
+            f"{group} joint names not contiguous in host layout — "
+            "joint_constants.{BODY_JOINT_NAMES_CANONICAL,INSPIRE_ACTUATED_NAMES} drifted"
+        )
+    return (start, end)
+
+
+# Indices into the 29-prefix of the ``robot_joint_state`` body observation,
+# which observations.py orders to match BODY_JOINT_NAMES_CANONICAL.
 ARM_BODY_RANGES: dict[str, tuple[int, int]] = {
-    "left_arm": (15, 22),   # 7 joints
-    "right_arm": (22, 29),  # 7 joints
+    g: _contiguous_range(BODY_JOINT_NAMES_CANONICAL, GROUP_NAMES[g], g)
+    for g in ("left_arm", "right_arm")
 }
 
-# Indices into the 12-D ``robot_inspire_joint_state`` for each hand group.
+# Indices into the 12-D ``robot_inspire_joint_state`` (actuated-only) for each
+# hand group.
 HAND_INSPIRE_RANGES: dict[str, tuple[int, int]] = {
-    "left_hand": (0, 6),    # 6 actuated joints
-    "right_hand": (6, 12),  # 6 actuated joints
+    g: _contiguous_range(INSPIRE_ACTUATED_NAMES, GROUP_NAMES[g], g)
+    for g in ("left_hand", "right_hand")
 }
 
-# Where each group's joints land in the 41-D sim action space.
-# The env config actuated_joint_names follows the USD tree-traversal order
-# with mimic joints removed. Arm and hand joints are NOT contiguous, so we
-# use explicit index lists rather than (start, end) ranges.
-#
-# Each list maps the group's canonical joint order to the 41-D action index.
-# Canonical arm order: shoulder_pitch, shoulder_roll, shoulder_yaw, elbow,
-#   wrist_roll, wrist_pitch, wrist_yaw  (same as _BODY_JOINT_NAMES_CANONICAL[15:29])
-# Canonical hand order: thumb_yaw, thumb_pitch, index, middle, ring, pinky
-#   (same as _INSPIRE_ACTUATED_NAMES)
+# Where each group's joints land in the 41-D sim action space (env's
+# actuated_joint_names == ACTUATED_JOINT_NAMES, pinned at runtime by the
+# Layer-3 grounding test). Arm and hand joints are not contiguous in the
+# 41-D layout, so the per-group indices are explicit lookups. A `ValueError`
+# from .index() here would mean a name in GROUP_NAMES is not actuated at the
+# articulation level — i.e. the joint identity contract is broken upstream.
 GROUP_SIM_INDICES: dict[str, list[int]] = {
-    "left_arm": [11, 15, 19, 21, 23, 25, 27],
-    "right_arm": [12, 16, 20, 22, 24, 26, 28],
-    # env's 41-D actuated_joint_names puts little_1 (pinky) BEFORE middle_1
-    # within each hand — opposite of the RECORDED_ACTION_53 name list. Verified
-    # at runtime via scripts/utils/inspire/verify_scatter_indices.py; see
-    # docs/inspire/scatter_indices.md.
-    "left_hand": [33, 39, 29, 31, 32, 30],   # thumb_yaw(33), thumb_pitch(39), idx(29), mid(31), ring(32), pinky(30)
-    "right_hand": [38, 40, 34, 36, 37, 35],  # thumb_yaw(38), thumb_pitch(40), idx(34), mid(36), ring(37), pinky(35)
+    g: [ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]] for g in GROUP_NAMES
 }
 
-SIM_ACTION_DIM = 41  # 29 body + 12 actuated hand
+SIM_ACTION_DIM: int = len(ACTUATED_JOINT_NAMES)  # 41 = 29 body + 12 actuated hand
 
-VALID_GROUPS = list(GROUP_SIM_INDICES.keys())
+VALID_GROUPS: list[str] = list(GROUP_NAMES.keys())
 
 # Mapping from sim camera key -> RLinf video key.
 # Extension point: to enable RL post-training with wrist cameras, add
@@ -247,7 +260,7 @@ class InspireExperimentConfig:
         else:
             base = np.asarray(base_action, dtype=policy_action.dtype)
             while base.ndim < policy_action.ndim:
-                base = base[..., np.newaxis, :] if base.ndim == policy_action.ndim - 1 else base[np.newaxis, ...]
+                base = np.expand_dims(base, -2)
             sim = np.broadcast_to(base, (*leading, SIM_ACTION_DIM)).copy()
         sim[..., self.sim_scatter_indices] = policy_action
         return sim

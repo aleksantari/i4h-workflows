@@ -269,3 +269,17 @@ LEFT_HAND_38D_IDX: list[int] = [
 RIGHT_HAND_38D_IDX: list[int] = [
     14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("right_")
 ]
+
+# Joint group → ordered name list (URDF naming). Anchors the policy-state
+# joint groups consumed by Inspire FTP ACT experiments. Slices of the
+# canonical body / actuated-hand layouts above; arm slices are contiguous in
+# BODY_JOINT_NAMES_CANONICAL by design (positions 15:22 and 22:29) and hand
+# slices are contiguous in INSPIRE_ACTUATED_NAMES (positions 0:6 and 6:12).
+# Consumers (e.g., inspire_experiment_config.GROUP_SIM_INDICES) derive scatter
+# indices via [ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]].
+GROUP_NAMES: dict[str, list[str]] = {
+    "left_arm": BODY_JOINT_NAMES_CANONICAL[15:22],
+    "right_arm": BODY_JOINT_NAMES_CANONICAL[22:29],
+    "left_hand": INSPIRE_ACTUATED_NAMES[0:6],
+    "right_hand": INSPIRE_ACTUATED_NAMES[6:12],
+}
