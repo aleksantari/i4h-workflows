@@ -139,6 +139,7 @@ import os
 import time
 
 import gymnasium as gym
+import h5py
 import torch
 
 import omni.ui as ui
@@ -189,6 +190,22 @@ class RateLimiter:
         if self.last_time < time.time():
             while self.last_time < time.time():
                 self.last_time += self.sleep_duration
+
+
+def write_recording_metadata(file_path: str, step_hz: int, control_dt: float) -> None:
+    """Stamp recording-rate metadata onto the HDF5 ``data`` group attrs.
+
+    Lets downstream conversion / analysis detect wall-clock vs sim-time
+    mismatches that were previously invisible from the file alone.
+    """
+    if not file_path.endswith(".hdf5"):
+        file_path += ".hdf5"
+    if not os.path.exists(file_path):
+        return
+    with h5py.File(file_path, "a") as f:
+        if "data" in f:
+            f["data"].attrs["step_hz"] = int(step_hz)
+            f["data"].attrs["control_dt"] = float(control_dt)
 
 
 def setup_output_directories() -> tuple[str, str]:
@@ -558,6 +575,12 @@ def main() -> None:
     env.close()
     print(f"Recording session completed with {current_recorded_demo_count} successful demonstrations")
     print(f"Demonstrations saved to: {args_cli.dataset_file}")
+
+    write_recording_metadata(
+        args_cli.dataset_file,
+        args_cli.step_hz,
+        env_cfg.sim.dt * env_cfg.decimation,
+    )
 
 
 if __name__ == "__main__":
