@@ -46,7 +46,7 @@ task_description_lerobot: "annotation.human.task_description"
 chunks_size: 1000
 
 # Video configuration
-fps: 50
+fps: 30
 
 # File path templates
 data_path: "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
