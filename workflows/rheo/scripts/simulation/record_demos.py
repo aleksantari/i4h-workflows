@@ -325,11 +325,11 @@ def process_success_condition(env: gym.Env, success_term: object | None, success
     return success_step_count, False
 
 
-# 38-D hand joint partition by side. Sourced from teleop_env_cfg.py so the
-# lists stay derived from HAND_JOINT_NAMES (= joint_names[29:]) — single
-# source of truth, no hardcoded duplicate. The partition contract is pinned
-# by tests/test_sim/test_inspire_urdf_grounding.py.
-from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
+# 38-D hand joint partition by side. Sourced from the joint-identity anchor
+# so the lists stay derived from HAND_JOINT_NAMES (= JOINT_NAMES[29:]) —
+# single source of truth, no hardcoded duplicate. The partition contract is
+# pinned by tests/test_sim/test_inspire_urdf_grounding.py.
+from inspire_joint_constants import (  # noqa: E402
     LEFT_HAND_38D_IDX as _LEFT_HAND_38D_IDX,
     RIGHT_HAND_38D_IDX as _RIGHT_HAND_38D_IDX,
 )

@@ -49,62 +49,15 @@ from isaaclab.utils import configclass
 
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (
     G1GraspPolicyInspireEnvCfg,
-    joint_names,  # Full 53-joint list (NOT actuated_joint_names) — PinkIK needs all 24 hand joints.
 )
 
-# All 24 hand joints in USD articulation order (indices 29-52 of the full 53-joint list).
-# This order MUST match robot.joint_names[-24:] for the retargeter output
-# to be correctly interpreted by the PinkIK action.
-HAND_JOINT_NAMES: list[str] = joint_names[29:]
-
-# The UnitreeG1DexRetargeting retargeter loads Nucleus hand-only URDFs whose joints use
-# L_/R_ prefixes and anatomical suffixes ("pinky" instead of "little", etc.).
-# We must pass Nucleus-style names in the same positional order as HAND_JOINT_NAMES
-# so the retargeted values end up in the correct slots for PinkIK.
-_URDF_TO_NUCLEUS: dict[str, str] = {
-    # Left hand
-    "left_index_1_joint": "L_index_proximal_joint",
-    "left_index_2_joint": "L_index_intermediate_joint",
-    "left_little_1_joint": "L_pinky_proximal_joint",
-    "left_little_2_joint": "L_pinky_intermediate_joint",
-    "left_middle_1_joint": "L_middle_proximal_joint",
-    "left_middle_2_joint": "L_middle_intermediate_joint",
-    "left_ring_1_joint": "L_ring_proximal_joint",
-    "left_ring_2_joint": "L_ring_intermediate_joint",
-    "left_thumb_1_joint": "L_thumb_proximal_yaw_joint",
-    "left_thumb_2_joint": "L_thumb_proximal_pitch_joint",
-    "left_thumb_3_joint": "L_thumb_intermediate_joint",
-    "left_thumb_4_joint": "L_thumb_distal_joint",
-    # Right hand
-    "right_index_1_joint": "R_index_proximal_joint",
-    "right_index_2_joint": "R_index_intermediate_joint",
-    "right_little_1_joint": "R_pinky_proximal_joint",
-    "right_little_2_joint": "R_pinky_intermediate_joint",
-    "right_middle_1_joint": "R_middle_proximal_joint",
-    "right_middle_2_joint": "R_middle_intermediate_joint",
-    "right_ring_1_joint": "R_ring_proximal_joint",
-    "right_ring_2_joint": "R_ring_intermediate_joint",
-    "right_thumb_1_joint": "R_thumb_proximal_yaw_joint",
-    "right_thumb_2_joint": "R_thumb_proximal_pitch_joint",
-    "right_thumb_3_joint": "R_thumb_intermediate_joint",
-    "right_thumb_4_joint": "R_thumb_distal_joint",
-}
-
-RETARGETER_HAND_JOINT_NAMES: list[str] = [_URDF_TO_NUCLEUS[n] for n in HAND_JOINT_NAMES]
-
-
-# 38-D teleop action layout: [L wrist(7) | R wrist(7) | hand(24)]. The hand
-# block at indices 14:38 follows HAND_JOINT_NAMES (URDF-A) order, which
-# interleaves left/right per the USD traversal — so per-side masking can NOT
-# use a contiguous slice. These index lists are derived from the side prefix
-# of HAND_JOINT_NAMES so they automatically track any USD reorder picked up
-# by the joint_names anchor in env_cfg.py.
-LEFT_HAND_38D_IDX: list[int] = [
-    14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("left_")
-]
-RIGHT_HAND_38D_IDX: list[int] = [
-    14 + i for i, n in enumerate(HAND_JOINT_NAMES) if n.startswith("right_")
-]
+# Joint identity sourced from the single-anchor module. Only what's actually
+# used inside this file — record_demos.py and tests now import their joint
+# constants directly from inspire_joint_constants.
+from inspire_joint_constants import (  # noqa: E402
+    HAND_JOINT_NAMES,
+    RETARGETER_HAND_JOINT_NAMES,
+)
 
 
 @configclass

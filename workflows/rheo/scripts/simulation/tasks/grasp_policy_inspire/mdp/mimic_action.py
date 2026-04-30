@@ -36,25 +36,10 @@ from isaaclab.utils import configclass
 # ---------------------------------------------------------------------------
 # Mimic relationship definitions
 # ---------------------------------------------------------------------------
-# Each tuple: (mimic_joint_name, parent_joint_name, multiplier)
-# Order matters: thumb_intermediate must be computed before thumb_distal.
-
-_MIMIC_RULES_PER_SIDE: list[tuple[str, str, float]] = [
-    # Finger _2 joints mimic their _1 (proximal) at 1.0843x
-    ("{side}_index_2_joint", "{side}_index_1_joint", 1.0843),
-    ("{side}_middle_2_joint", "{side}_middle_1_joint", 1.0843),
-    ("{side}_ring_2_joint", "{side}_ring_1_joint", 1.0843),
-    ("{side}_little_2_joint", "{side}_little_1_joint", 1.0843),
-    # Thumb chain: _3 mimics _2 (proximal pitch), _4 mimics _3 (intermediate)
-    ("{side}_thumb_3_joint", "{side}_thumb_2_joint", 0.8024),
-    ("{side}_thumb_4_joint", "{side}_thumb_3_joint", 0.9487),
-]
-
-# Expand for both hands
-MIMIC_RULES: list[tuple[str, str, float]] = []
-for side in ("left", "right"):
-    for mimic_tmpl, parent_tmpl, mult in _MIMIC_RULES_PER_SIDE:
-        MIMIC_RULES.append((mimic_tmpl.format(side=side), parent_tmpl.format(side=side), mult))
+# (child, parent, multiplier) per the URDF <mimic> tags. Order is load-bearing
+# for the thumb chain (thumb_3 must precede thumb_4 — thumb_4's parent is
+# itself a mimic). Sourced from the joint-identity anchor.
+from inspire_joint_constants import MIMIC_RULES  # noqa: E402, F401
 
 
 class InspireJointPositionAction(JointPositionAction):

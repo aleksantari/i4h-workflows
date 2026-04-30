@@ -13,176 +13,99 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helpers for mapping Inspire FTP HDF5 fields into canonical LeRobot 26-D tensors.
+"""Helpers for mapping Inspire FTP HDF5 fields into canonical LeRobot 26-D / 13-D tensors.
 
-Parallel to ``assemble_trocar_lerobot_fields.py`` but for the Inspire FTP
-hand (6 actuated DOF per hand instead of Dex3's 7).
+Pure-Python conversion logic — runs in non-Kit contexts (just numpy +
+``inspire_joint_constants``). All joint-identity constants are derived from
+that module so the URDF anchor flows through to LeRobot without any
+hand-authored duplicates.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from inspire_joint_constants import (
+    BODY_JOINT_NAMES_CANONICAL,
+    INSPIRE_ACTUATED_NAMES,
+    JOINT_NAMES_NUCLEUS_HAND,
+    MIMIC_JOINT_NAMES_NUCLEUS,
+    URDF_TO_NUCLEUS,
+)
+
+# Group order axiom for the canonical 26-D layout.
 STATE_26_GROUP_ORDER = ("left_arm", "right_arm", "left_hand", "right_hand")
 
 # Canonical 26-D joint order for Inspire FTP LeRobot data.
-# 14 arm joints (same as Dex3) + 12 actuated hand joints.
-STATE_26_NAMES_ENV_ORDER = [
-    # Left arm (7)
-    "left_shoulder_pitch_joint",
-    "left_shoulder_roll_joint",
-    "left_shoulder_yaw_joint",
-    "left_elbow_joint",
-    "left_wrist_roll_joint",
-    "left_wrist_pitch_joint",
-    "left_wrist_yaw_joint",
-    # Right arm (7)
-    "right_shoulder_pitch_joint",
-    "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint",
-    "right_elbow_joint",
-    "right_wrist_roll_joint",
-    "right_wrist_pitch_joint",
-    "right_wrist_yaw_joint",
-    # Left hand — 6 actuated (Inspire FTP)
-    "L_thumb_proximal_yaw_joint",
-    "L_thumb_proximal_pitch_joint",
-    "L_index_proximal_joint",
-    "L_middle_proximal_joint",
-    "L_ring_proximal_joint",
-    "L_pinky_proximal_joint",
-    # Right hand — 6 actuated (Inspire FTP)
-    "R_thumb_proximal_yaw_joint",
-    "R_thumb_proximal_pitch_joint",
-    "R_index_proximal_joint",
-    "R_middle_proximal_joint",
-    "R_ring_proximal_joint",
-    "R_pinky_proximal_joint",
-]
+# 14 arm joints (URDF naming, derived from the canonical body order's arm
+# slices) + 12 actuated hand joints (Nucleus naming, derived from the
+# canonical hand order via URDF_TO_NUCLEUS).
+STATE_26_NAMES_ENV_ORDER: list[str] = (
+    BODY_JOINT_NAMES_CANONICAL[15:22]                              # left arm (7)
+    + BODY_JOINT_NAMES_CANONICAL[22:29]                            # right arm (7)
+    + [URDF_TO_NUCLEUS[n] for n in INSPIRE_ACTUATED_NAMES[0:6]]    # left hand (6, Nucleus)
+    + [URDF_TO_NUCLEUS[n] for n in INSPIRE_ACTUATED_NAMES[6:12]]   # right hand (6, Nucleus)
+)
+
+# 53-joint USD order with hand half renamed to Nucleus. Used by the legacy
+# 53-D recorded action path. Sourced from joint_constants so it stays
+# bit-equal to env_cfg.joint_names with the URDF→Nucleus rename applied.
+RECORDED_ACTION_53_JOINT_NAMES: tuple[str, ...] = JOINT_NAMES_NUCLEUS_HAND
 
 # Indices of the 12 actuated hand joints within the 53-D action space.
-# Useful for extracting hand state from recorded 53-D HDF5 actions.
-INSPIRE_ACTUATED_JOINT_INDICES = [
-    33, 43, 29, 30, 32, 31,  # left: thumb_yaw, thumb_pitch, index, middle, ring, pinky
-    38, 48, 34, 35, 37, 36,  # right: thumb_yaw, thumb_pitch, index, middle, ring, pinky
+# Derived from RECORDED_ACTION_53_JOINT_NAMES so it auto-tracks any USD reorder.
+INSPIRE_ACTUATED_JOINT_INDICES: list[int] = [
+    RECORDED_ACTION_53_JOINT_NAMES.index(URDF_TO_NUCLEUS[n])
+    for n in INSPIRE_ACTUATED_NAMES
 ]
 
 # Indices of the 14 arm joints within the 53-D action space.
-ARM_JOINT_INDICES = [
-    11, 15, 19, 21, 23, 25, 27,  # left arm
-    12, 16, 20, 22, 24, 26, 28,  # right arm
+# Derived from RECORDED_ACTION_53_JOINT_NAMES.
+ARM_JOINT_INDICES: list[int] = [
+    RECORDED_ACTION_53_JOINT_NAMES.index(n)
+    for n in (BODY_JOINT_NAMES_CANONICAL[15:22] + BODY_JOINT_NAMES_CANONICAL[22:29])
 ]
 
-# Elbow offset (same as Dex3 — env config uses offset_dict for elbows)
+# Elbow offset chain: parquet `action[t]` carries +0.3 at the elbow columns
+# to cancel the env's offset_dict[*_elbow_joint] = -0.3. Indices are derived
+# from STATE_26_NAMES_ENV_ORDER so they auto-track any layout reorder.
+_LEFT_ELBOW_26 = STATE_26_NAMES_ENV_ORDER.index("left_elbow_joint")
+_RIGHT_ELBOW_26 = STATE_26_NAMES_ENV_ORDER.index("right_elbow_joint")
 STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA = np.zeros(26, dtype=np.float64)
-STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[3] = 0.3   # left_elbow_joint
-STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[10] = 0.3  # right_elbow_joint
+STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[_LEFT_ELBOW_26] = 0.3
+STATE_26_RAW_ACTION_FROM_PROCESSED_DELTA[_RIGHT_ELBOW_26] = 0.3
 
 # Column indices into the 87-D body observation (29 pos | 29 vel | 29 torque)
-# for extracting arm positions.  The canonical body observation order puts
-# left arm at positions 15-21 and right arm at 22-28.
+# for extracting arm positions. Pinned by BODY_JOINT_NAMES_CANONICAL's slice
+# contract: indices 15-21 are left arm, 22-28 are right arm.
 STATE_26_BODY_COL_LEFT_ARM = list(range(15, 22))
 STATE_26_BODY_COL_RIGHT_ARM = list(range(22, 29))
 
 # Column indices into the 12-D inspire hand observation (already canonical).
+# Pinned by INSPIRE_ACTUATED_NAMES's slice contract.
 STATE_26_INSPIRE_COL_LEFT_HAND = list(range(0, 6))
 STATE_26_INSPIRE_COL_RIGHT_HAND = list(range(6, 12))
 
-# The full 53-joint env config order (= USD tree-traversal order).
-# Updated from inspect_inspire_joints.py output.
-# L/R are interleaved, and actuated/mimic hand joints are NOT contiguous.
-RECORDED_ACTION_53_JOINT_NAMES = (
-    # --- Body (29): L/R interleaved ---
-    "left_hip_pitch_joint",        # 0
-    "right_hip_pitch_joint",       # 1
-    "waist_yaw_joint",             # 2
-    "left_hip_roll_joint",         # 3
-    "right_hip_roll_joint",        # 4
-    "waist_roll_joint",            # 5
-    "left_hip_yaw_joint",          # 6
-    "right_hip_yaw_joint",         # 7
-    "waist_pitch_joint",           # 8
-    "left_knee_joint",             # 9
-    "right_knee_joint",            # 10
-    "left_shoulder_pitch_joint",   # 11
-    "right_shoulder_pitch_joint",  # 12
-    "left_ankle_pitch_joint",      # 13
-    "right_ankle_pitch_joint",     # 14
-    "left_shoulder_roll_joint",    # 15
-    "right_shoulder_roll_joint",   # 16
-    "left_ankle_roll_joint",       # 17
-    "right_ankle_roll_joint",      # 18
-    "left_shoulder_yaw_joint",     # 19
-    "right_shoulder_yaw_joint",    # 20
-    "left_elbow_joint",            # 21
-    "right_elbow_joint",           # 22
-    "left_wrist_roll_joint",       # 23
-    "right_wrist_roll_joint",      # 24
-    "left_wrist_pitch_joint",      # 25
-    "right_wrist_pitch_joint",     # 26
-    "left_wrist_yaw_joint",        # 27
-    "right_wrist_yaw_joint",       # 28
-    # --- Hands (24): L/R interleaved, actuated then mimic ---
-    "L_index_proximal_joint",          # 29 [actuated]
-    "L_middle_proximal_joint",         # 30 [actuated]
-    "L_pinky_proximal_joint",          # 31 [actuated]
-    "L_ring_proximal_joint",           # 32 [actuated]
-    "L_thumb_proximal_yaw_joint",      # 33 [actuated]
-    "R_index_proximal_joint",          # 34 [actuated]
-    "R_middle_proximal_joint",         # 35 [actuated]
-    "R_pinky_proximal_joint",          # 36 [actuated]
-    "R_ring_proximal_joint",           # 37 [actuated]
-    "R_thumb_proximal_yaw_joint",      # 38 [actuated]
-    "L_index_intermediate_joint",      # 39 [mimic]
-    "L_middle_intermediate_joint",     # 40 [mimic]
-    "L_pinky_intermediate_joint",      # 41 [mimic]
-    "L_ring_intermediate_joint",       # 42 [mimic]
-    "L_thumb_proximal_pitch_joint",    # 43 [actuated]
-    "R_index_intermediate_joint",      # 44 [mimic]
-    "R_middle_intermediate_joint",     # 45 [mimic]
-    "R_pinky_intermediate_joint",      # 46 [mimic]
-    "R_ring_intermediate_joint",       # 47 [mimic]
-    "R_thumb_proximal_pitch_joint",    # 48 [actuated]
-    "L_thumb_intermediate_joint",      # 49 [mimic]
-    "R_thumb_intermediate_joint",      # 50 [mimic]
-    "L_thumb_distal_joint",            # 51 [mimic]
-    "R_thumb_distal_joint",            # 52 [mimic]
-)
-
-# Map canonical 26-D joint names to their index in the 53-D action space.
-_recorded_action_name_to_idx_53 = {
-    name: i for i, name in enumerate(RECORDED_ACTION_53_JOINT_NAMES)
-}
-ACTION_HDF5_TO_ENV_26 = [
-    _recorded_action_name_to_idx_53[name] for name in STATE_26_NAMES_ENV_ORDER
-]
 
 # ---------------------------------------------------------------------------
 # 41-D action space (29 body + 12 actuated hand, mimic joints removed).
 # Used for new recordings from the refactored RL/eval env.
 # ---------------------------------------------------------------------------
-_MIMIC_JOINT_NAMES_NUCLEUS = {
-    "L_index_intermediate_joint",
-    "L_middle_intermediate_joint",
-    "L_pinky_intermediate_joint",
-    "L_ring_intermediate_joint",
-    "R_index_intermediate_joint",
-    "R_middle_intermediate_joint",
-    "R_pinky_intermediate_joint",
-    "R_ring_intermediate_joint",
-    "L_thumb_intermediate_joint",
-    "R_thumb_intermediate_joint",
-    "L_thumb_distal_joint",
-    "R_thumb_distal_joint",
-}
 
-RECORDED_ACTION_41_JOINT_NAMES = tuple(
-    name for name in RECORDED_ACTION_53_JOINT_NAMES if name not in _MIMIC_JOINT_NAMES_NUCLEUS
+RECORDED_ACTION_41_JOINT_NAMES: tuple[str, ...] = tuple(
+    name for name in RECORDED_ACTION_53_JOINT_NAMES if name not in MIMIC_JOINT_NAMES_NUCLEUS
 )
 
+# Map canonical 26-D joint names to their index in the 53-D / 41-D action spaces.
+_recorded_action_name_to_idx_53 = {
+    name: i for i, name in enumerate(RECORDED_ACTION_53_JOINT_NAMES)
+}
 _recorded_action_name_to_idx_41 = {
     name: i for i, name in enumerate(RECORDED_ACTION_41_JOINT_NAMES)
 }
+ACTION_HDF5_TO_ENV_26 = [
+    _recorded_action_name_to_idx_53[name] for name in STATE_26_NAMES_ENV_ORDER
+]
 ACTION_HDF5_TO_ENV_26_FROM_41 = [
     _recorded_action_name_to_idx_41[name] for name in STATE_26_NAMES_ENV_ORDER
 ]
@@ -192,27 +115,16 @@ ACTION_HDF5_TO_ENV_26_FROM_41 = [
 # 13-D right-arm-only subset (right_arm[7] + right_hand[6])
 # ---------------------------------------------------------------------------
 
-STATE_13_NAMES_ENV_ORDER = [
-    # Right arm (7)
-    "right_shoulder_pitch_joint",
-    "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint",
-    "right_elbow_joint",
-    "right_wrist_roll_joint",
-    "right_wrist_pitch_joint",
-    "right_wrist_yaw_joint",
-    # Right hand — 6 actuated (Inspire FTP)
-    "R_thumb_proximal_yaw_joint",
-    "R_thumb_proximal_pitch_joint",
-    "R_index_proximal_joint",
-    "R_middle_proximal_joint",
-    "R_ring_proximal_joint",
-    "R_pinky_proximal_joint",
-]
+# Derived as a slice of the 26-D layout: right arm + right hand.
+STATE_13_NAMES_ENV_ORDER: list[str] = (
+    STATE_26_NAMES_ENV_ORDER[7:14]    # right arm (7)
+    + STATE_26_NAMES_ENV_ORDER[20:26] # right hand (6)
+)
 
-# Elbow offset for 13-D: right elbow is at index 3 in the 13-D vector.
+# Elbow offset for 13-D: right elbow at index derived from STATE_13.
+_RIGHT_ELBOW_13 = STATE_13_NAMES_ENV_ORDER.index("right_elbow_joint")
 STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA = np.zeros(13, dtype=np.float64)
-STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA[3] = 0.3  # right_elbow_joint
+STATE_13_RAW_ACTION_FROM_PROCESSED_DELTA[_RIGHT_ELBOW_13] = 0.3
 
 # Index maps from 53-D and 41-D recorded actions into canonical 13-D order.
 ACTION_HDF5_TO_ENV_13 = [
@@ -261,27 +173,16 @@ def convert_g1_state_action_to_lerobot_13d(
 # 13-D left-arm-only subset (left_arm[7] + left_hand[6])
 # ---------------------------------------------------------------------------
 
-STATE_13_LEFT_NAMES_ENV_ORDER = [
-    # Left arm (7)
-    "left_shoulder_pitch_joint",
-    "left_shoulder_roll_joint",
-    "left_shoulder_yaw_joint",
-    "left_elbow_joint",
-    "left_wrist_roll_joint",
-    "left_wrist_pitch_joint",
-    "left_wrist_yaw_joint",
-    # Left hand — 6 actuated (Inspire FTP)
-    "L_thumb_proximal_yaw_joint",
-    "L_thumb_proximal_pitch_joint",
-    "L_index_proximal_joint",
-    "L_middle_proximal_joint",
-    "L_ring_proximal_joint",
-    "L_pinky_proximal_joint",
-]
+# Derived as a slice of the 26-D layout: left arm + left hand.
+STATE_13_LEFT_NAMES_ENV_ORDER: list[str] = (
+    STATE_26_NAMES_ENV_ORDER[0:7]     # left arm (7)
+    + STATE_26_NAMES_ENV_ORDER[14:20] # left hand (6)
+)
 
-# Elbow offset for 13-D left: left elbow is at index 3 in the 13-D vector.
+# Elbow offset for 13-D left: left elbow at index derived from STATE_13_LEFT.
+_LEFT_ELBOW_13 = STATE_13_LEFT_NAMES_ENV_ORDER.index("left_elbow_joint")
 STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA = np.zeros(13, dtype=np.float64)
-STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA[3] = 0.3  # left_elbow_joint
+STATE_13_LEFT_RAW_ACTION_FROM_PROCESSED_DELTA[_LEFT_ELBOW_13] = 0.3
 
 # Index maps from 53-D and 41-D recorded actions into canonical left-arm 13-D order.
 ACTION_HDF5_TO_ENV_13_LEFT = [

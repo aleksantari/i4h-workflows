@@ -31,11 +31,12 @@ Concretely:
 | **USD (loaded asset)** | [`assets/robots/g1-29dof-inspire-ftp-usd-wrist_cam/g1_29dof_inspire_ftp.usd`](../../assets/robots/g1-29dof-inspire-ftp-usd-wrist_cam/) | Generated from the URDF; what the simulator actually reads. |
 | **Sim binding** | [`config/robot_config.py:33-35`](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L33-L35) (`UNITREE_G1_29DOF_INSPIRE_FTP_USD`) → [`robot_config.py:80-222`](../../scripts/simulation/tasks/grasp_policy_inspire/config/robot_config.py#L80-L222) (`G129_CFG_WITH_INSPIRE_BASE_FIX`) | Points the `ArticulationCfg` at the USD path, sets actuator gains, default joint positions, gravity-off, fixed root. |
 | **Articulation order** | `articulation.data.joint_names` at runtime | The simulator's authoritative list, in USD tree-traversal order. Inaccessible without booting IsaacLab. |
-| **Hand-authored mirror** | [`g1_grasp_policy_inspire_env_cfg.py:joint_names` (53 entries)](../../scripts/simulation/tasks/grasp_policy_inspire/g1_grasp_policy_inspire_env_cfg.py#L53-L110) | A static Python list that *must match* the articulation order. URDF naming. Used everywhere downstream as the practical anchor. **Verify after any USD swap** (see §4.7). |
+| **Hand-authored mirror (single anchor)** | [`scripts/inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py) (`JOINT_NAMES`, 53 entries) | The single Python source of truth for joint identity. Pure stdlib (no IsaacLab / torch / numpy), so it can be imported from anywhere — env_cfg, observations, mimic_action, teleop_env_cfg, the LeRobot converter, and the grounding test all derive from this one file. URDF naming. Must match articulation order. **Verify after any USD swap** (see §4.7). Lives at the top of `scripts/` (not under `scripts/utils/`) because Kit's cv2 boot prepends `cv2/utils/` to sys.path, which would shadow `utils.X` imports — see the module's own docstring. |
+| **Re-exports** | env_cfg.py (`joint_names`), observations.py, mimic_action.py, teleop_env_cfg.py | Each module imports + aliases names from `joint_constants` so existing public surfaces (`joint_names`, `_BODY_JOINT_NAMES_CANONICAL`, etc.) keep working. |
 
-The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic `_2`, then 2 actuated `_2` thumbs, then 4 more mimic `_2`, then `_3`/`_4` thumb mimics — interleaved L/R per USD traversal). The order is **load-bearing** for many downstream constants — slicing `joint_names[29:]` to get the 24 hand joints, deriving `actuated_joint_names` by removing mimic entries, computing the `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` partition, and indexing into the 41-D `actuated_joint_names` for the policy scatter.
+The 53-entry layout is 29 body + 24 hand (10 actuated `_1` joints, then 4 mimic `_2`, then 2 actuated `_2` thumbs, then 4 more mimic `_2`, then `_3`/`_4` thumb mimics — interleaved L/R per USD traversal). The order is **load-bearing** for many downstream constants — slicing `joint_names[29:]` to get the 24 hand joints, deriving `actuated_joint_names` by removing mimic entries, computing the `LEFT_HAND_38D_IDX` / `RIGHT_HAND_38D_IDX` partition, and indexing into the 41-D `actuated_joint_names` for the policy scatter.
 
-**Caveat:** there is a *second* hand-authored copy of the same 53-joint list in [`inspire_lerobot_fields.py:RECORDED_ACTION_53_JOINT_NAMES`](../../scripts/utils/inspire/inspire_lerobot_fields.py#L94-L150) using Nucleus naming for the hand half. This is a drift hotspot; see §4.1.
+**Post-refactor architecture (2026-04-29):** Constants previously duplicated across 5 files (env_cfg, teleop_env_cfg, observations, mimic_action, inspire_lerobot_fields) are now hoisted into `joint_constants.py`. Hand-authored sources of truth there: `JOINT_NAMES`, `MIMIC_JOINT_NAMES`, `URDF_TO_NUCLEUS`, `BODY_JOINT_NAMES_CANONICAL`, `INSPIRE_ACTUATED_NAMES`, and the per-side mimic template. Everything else (`ACTUATED_JOINT_NAMES`, `HAND_JOINT_NAMES`, `RETARGETER_HAND_JOINT_NAMES`, `MIMIC_JOINT_NAMES_NUCLEUS`, `JOINT_NAMES_NUCLEUS_HAND`, `LEFT_HAND_38D_IDX` / `RIGHT_HAND_38D_IDX`, the expanded `MIMIC_RULES`) is computed at module load. The hotspots in §4.1, §4.2, §4.3, §4.4 are now structurally impossible — there's no second copy to drift.
 
 ---
 
@@ -200,19 +201,17 @@ These are the constants that *encode the same fact* as another constant in the c
 
 ### 4.1 `RECORDED_ACTION_53_JOINT_NAMES` ↔ `joint_names`
 
-**Truth:** `joint_names` (env_cfg.py, URDF) is the anchor — it's what the simulator actually sees.
-**Duplicate:** `RECORDED_ACTION_53_JOINT_NAMES` (inspire_lerobot_fields.py, body in URDF + hand in Nucleus) is a parallel hand-authored copy.
-**Derivation rule:** `tuple(n if i < 29 else _URDF_TO_NUCLEUS[n] for i, n in enumerate(joint_names))`.
-**Failure mode if desynced:** `ACTION_HDF5_TO_ENV_26` (and friends) compute index lookups against the duplicate; if its 53-entry order drifts from the env's, the converter routes recorded actions to the wrong joints. Symptom: the policy trains on cleanly-converted parquet, but the converted parquet is wrong. Hard to detect without a roundtrip test (parquet → 41-D scatter → compare to recorded).
-**Status:** **Open.** Foundation (`joint_names` + `_URDF_TO_NUCLEUS`) is now test-pinned, so a derivation-equality check is straightforward to add.
+**Truth:** `JOINT_NAMES` in `joint_constants.py` (URDF, single anchor).
+**Was-duplicate:** `RECORDED_ACTION_53_JOINT_NAMES` was a parallel hand-authored copy with Nucleus hand naming.
+**Derivation rule:** `tuple(n if i < 29 else URDF_TO_NUCLEUS[n] for i, n in enumerate(JOINT_NAMES))`.
+**Status:** **Resolved (2026-04-29).** `joint_constants.py` now provides `JOINT_NAMES_NUCLEUS_HAND` as a derivation; `inspire_lerobot_fields.py` re-exports it as `RECORDED_ACTION_53_JOINT_NAMES`. The duplicate is structurally gone — both names refer to the same computed tuple.
 
 ### 4.2 `_MIMIC_JOINT_NAMES_NUCLEUS` ↔ `_MIMIC_JOINT_NAMES`
 
-**Truth:** `_MIMIC_JOINT_NAMES` (env_cfg.py, URDF) — used by `actuated_joint_names` filtering and by `InspireJointPositionAction`.
-**Duplicate:** `_MIMIC_JOINT_NAMES_NUCLEUS` (inspire_lerobot_fields.py) — used to build `RECORDED_ACTION_41_JOINT_NAMES`.
-**Derivation rule:** `{_URDF_TO_NUCLEUS[n] for n in _MIMIC_JOINT_NAMES}`.
-**Failure mode if desynced:** the 53-D → 41-D filter on the data side excludes a different mimic set than the env action manager uses, so the recorded-action conversion writes to (or skips) the wrong joints. Same silent corruption mode as 4.1.
-**Status:** **Open.** `_MIMIC_JOINT_NAMES` is now test-pinned; one extra assertion against `_URDF_TO_NUCLEUS` closes this.
+**Truth:** `MIMIC_JOINT_NAMES` in `joint_constants.py` (URDF, single anchor).
+**Was-duplicate:** `_MIMIC_JOINT_NAMES_NUCLEUS` was a parallel hand-authored set (Nucleus naming).
+**Derivation rule:** `{URDF_TO_NUCLEUS[n] for n in MIMIC_JOINT_NAMES}`.
+**Status:** **Resolved (2026-04-29).** `joint_constants.py` exposes `MIMIC_JOINT_NAMES_NUCLEUS` as a derivation; `inspire_lerobot_fields.py` imports it directly. No second copy exists.
 
 ### 4.3 `_BODY_JOINT_NAMES_CANONICAL` ↔ `joint_names[:29]`
 
@@ -220,14 +219,14 @@ These are the constants that *encode the same fact* as another constant in the c
 **Relationship:** `_BODY_JOINT_NAMES_CANONICAL` is a **deliberate reorder spec**, not a duplicate. It must be the exact same *set* as `joint_names[:29]`, just permuted.
 **Derivation rule:** `set(_BODY_JOINT_NAMES_CANONICAL) == set(joint_names[:29])` is the invariant; the order is a hand-authored design choice (and load-bearing for downstream slicing).
 **Failure mode if desynced:** if a body joint is added/removed in the USD but the canonical-order list isn't updated, observation extraction silently produces zeros (or raises — the `_resolve_indices` lookup falls through to `KeyError`). Less silent than 4.1/4.2 but worth a set-equality test.
-**Status:** **Monitored** (2026-04-29). `test_body_canonical_set_matches` pins set parity + length 29 + no duplicates. `test_body_canonical_arm_slice_contract` additionally pins the slice positions (`[15:22]` left arm, `[22:29]` right arm) so a deliberate-reorder regression fails loudly. `test_body_canonical_resolves_to_articulation` and `test_body_obs_layout_at_default_pose` cover the bridge end-to-end.
+**Status:** **Resolved** (2026-04-29 refactor) — `BODY_JOINT_NAMES_CANONICAL` now lives in `joint_constants.py` next to `JOINT_NAMES`, both authored side by side. `test_body_canonical_set_matches` continues to pin set parity (catches a typo at the single source). The slice contract test (`[15:22]` left arm, `[22:29]` right arm) and the runtime obs-layout tests cover the bridge end-to-end.
 
 ### 4.4 `_INSPIRE_ACTUATED_NAMES` ↔ `STATE_26_NAMES_ENV_ORDER[14:26]`
 
 **Truth:** these are the same 12 actuated hand joints, in the same canonical order. `_INSPIRE_ACTUATED_NAMES` uses URDF; `STATE_26_NAMES_ENV_ORDER[14:26]` uses Nucleus.
 **Derivation rule:** `[_URDF_TO_NUCLEUS[n] for n in _INSPIRE_ACTUATED_NAMES] == STATE_26_NAMES_ENV_ORDER[14:26]`.
 **Failure mode if desynced:** the 12-D hand observation would slice to a different per-finger order than the LeRobot 26-D state, so observations and actions disagree about which dim is "left index" vs "left middle." Symptom at training: nontrivially-mistrained policy that fails on the same fingers it was trained on. This is exactly the class of bug the user has flagged historically.
-**Status:** **Partially Monitored** (2026-04-29). The URDF-side anchor `_INSPIRE_ACTUATED_NAMES` is now test-pinned: set equality with URDF actuated hand joints, hand slice contract (`[0:6]` left, `[6:12]` right), bridge correctness, and runtime obs layout — see `test_inspire_actuated_*` and `test_inspire_obs_layout_at_default_pose`. The cross-file derivation against `STATE_26_NAMES_ENV_ORDER[14:26]` (via `_URDF_TO_NUCLEUS`) is **not yet tested**; defer to the `inspire_lerobot_fields.py` audit pass when that file is reviewed.
+**Status:** **Resolved** (2026-04-29 refactor). After the hoist, `STATE_26_NAMES_ENV_ORDER` in `inspire_lerobot_fields.py` is computed as `BODY_JOINT_NAMES_CANONICAL[15:29] + [URDF_TO_NUCLEUS[n] for n in INSPIRE_ACTUATED_NAMES]` — there is no second authored copy of the hand half. The historical *finger-crossed* bug class is now structurally impossible at this seam; if `URDF_TO_NUCLEUS` ever has a wrong mapping, the existing `test_urdf_to_nucleus_finger_consistency` catches it.
 
 ### 4.5 `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` ↔ side-prefix partition of `HAND_JOINT_NAMES`
 

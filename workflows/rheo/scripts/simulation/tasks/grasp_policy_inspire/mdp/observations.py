@@ -32,57 +32,15 @@ import torch
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
-# Names of the 29 body joints in the canonical output order.
-# This must match the order used by the Dex3 body observation function
-# so that downstream consumers (obs_processor, experiment config) see the
-# same arm joint positions at the same slice.
-_BODY_JOINT_NAMES_CANONICAL = [
-    "left_hip_pitch_joint",
-    "right_hip_pitch_joint",
-    "left_hip_roll_joint",
-    "right_hip_roll_joint",
-    "left_hip_yaw_joint",
-    "right_hip_yaw_joint",
-    "left_knee_joint",
-    "right_knee_joint",
-    "left_ankle_pitch_joint",
-    "right_ankle_pitch_joint",
-    "left_ankle_roll_joint",
-    "right_ankle_roll_joint",
-    "waist_yaw_joint",
-    "waist_roll_joint",
-    "waist_pitch_joint",
-    "left_shoulder_pitch_joint",
-    "left_shoulder_roll_joint",
-    "left_shoulder_yaw_joint",
-    "left_elbow_joint",
-    "left_wrist_roll_joint",
-    "left_wrist_pitch_joint",
-    "left_wrist_yaw_joint",
-    "right_shoulder_pitch_joint",
-    "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint",
-    "right_elbow_joint",
-    "right_wrist_roll_joint",
-    "right_wrist_pitch_joint",
-    "right_wrist_yaw_joint",
-]
-
-# 12 actuated hand joint names in canonical order (6 left + 6 right).
-_INSPIRE_ACTUATED_NAMES = [
-    "left_thumb_1_joint",
-    "left_thumb_2_joint",
-    "left_index_1_joint",
-    "left_middle_1_joint",
-    "left_ring_1_joint",
-    "left_little_1_joint",
-    "right_thumb_1_joint",
-    "right_thumb_2_joint",
-    "right_index_1_joint",
-    "right_middle_1_joint",
-    "right_ring_1_joint",
-    "right_little_1_joint",
-]
+# Canonical body / hand obs ordering — sourced from the joint-identity anchor.
+# `_BODY_JOINT_NAMES_CANONICAL` is intentionally a different *order* from the
+# USD articulation (interleaved L/R by body part, so arm joints land at fixed
+# slices [15:22] / [22:29]). `_INSPIRE_ACTUATED_NAMES` is the canonical 12-D
+# hand obs order. See utils/inspire/joint_constants.py for definitions.
+from inspire_joint_constants import (  # noqa: E402
+    BODY_JOINT_NAMES_CANONICAL as _BODY_JOINT_NAMES_CANONICAL,
+    INSPIRE_ACTUATED_NAMES as _INSPIRE_ACTUATED_NAMES,
+)
 
 
 def _resolve_indices(joint_names: list[str], target_names: list[str], device: torch.device) -> torch.Tensor:

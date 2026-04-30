@@ -43,100 +43,20 @@ from simulation.tasks.grasp_policy_inspire import mdp
 
 from simulation.tasks.grasp_policy_inspire.config import CameraPresets, G1InspireRobotPresets  # isort: skip
 
-# ---------------------------------------------------------------------------
-# 53-joint name list: 29 body + 24 Inspire FTP hand joints.
-# NOTE: The exact ordering MUST match the USD articulation ordering.
-# Run scripts/utils/inspire/inspect_inspire_joints.py to verify/update.
-# The body joints (indices 0-28) are the same as the Dex3 task.
-# Hand joints (indices 29-52) follow the USD's tree traversal order.
-# ---------------------------------------------------------------------------
-joint_names = [
-    # --- Body (29): USD articulation tree traversal order ---
-    # Legs, waist, and arms are interleaved left/right in the USD.
-    "left_hip_pitch_joint",       # 0
-    "right_hip_pitch_joint",      # 1
-    "waist_yaw_joint",            # 2
-    "left_hip_roll_joint",        # 3
-    "right_hip_roll_joint",       # 4
-    "waist_roll_joint",           # 5
-    "left_hip_yaw_joint",         # 6
-    "right_hip_yaw_joint",        # 7
-    "waist_pitch_joint",          # 8
-    "left_knee_joint",            # 9
-    "right_knee_joint",           # 10
-    "left_shoulder_pitch_joint",  # 11
-    "right_shoulder_pitch_joint", # 12
-    "left_ankle_pitch_joint",     # 13
-    "right_ankle_pitch_joint",    # 14
-    "left_shoulder_roll_joint",   # 15
-    "right_shoulder_roll_joint",  # 16
-    "left_ankle_roll_joint",      # 17
-    "right_ankle_roll_joint",     # 18
-    "left_shoulder_yaw_joint",    # 19
-    "right_shoulder_yaw_joint",   # 20
-    "left_elbow_joint",           # 21
-    "right_elbow_joint",          # 22
-    "left_wrist_roll_joint",      # 23
-    "right_wrist_roll_joint",     # 24
-    "left_wrist_pitch_joint",     # 25
-    "right_wrist_pitch_joint",    # 26
-    "left_wrist_yaw_joint",       # 27
-    "right_wrist_yaw_joint",      # 28
-    # --- Hands (24): left/right interleaved, actuated then mimic ---
-    "left_index_1_joint",         # 29 [actuated]
-    "left_little_1_joint",        # 30 [actuated]
-    "left_middle_1_joint",        # 31 [actuated]
-    "left_ring_1_joint",          # 32 [actuated]
-    "left_thumb_1_joint",         # 33 [actuated]
-    "right_index_1_joint",        # 34 [actuated]
-    "right_little_1_joint",       # 35 [actuated]
-    "right_middle_1_joint",       # 36 [actuated]
-    "right_ring_1_joint",         # 37 [actuated]
-    "right_thumb_1_joint",        # 38 [actuated]
-    "left_index_2_joint",         # 39 [mimic]
-    "left_little_2_joint",        # 40 [mimic]
-    "left_middle_2_joint",        # 41 [mimic]
-    "left_ring_2_joint",          # 42 [mimic]
-    "left_thumb_2_joint",         # 43 [actuated]
-    "right_index_2_joint",        # 44 [mimic]
-    "right_little_2_joint",       # 45 [mimic]
-    "right_middle_2_joint",       # 46 [mimic]
-    "right_ring_2_joint",         # 47 [mimic]
-    "right_thumb_2_joint",        # 48 [actuated]
-    "left_thumb_3_joint",         # 49 [mimic]
-    "right_thumb_3_joint",        # 50 [mimic]
-    "left_thumb_4_joint",         # 51 [mimic]
-    "right_thumb_4_joint",        # 52 [mimic]
-]
+# Joint identity constants live in a single Kit-free source of truth so they
+# can be shared with the HDF5→LeRobot converter (non-Kit context). Aliased
+# here to preserve the public names this module already exports.
+# See utils/inspire/joint_constants.py and docs/inspire/joint_spaces.md.
+from inspire_joint_constants import (  # noqa: E402
+    JOINT_NAMES as joint_names,
+    MIMIC_JOINT_NAMES as _MIMIC_JOINT_NAMES,
+    ACTUATED_JOINT_NAMES as actuated_joint_names,
+)
 
 offset_dict = {
     "left_elbow_joint": -0.3,
     "right_elbow_joint": -0.3,
 }
-
-# ---------------------------------------------------------------------------
-# 41-joint name list: 29 body + 12 actuated hand joints only.
-# Used by the RL/eval action space. Mimic joints are driven separately
-# by InspireJointPositionAction.apply_actions() after targets are set.
-# The full 53-entry joint_names list is kept above for the teleop variant
-# (PinkIK needs all 24 hand joints including mimic).
-# ---------------------------------------------------------------------------
-_MIMIC_JOINT_NAMES = {
-    "left_index_2_joint",
-    "left_little_2_joint",
-    "left_middle_2_joint",
-    "left_ring_2_joint",
-    "right_index_2_joint",
-    "right_little_2_joint",
-    "right_middle_2_joint",
-    "right_ring_2_joint",
-    "left_thumb_3_joint",
-    "right_thumb_3_joint",
-    "left_thumb_4_joint",
-    "right_thumb_4_joint",
-}
-
-actuated_joint_names = [name for name in joint_names if name not in _MIMIC_JOINT_NAMES]
 
 # ---------------------------------------------------------------------------
 # Target pad geometry (same as Dex3 variant)

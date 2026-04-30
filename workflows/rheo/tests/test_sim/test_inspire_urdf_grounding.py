@@ -3,20 +3,23 @@
 
 """Joint-space grounding test — Layer 1 (URDF spec ↔ code), Layer 2 (USD ↔ code), Layer 3 (runtime behavior).
 
-Layer 1 (14 checks): parses the active Inspire FTP URDF as XML and asserts that
-the joint-space constants in env_cfg, mimic_action, robot_config, the teleop
-env_cfg, and the canonical observation lists agree with it. Catches drift in:
+Layer 1 (14 checks): parses the active Inspire FTP URDF as XML and asserts
+that the joint-identity constants in `utils/inspire/joint_constants.py` (the
+single anchor — re-exported into env_cfg, observations, mimic_action,
+teleop_env_cfg via import-and-alias) agree with it. Also pins the actuator
+regex partition in robot_config and the PinkIK arm-joint partition in
+teleop_env_cfg. Catches drift in:
   - Joint count, name set, mimic set
   - Mimic relationship triples (parent / multiplier / offset==0)
   - Actuator regex coverage in robot_config
-  - URDF ↔ Nucleus bridge (`_URDF_TO_NUCLEUS`): domain, bijection, finger / side consistency
+  - URDF ↔ Nucleus bridge (`URDF_TO_NUCLEUS`): domain, bijection, finger / side consistency
   - PinkIK ``pink_controlled_joint_names`` regex coverage of the 14 arm joints
-  - ``_BODY_JOINT_NAMES_CANONICAL`` set + arm slice contract ([15:22] left, [22:29] right)
-  - ``_INSPIRE_ACTUATED_NAMES`` set + hand slice contract ([0:6] left, [6:12] right)
+  - ``BODY_JOINT_NAMES_CANONICAL`` set + arm slice contract ([15:22] left, [22:29] right)
+  - ``INSPIRE_ACTUATED_NAMES`` set + hand slice contract ([0:6] left, [6:12] right)
   - 38-D teleop hand partition (``LEFT_HAND_38D_IDX`` / ``RIGHT_HAND_38D_IDX``) by side prefix
 
 Layer 2 (4 checks): order-sensitive checks against the loaded USD articulation:
-  - env_cfg ``joint_names`` matches articulation list-wise.
+  - ``JOINT_NAMES`` (the anchor) matches articulation list-wise.
   - ``_resolve_indices`` produces correct articulation indices for body canonical names.
   - ``_resolve_indices`` produces correct articulation indices for hand canonical names.
   - Wrist FK link names (``left_wrist_yaw_link`` / ``right_wrist_yaw_link``) exist on the articulation.
@@ -62,28 +65,36 @@ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg  # noqa: E402
 # which the Layer 2 + Layer 3 tests need via gym.make.
 import simulation.tasks.grasp_policy_inspire  # noqa: E402, F401
 
+# IsaacLab-coupled imports — types that genuinely require Kit (config classes,
+# runtime obs functions, the articulation cfg).
 from simulation.tasks.grasp_policy_inspire.config.robot_config import (  # noqa: E402
     G129_CFG_WITH_INSPIRE_BASE_FIX,
 )
-from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_env_cfg import (  # noqa: E402
-    _MIMIC_JOINT_NAMES,
-    actuated_joint_names as ACTUATED_JOINT_NAMES,
-    joint_names as ENV_CFG_JOINT_NAMES,
-)
 from simulation.tasks.grasp_policy_inspire.g1_grasp_policy_inspire_teleop_env_cfg import (  # noqa: E402
-    HAND_JOINT_NAMES,
-    LEFT_HAND_38D_IDX,
-    RIGHT_HAND_38D_IDX,
     TeleopActionsCfg,
-    _URDF_TO_NUCLEUS,
 )
-from simulation.tasks.grasp_policy_inspire.mdp.mimic_action import MIMIC_RULES  # noqa: E402
 from simulation.tasks.grasp_policy_inspire.mdp.observations import (  # noqa: E402
-    _BODY_JOINT_NAMES_CANONICAL,
-    _INSPIRE_ACTUATED_NAMES,
     _resolve_indices,
     get_robot_body_joint_states,
     get_robot_inspire_joint_states,
+)
+# Joint-identity constants come from the single Kit-free anchor. After the
+# 2026-04-29 refactor, env_cfg / observations / mimic_action / teleop_env_cfg
+# all re-export from this module — going straight to the source here keeps
+# the import path one hop instead of two. The module lives at the top level
+# of `scripts/` (not under `scripts/utils/`) because Kit's cv2 boot adds
+# `cv2/utils/` to sys.path, shadowing any `utils.X` import.
+from inspire_joint_constants import (  # noqa: E402
+    ACTUATED_JOINT_NAMES,
+    BODY_JOINT_NAMES_CANONICAL as _BODY_JOINT_NAMES_CANONICAL,
+    HAND_JOINT_NAMES,
+    INSPIRE_ACTUATED_NAMES as _INSPIRE_ACTUATED_NAMES,
+    JOINT_NAMES,
+    LEFT_HAND_38D_IDX,
+    MIMIC_JOINT_NAMES as _MIMIC_JOINT_NAMES,
+    MIMIC_RULES,
+    RIGHT_HAND_38D_IDX,
+    URDF_TO_NUCLEUS as _URDF_TO_NUCLEUS,
 )
 
 # The active URDF — the wrist_cam variant, matching what robot_config.py loads.
@@ -98,7 +109,7 @@ def _parse_urdf():
     """Parse the URDF into (articulated, mimic_triples, all_joints).
 
     - articulated: list[str] of joints with non-zero DOF (revolute / continuous /
-      prismatic). The 53 to compare against env_cfg.joint_names *as a set*.
+      prismatic). The 53 to compare against ``JOINT_NAMES`` (the anchor) *as a set*.
     - mimic_triples: list of (child, parent, multiplier, offset) tuples, one per
       <mimic> tag. Offset is asserted to be 0 (the action class ignores it).
     - all_joints: list[(name, type)] including fixed joints — useful for
@@ -193,7 +204,7 @@ class InspireGroundingTests(unittest.TestCase):
     # -- Layer 1: 1. Joint count parity ---------------------------------------
 
     def test_joint_count_parity(self):
-        """env_cfg.joint_names mirrors the URDF's articulated joint count (53)."""
+        """``JOINT_NAMES`` (the anchor) mirrors the URDF's articulated joint count (53)."""
         EXPECTED = 53
         self.assertEqual(
             len(_ARTICULATED), EXPECTED,
@@ -202,39 +213,39 @@ class InspireGroundingTests(unittest.TestCase):
             f"If this fails, the URDF was edited; downstream tests are unreliable."
         )
         self.assertEqual(
-            len(ENV_CFG_JOINT_NAMES), EXPECTED,
-            f"env_cfg.joint_names has {len(ENV_CFG_JOINT_NAMES)} entries, expected {EXPECTED}."
+            len(JOINT_NAMES), EXPECTED,
+            f"joint_constants.JOINT_NAMES has {len(JOINT_NAMES)} entries, expected {EXPECTED}."
         )
 
     # -- Layer 1: 2. Joint name set matches -----------------------------------
 
     def test_joint_name_set_matches(self):
-        """env_cfg.joint_names contains exactly the URDF's articulated names."""
+        """``JOINT_NAMES`` (the anchor) contains exactly the URDF's articulated names."""
         urdf_set = set(_ARTICULATED)
-        env_set = set(ENV_CFG_JOINT_NAMES)
-        only_in_urdf = urdf_set - env_set
-        only_in_env = env_set - urdf_set
+        anchor_set = set(JOINT_NAMES)
+        only_in_urdf = urdf_set - anchor_set
+        only_in_anchor = anchor_set - urdf_set
         self.assertEqual(
-            urdf_set, env_set,
+            urdf_set, anchor_set,
             f"Joint name sets disagree.\n"
-            f"  In URDF, missing from env_cfg: {sorted(only_in_urdf)}\n"
-            f"  In env_cfg, missing from URDF: {sorted(only_in_env)}\n"
+            f"  In URDF, missing from JOINT_NAMES: {sorted(only_in_urdf)}\n"
+            f"  In JOINT_NAMES, missing from URDF: {sorted(only_in_anchor)}\n"
             f"Note: this checks the SET only; ordering is Layer 2's job."
         )
 
     # -- Layer 1: 3. Mimic set matches ----------------------------------------
 
     def test_mimic_set_matches(self):
-        """URDF's mimic children == env_cfg._MIMIC_JOINT_NAMES (12 each)."""
+        """URDF's mimic children == ``MIMIC_JOINT_NAMES`` (12 each)."""
         urdf_mimic_children = {child for child, *_ in _MIMIC_TRIPLES}
         only_in_urdf = urdf_mimic_children - _MIMIC_JOINT_NAMES
-        only_in_env = _MIMIC_JOINT_NAMES - urdf_mimic_children
+        only_in_anchor = _MIMIC_JOINT_NAMES - urdf_mimic_children
         self.assertEqual(
             urdf_mimic_children, _MIMIC_JOINT_NAMES,
             f"Mimic-joint sets disagree.\n"
-            f"  Mimic in URDF, not in _MIMIC_JOINT_NAMES: {sorted(only_in_urdf)}\n"
-            f"  In _MIMIC_JOINT_NAMES, not mimic in URDF: {sorted(only_in_env)}\n"
-            f"A drift here corrupts actuated_joint_names (URDF→sim mismatch on "
+            f"  Mimic in URDF, not in MIMIC_JOINT_NAMES: {sorted(only_in_urdf)}\n"
+            f"  In MIMIC_JOINT_NAMES, not mimic in URDF: {sorted(only_in_anchor)}\n"
+            f"A drift here corrupts ACTUATED_JOINT_NAMES (URDF→sim mismatch on "
             f"which joints the 41-D action commands)."
         )
 
@@ -469,7 +480,7 @@ class InspireGroundingTests(unittest.TestCase):
         from ``joint_names[:29]`` (interleaved by body part for slice
         stability) but must contain the same SET.
         """
-        body_urdf = set(ENV_CFG_JOINT_NAMES[:29])
+        body_urdf = set(JOINT_NAMES[:29])
         body_canonical = set(_BODY_JOINT_NAMES_CANONICAL)
         only_in_urdf = body_urdf - body_canonical
         only_in_canonical = body_canonical - body_urdf
@@ -533,7 +544,7 @@ class InspireGroundingTests(unittest.TestCase):
 
         Set equality + length + 6/6 left-right balance.
         """
-        urdf_actuated_hand = set(ENV_CFG_JOINT_NAMES[29:]) - _MIMIC_JOINT_NAMES
+        urdf_actuated_hand = set(JOINT_NAMES[29:]) - _MIMIC_JOINT_NAMES
         canonical_actuated = set(_INSPIRE_ACTUATED_NAMES)
         only_in_urdf = urdf_actuated_hand - canonical_actuated
         only_in_canonical = canonical_actuated - urdf_actuated_hand
@@ -661,7 +672,7 @@ class InspireGroundingTests(unittest.TestCase):
                     f"masking is the wrong side."
                 )
 
-    # -- Layer 2: 14. Wrist link names exist on the articulation -------------
+    # -- Layer 2: 1. Wrist link names exist on the articulation --------------
 
     def test_wrist_link_names_exist(self):
         """Both wrist FK link names referenced in record_demos exist on the robot.
@@ -683,7 +694,7 @@ class InspireGroundingTests(unittest.TestCase):
                     f"link name reference or revert the rename."
                 )
 
-    # -- Layer 2: 12. Body canonical bridges to articulation correctly -------
+    # -- Layer 2: 2. Body canonical bridges to articulation correctly --------
 
     def test_body_canonical_resolves_to_articulation(self):
         """``_resolve_indices`` produces correct articulation indices for canonical body names.
@@ -704,7 +715,7 @@ class InspireGroundingTests(unittest.TestCase):
             f"  expected: {expected}\n  actual:   {actual}"
         )
 
-    # -- Layer 2: 13. Hand canonical bridges to articulation correctly -------
+    # -- Layer 2: 3. Hand canonical bridges to articulation correctly --------
 
     def test_inspire_actuated_resolves_to_articulation(self):
         """``_resolve_indices`` produces correct articulation indices for canonical hand names."""
@@ -719,7 +730,7 @@ class InspireGroundingTests(unittest.TestCase):
             f"  expected: {expected}\n  actual:   {actual}"
         )
 
-    # -- Layer 3: 11. Body obs layout at default pose ------------------------
+    # -- Layer 3: 1. Body obs layout at default pose -------------------------
 
     def test_body_obs_layout_at_default_pose(self):
         """``get_robot_body_joint_states`` output values at canonical slots
@@ -763,7 +774,7 @@ class InspireGroundingTests(unittest.TestCase):
                     )
                 )
 
-    # -- Layer 3: 12. Inspire hand obs layout at default pose ----------------
+    # -- Layer 3: 2. Inspire hand obs layout at default pose -----------------
 
     def test_inspire_obs_layout_at_default_pose(self):
         """``get_robot_inspire_joint_states`` output is all zeros at default pose.
@@ -789,7 +800,7 @@ class InspireGroundingTests(unittest.TestCase):
                     )
                 )
 
-    # -- Layer 3: 10. Runtime mimic enforcement -----------------------------
+    # -- Layer 3: 3. Runtime mimic enforcement -------------------------------
 
     def test_mimic_enforcement_at_runtime(self):
         """``apply_actions()`` drives mimic joints to ``multiplier × parent``.
@@ -858,10 +869,10 @@ class InspireGroundingTests(unittest.TestCase):
             ),
         )
 
-    # -- Layer 2: 11. Articulation order matches env_cfg.joint_names list-wise
+    # -- Layer 2: 4. Articulation order matches JOINT_NAMES list-wise --------
 
     def test_articulation_order_matches_env_cfg(self):
-        """USD articulation order matches env_cfg.joint_names list-wise.
+        """USD articulation order matches ``JOINT_NAMES`` (the anchor) list-wise.
 
         This is what Layer 1 explicitly cannot check — URDF XML order is an
         arbitrary authoring artifact, but the USD's articulation order
@@ -869,31 +880,35 @@ class InspireGroundingTests(unittest.TestCase):
         observation slice and action index assumes.
 
         Catches:
-          - env_cfg.joint_names re-ordered without re-verifying against the USD
+          - JOINT_NAMES re-ordered (in joint_constants.py) without re-verifying against the USD
           - Converter behavior change shifts the traversal order
           - Wrong USD loaded (e.g. the §4.7 hazard about wrist_cam vs not)
+
+        Method name retained for backward compat with prior CI runs; the data
+        compared is now the joint_constants anchor (env_cfg.joint_names is a
+        re-export of the same list).
         """
         art_names = self._ARTICULATION_JOINT_NAMES
-        env_names = list(ENV_CFG_JOINT_NAMES)
+        anchor_names = list(JOINT_NAMES)
         self.assertEqual(
-            len(art_names), len(env_names),
-            f"Articulation has {len(art_names)} joints; env_cfg has {len(env_names)}."
+            len(art_names), len(anchor_names),
+            f"Articulation has {len(art_names)} joints; JOINT_NAMES has {len(anchor_names)}."
         )
-        if art_names != env_names:
+        if art_names != anchor_names:
             # Find the first mismatch for an actionable error message.
             mismatches: list[str] = []
-            for i, (a, e) in enumerate(zip(art_names, env_names)):
+            for i, (a, e) in enumerate(zip(art_names, anchor_names)):
                 if a != e:
-                    mismatches.append(f"  index {i}: articulation={a!r}, env_cfg={e!r}")
+                    mismatches.append(f"  index {i}: articulation={a!r}, JOINT_NAMES={e!r}")
                     if len(mismatches) >= 5:
                         mismatches.append(f"  ... and possibly more.")
                         break
             self.fail(
-                "USD articulation order disagrees with env_cfg.joint_names.\n"
+                "USD articulation order disagrees with JOINT_NAMES (the anchor).\n"
                 + "\n".join(mismatches)
-                + "\nFix env_cfg.joint_names to match the articulation order, "
-                + "or run scripts/utils/inspire/inspect_inspire_joints.py "
-                + "(after pointing it at the active USD per audit doc §4.7)."
+                + "\nFix utils/inspire/joint_constants.py:JOINT_NAMES to match "
+                + "the articulation order, or run "
+                + "scripts/utils/inspire/inspect_inspire_joints.py."
             )
 
 
