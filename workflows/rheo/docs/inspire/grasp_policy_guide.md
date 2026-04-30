@@ -158,9 +158,13 @@ IsaacLab env observations
 ```
 
 > **Code:**
-> Joint group definitions and scatter logic in
-> [`scripts/utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py).
-> Observation extraction in
+> Joint identity (which 53 joints, which are mimic, URDF↔Nucleus, the per-group
+> name lists) is anchored in
+> [`scripts/inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py).
+> Scatter logic and the `InspireExperimentConfig` dataclass live in
+> [`scripts/utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py)
+> (every group-size / range / scatter-index dict there is derived from the
+> anchor at module load). Observation extraction in
 > [`scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py`](../../scripts/simulation/tasks/grasp_policy_inspire/mdp/observations.py).
 
 ### 26D Canonical Joint Order
@@ -720,7 +724,9 @@ The RLinf extension module has full Inspire FTP support:
 > [`scripts/simulation/rl/rlinf_ext/__init__.py`](../../scripts/simulation/rl/rlinf_ext/__init__.py)
 > — Inspire env wrapper (lines 565-636), ACT converters (lines 644-705).
 > [`scripts/utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py)
-> — 26D joint groups, scatter_to_sim (41D), state extraction.
+> — `InspireExperimentConfig` dataclass: 26D joint groups, `scatter_to_sim` (41D),
+> state extraction. Group definitions and scatter indices derive from
+> [`scripts/inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py).
 
 ### RLinf Config Files
 
@@ -874,8 +880,9 @@ policy, 41D sim scatter, front camera by default).
 
 | File | Description |
 |------|-------------|
-| [`utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction |
-| [`utils/inspire/inspire_lerobot_fields.py`](../../scripts/utils/inspire/inspire_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left) |
+| [`inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py) | Single source of truth for joint identity (URDF names, mimic set, URDF↔Nucleus bridge, canonical body / actuated-hand layouts, per-group name lists). Pure Python, importable everywhere. |
+| [`utils/inspire/inspire_experiment_config.py`](../../scripts/utils/inspire/inspire_experiment_config.py) | 26D joint groups, scatter_to_sim (41D), state extraction. Group sizes / ranges / scatter indices derive from `inspire_joint_constants.GROUP_NAMES`. |
+| [`utils/inspire/inspire_lerobot_fields.py`](../../scripts/utils/inspire/inspire_lerobot_fields.py) | Joint index constants for HDF5 -> LeRobot conversion (26D, 13D right, 13D left). Derives from `inspire_joint_constants`. |
 | [`utils/convert_hdf5_to_lerobot.py`](../../scripts/utils/convert_hdf5_to_lerobot.py) | Dataset converter (handles 53D, 41D, and 38D teleop) |
 | [`config/g1_grasp_policy_inspire_dataset_right_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_right_arm.yaml) | 13D right-arm conversion config |
 | [`config/g1_grasp_policy_inspire_dataset_left_arm.yaml`](../../scripts/config/inspire/g1_grasp_policy_inspire_dataset_left_arm.yaml) | 13D left-arm conversion config |

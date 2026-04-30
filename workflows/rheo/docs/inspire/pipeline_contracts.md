@@ -546,7 +546,12 @@ Use `predict_action_chunk()` and squeeze.
 
 `InspireExperimentConfig.scatter_to_sim` places the 26D policy output at
 the canonical sim-joint indices and leaves everything else at its env default
-(legs, waist, mimic hand joints). **The `-0.3` elbow offset is not applied
+(legs, waist, mimic hand joints). The scatter table itself
+(`GROUP_SIM_INDICES`) is now derived as
+`{g: [ACTUATED_JOINT_NAMES.index(n) for n in GROUP_NAMES[g]] for g in GROUP_NAMES}`
+— a wrong name in `GROUP_NAMES` raises `ValueError` at module load instead
+of silently routing the policy output to the wrong sim joints (this is the
+structural fix for the historical pinky/middle bug). **The `-0.3` elbow offset is not applied
 here** — it's applied downstream by `InspireJointPositionActionCfg.offset`
 at articulation time. This is important: if you bypass the action manager and
 write joint targets directly, you must apply the `-0.3` yourself.
@@ -567,7 +572,7 @@ write joint targets directly, you must apply the `-0.3` yourself.
 | Hand fingers move but mimic finger segments don't | L1 mimic | Confirm action is going through `InspireJointPositionActionCfg`, not a raw articulation write — mimic is applied in `apply_actions()`. |
 | Video is fine in playback but policy sees black frames | L3 image path | Check `_extract_observations_from_raw()` — `obs["camera_images"]["front_camera"]` must be uint8 HWC before the wrapper divides by 255. |
 | Non-controlled arm drifts during single-arm teleop | L1 teleop masking | FK wrist pose may not be reading correctly after reset. Check `_read_frozen_wrist_fk()` — verify `body_names.index("*_wrist_yaw_link")` resolves and `body_pos_w` / `body_quat_w` are populated. |
-| Only proximal finger joints move in single-arm teleop | L1 teleop masking | Hand index lists are likely using contiguous slices instead of interleaved indices. Verify `_LEFT_HAND_38D_IDX` / `_RIGHT_HAND_38D_IDX` match the USD joint order in `env_cfg.py:53-110`. |
+| Only proximal finger joints move in single-arm teleop | L1 teleop masking | Hand index lists are likely using contiguous slices instead of interleaved indices. `LEFT_HAND_38D_IDX` / `RIGHT_HAND_38D_IDX` now derive from `HAND_JOINT_NAMES` side-prefix in [`inspire_joint_constants.py`](../../scripts/inspire_joint_constants.py); a regression here means `JOINT_NAMES` drifted from the USD. |
 
 ---
 
